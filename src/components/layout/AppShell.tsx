@@ -8,25 +8,27 @@ import { CalendarView } from '../calendar/CalendarView';
 import { NodeInspectorModal } from '../nodes/NodeInspectorModal';
 import { ManageAlertsModal } from '../reminders/ManageAlertsModal';
 import { AdminDashboard } from '../admin/AdminDashboard';
+import { SuperAdminDashboard } from '../admin/SuperAdminDashboard';
+import { OrgAdminDashboard } from '../admin/OrgAdminDashboard';
 import { GoogleCalendarSyncModal } from '../calendar/GoogleCalendarSyncModal';
 import { ProtectedAppGuard } from '../auth/Guards';
 import { LoginPage } from '../auth/LoginPage';
-import { Bell, Calendar, Home, Layers, LogOut, Footprints, ChevronRight, ShieldCheck, Sparkles } from 'lucide-react';
+import { Bell, Calendar, Home, Layers, LogOut, Footprints, ChevronRight, ShieldCheck, Sparkles, User, Building2, FolderTree } from 'lucide-react';
 
-type NavTab = 'today' | 'browse' | 'calendar' | 'admin';
+type NavTab = 'today' | 'browse' | 'calendar' | 'admin' | 'super_admin' | 'org_admin';
 
 export const AppShellContent: React.FC = () => {
   const { selectedNode, setSelectedNode, totalScheduledAlertsCount, triggeredAlertsCount } = useNodes();
-  const { profile, hasRole, signOut } = useAuth();
+  const { user, profile, organization, team, isSuperAdmin, isOrgAdmin, signOut } = useAuth();
   
   const [activeTab, setActiveTab] = useState<NavTab>('today');
   const [showManageAlerts, setShowManageAlerts] = useState(false);
   const [showGoogleCalSync, setShowGoogleCalSync] = useState(false);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
 
-  // Poll for pending user approvals to notify Admin
+  // Poll for pending user approvals to notify Org Admin
   useEffect(() => {
-    if (!hasRole(['admin'])) return;
+    if (!isOrgAdmin) return;
 
     const checkPendingApprovals = async () => {
       try {
@@ -43,11 +45,14 @@ export const AppShellContent: React.FC = () => {
     checkPendingApprovals();
     const interval = setInterval(checkPendingApprovals, 30000);
     return () => clearInterval(interval);
-  }, [hasRole]);
+  }, [isOrgAdmin]);
 
   const handleSignOut = async () => {
     await signOut();
   };
+
+  const displayEmail = profile?.email || user?.email || 'Logged In User';
+  const displayRole = profile?.role ? profile.role.replace(/_/g, ' ') : 'user';
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row text-gray-900 antialiased">
@@ -61,7 +66,9 @@ export const AppShellContent: React.FC = () => {
             </div>
             <div>
               <span className="font-extrabold text-base tracking-tight block text-white">Cadence</span>
-              <span className="text-[10px] text-slate-400 font-medium block">Apache Footwear (adidas)</span>
+              <span className="text-[10px] text-slate-400 font-medium block truncate max-w-[140px]">
+                {organization?.name || 'Apache Footwear'}
+              </span>
             </div>
           </div>
 
@@ -119,20 +126,41 @@ export const AppShellContent: React.FC = () => {
               <span className="text-[10px] text-slate-400 font-mono">Grid</span>
             </button>
 
-            {/* Admin Security Center (With Pending Notifications Badge) */}
-            {hasRole(['admin']) && (
+            {/* Super Admin Platform Console */}
+            {isSuperAdmin && (
               <button
                 type="button"
-                onClick={() => setActiveTab('admin')}
+                onClick={() => setActiveTab('super_admin')}
                 className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
-                  activeTab === 'admin'
+                  activeTab === 'super_admin'
+                    ? 'bg-purple-600 text-white shadow-sm font-bold'
+                    : 'text-purple-300 hover:bg-slate-800'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Building2 className="w-4 h-4" />
+                  <span>SaaS Super Admin</span>
+                </div>
+                <span className="text-[9px] bg-purple-400/20 text-purple-200 px-1.5 py-0.5 rounded-full font-mono font-bold">
+                  Platform
+                </span>
+              </button>
+            )}
+
+            {/* Organization Admin Console */}
+            {isOrgAdmin && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('org_admin')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
+                  activeTab === 'org_admin'
                     ? 'bg-amber-500 text-slate-950 shadow-sm font-bold'
                     : 'text-amber-400 hover:bg-slate-800'
                 }`}
               >
                 <div className="flex items-center gap-2.5">
                   <ShieldCheck className="w-4 h-4" />
-                  <span>Admin Security Center</span>
+                  <span>Company Org Admin</span>
                 </div>
 
                 {pendingApprovalsCount > 0 ? (
@@ -141,7 +169,7 @@ export const AppShellContent: React.FC = () => {
                   </span>
                 ) : (
                   <span className="text-[9px] bg-amber-400/20 text-amber-300 px-1.5 py-0.5 rounded-full font-mono font-bold">
-                    Admin
+                    Org
                   </span>
                 )}
               </button>
@@ -149,7 +177,7 @@ export const AppShellContent: React.FC = () => {
           </nav>
         </div>
 
-        {/* Global Manage Alerts & Google Cal Buttons */}
+        {/* Global Controls & Sidebar Profile Footer */}
         <div className="pt-4 border-t border-slate-800/80 space-y-2">
           
           {/* Google Cal Sync Launcher */}
@@ -188,27 +216,31 @@ export const AppShellContent: React.FC = () => {
             <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-slate-300 transition-colors" />
           </button>
 
-          {/* User Profile Footer & Working Sign Out Button */}
-          {profile && (
-            <div className="flex items-center justify-between px-2 pt-1 text-xs">
+          {/* Bottom-left Sidebar User Footer */}
+          <div className="bg-slate-850 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2 text-xs">
+            <div className="min-w-0 flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-teal-500/20 text-teal-300 flex items-center justify-center font-bold text-xs shrink-0 border border-teal-500/30">
+                <User className="w-3.5 h-3.5" />
+              </div>
               <div className="truncate">
                 <span className="text-slate-200 font-semibold block truncate text-[11px]">
-                  {profile.full_name || profile.email}
+                  {displayEmail}
                 </span>
-                <span className="text-[9px] text-teal-400 font-mono uppercase tracking-wider block">
-                  {profile.role} • {profile.department || 'Production'}
+                <span className="text-[9px] text-teal-400 font-mono uppercase tracking-wider block truncate">
+                  {displayRole} {team ? `• ${team.name}` : ''}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={handleSignOut}
-                title="Sign Out of Cadence"
-                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
             </div>
-          )}
+
+            <button
+              type="button"
+              onClick={handleSignOut}
+              title="Sign Out of Cadence"
+              className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/20 rounded-lg transition-colors shrink-0 flex items-center gap-1 text-[11px] font-bold"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -218,6 +250,8 @@ export const AppShellContent: React.FC = () => {
         {activeTab === 'browse' && <NodeTree onSelectNode={setSelectedNode} />}
         {activeTab === 'calendar' && <CalendarView onSelectNode={setSelectedNode} />}
         {activeTab === 'admin' && <AdminDashboard />}
+        {activeTab === 'super_admin' && <SuperAdminDashboard />}
+        {activeTab === 'org_admin' && <OrgAdminDashboard />}
       </main>
 
       {/* Center Focus Inspector Modal */}

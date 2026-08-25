@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from './AuthContext';
 import { NodeItem, ReminderItem, TreeNode, TodayItem, NodeStatus } from '../types/domain';
 import { resolveColor } from '../lib/color-resolver';
 import { addDays, addHours, parseISO, formatISO, isValid, isBefore, isToday as isDateToday, isAfter } from 'date-fns';
@@ -44,6 +45,8 @@ interface NodeContextType {
 const NodeContext = createContext<NodeContextType | undefined>(undefined);
 
 export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { profile, isOrgAdmin } = useAuth();
+  
   const [nodes, setNodes] = useState<NodeItem[]>([]);
   const [reminders, setReminders] = useState<ReminderItem[]>([]);
   const [selectedNode, setSelectedNode] = useState<NodeItem | null>(null);
@@ -121,6 +124,57 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => clearInterval(interval);
   }, [reminders]);
 
+  // Inherited Team Scoped Visibility Filter
+  const getScopedNodes = useCallback((): NodeItem[] => {
+    if (!profile) return nodes;
+
+    // 1. Super Admins & Org Admins see all nodes for their organization
+    if (isOrgAdmin) {
+      return nodes;
+    }
+
+    // 2. Junior Managers & Scoped Roles: Filter nodes assigned to user OR sub-tree subtasks
+    const userEmail = profile.email.toLowerCase();
+    const userFullName = (profile.full_name || '').toLowerCase();
+
+    // Directly assigned node IDs
+    const directlyAssignedNodeIds = new Set(
+      nodes
+        .filter(n => {
+          if (!n.assignee) return false;
+          const a = n.assignee.toLowerCase();
+          return a.includes(userEmail) || (userFullName && a.includes(userFullName));
+        })
+        .map(n => n.id)
+    );
+
+    // Recursively include all descendant child subtasks of directly assigned nodes
+    const visibleNodeIds = new Set<string>(directlyAssignedNodeIds);
+
+    const addSubtree = (parentId: string) => {
+      const children = nodes.filter(n => n.parent_id === parentId);
+      for (const child of children) {
+        visibleNodeIds.add(child.id);
+        addSubtree(child.id);
+      }
+    };
+
+    directlyAssignedNodeIds.forEach(id => addSubtree(id));
+
+    // Also include top-level project containers if they contain visible subtasks
+    const includeAncestors = (nodeId: string) => {
+      const node = nodes.find(n => n.id === nodeId);
+      if (node && node.parent_id) {
+        visibleNodeIds.add(node.parent_id);
+        includeAncestors(node.parent_id);
+      }
+    };
+
+    Array.from(visibleNodeIds).forEach(id => includeAncestors(id));
+
+    return nodes.filter(n => visibleNodeIds.has(n.id));
+  }, [nodes, profile, isOrgAdmin]);
+
   const getAncestorColors = (nodeId: string, allNodes: NodeItem[]): string[] => {
     const colors: string[] = [];
     let current = allNodes.find(n => n.id === nodeId);
@@ -145,8 +199,10 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const getTree = (): TreeNode[] => {
+    const scopedNodes = getScopedNodes();
+
     const buildSubtree = (parentId: string | null, depth: number, ancestorColors: string[]): TreeNode[] => {
-      const children = nodes.filter(n => n.parent_id === parentId);
+      const children = scopedNodes.filter(n => n.parent_id === parentId);
       children.sort((a, b) => a.sort_order - b.sort_order);
 
       return children.map(node => {
@@ -177,6 +233,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const getTodayUpcomingFeed = () => {
+    const scopedNodes = getScopedNodes();
     const overdue: TodayItem[] = [];
     const today: TodayItem[] = [];
     const upcoming: TodayItem[] = [];
@@ -190,7 +247,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const weekLater = addDays(todayEnd, 7);
 
-    nodes.forEach(node => {
+    scopedNodes.forEach(node => {
       if (!node.planned_date || node.status === 'done') return;
 
       const pDate = parseISO(node.planned_date);
@@ -252,7 +309,6 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const cascadeDateChange = async (nodeId: string, newPlannedDateStr: string | null) => {
-    // 1. Try atomic PostgreSQL RPC cascade_dates first
     try {
       await supabase.rpc('cascade_dates', {
         p_target_node_id: nodeId,
@@ -261,7 +317,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await fetchNodesAndReminders();
       return;
     } catch {
-      // Client-side cascade fallback if RPC not present in DB
+      // Fallback
     }
 
     const updatedNodes = [...nodes];
@@ -300,7 +356,6 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     updateChildrenDates(nodeId, newPlannedDateStr);
 
-    // Save N updated nodes to Supabase
     for (const n of updatedNodes) {
       await supabase.from('nodes').update({ planned_date: n.planned_date, updated_at: n.updated_at }).eq('id', n.id);
     }
@@ -310,6 +365,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const addNode = async (data: Partial<NodeItem>) => {
     const newNode = {
       id: crypto.randomUUID(),
+      org_id: profile?.org_id || '00000000-0000-0000-0000-000000000001',
       parent_id: data.parent_id || null,
       type: data.type || 'task',
       title: data.title || 'Untitled Task',

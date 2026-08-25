@@ -16,8 +16,13 @@ export const ProtectedAppGuard: React.FC<{ children: React.ReactNode; fallbackLo
     );
   }
 
+  // IF NO USER SESSION EXISTS, ALWAYS SHOW LOGIN / SIGN UP PAGE
+  if (!user) {
+    return <>{fallbackLogin}</>;
+  }
+
   // If live user is logged in and pending approval
-  if (user && profile?.status === 'pending') {
+  if (profile?.status === 'pending') {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-md text-center space-y-4 shadow-2xl">
@@ -47,7 +52,7 @@ export const ProtectedAppGuard: React.FC<{ children: React.ReactNode; fallbackLo
     );
   }
 
-  if (user && profile?.status === 'revoked') {
+  if (profile?.status === 'revoked') {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
         <div className="bg-slate-900 border border-rose-900/30 rounded-3xl p-8 max-w-md text-center space-y-4 shadow-2xl">
