@@ -12,6 +12,10 @@ export interface Organization {
   slug: string;
   subscription_tier: 'starter' | 'pro' | 'enterprise';
   status: 'active' | 'suspended';
+  logo_url: string | null;
+  brand_color: string | null;
+  brand_title: string | null;
+  brand_tagline: string | null;
   features: Record<string, boolean>;
 }
 

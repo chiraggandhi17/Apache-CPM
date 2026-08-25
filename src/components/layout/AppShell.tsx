@@ -26,6 +26,31 @@ export const AppShellContent: React.FC = () => {
   const [showGoogleCalSync, setShowGoogleCalSync] = useState(false);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
 
+  // Determine Dynamic Branding
+  const brandTitle = isSuperAdmin 
+    ? 'Cadence' 
+    : (organization?.brand_title || (organization ? `Cadence - ${organization.name}` : 'Cadence - Apache Footwear'));
+
+  const brandTagline = isSuperAdmin
+    ? 'SaaS Platform Owner Console'
+    : (organization?.brand_tagline || 'adidas Ex-Factory Production Critical Path Tracker');
+
+  const brandColor = organization?.brand_color || '#0d9488';
+  const logoUrl = organization?.logo_url;
+
+  // Update Browser Document Tab Title Dynamically
+  useEffect(() => {
+    const tabNames: Record<NavTab, string> = {
+      today: 'Action Feed',
+      browse: 'Hierarchy Tree',
+      calendar: 'Master Calendar',
+      admin: 'Security Center',
+      super_admin: 'Super Admin Console',
+      org_admin: 'Org Admin Center',
+    };
+    document.title = `${brandTitle} | ${tabNames[activeTab] || 'Dashboard'}`;
+  }, [brandTitle, activeTab]);
+
   // Poll for pending user approvals to notify Org Admin
   useEffect(() => {
     if (!isOrgAdmin) return;
@@ -59,15 +84,24 @@ export const AppShellContent: React.FC = () => {
       {/* Sidebar Navigation */}
       <aside className="w-full md:w-64 bg-slate-900 text-slate-100 flex md:flex-col justify-between shrink-0 p-4 border-r border-slate-800">
         <div>
-          {/* Logo Brand */}
-          <div className="flex items-center gap-3 px-2 py-3 mb-6">
-            <div className="w-9 h-9 rounded-xl bg-teal-500 flex items-center justify-center text-slate-900 font-extrabold text-xl shadow-lg shadow-teal-500/20">
-              <Footprints className="w-5 h-5 text-slate-950" />
-            </div>
-            <div>
-              <span className="font-extrabold text-base tracking-tight block text-white">Cadence</span>
-              <span className="text-[10px] text-slate-400 font-medium block truncate max-w-[140px]">
-                {organization?.name || 'Apache Footwear'}
+          {/* Logo Brand Header (Co-Branded) */}
+          <div className="flex items-center gap-3 px-2 py-3 mb-6 border-b border-slate-800 pb-4">
+            {logoUrl ? (
+              <img src={logoUrl} alt="Company Logo" className="w-9 h-9 object-contain rounded-xl bg-white p-1 shrink-0" />
+            ) : (
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-950 font-extrabold text-xl shadow-lg shrink-0"
+                style={{ backgroundColor: brandColor }}
+              >
+                <Footprints className="w-5 h-5 text-slate-950" />
+              </div>
+            )}
+            <div className="min-w-0">
+              <span className="font-extrabold text-sm tracking-tight block text-white truncate" title={brandTitle}>
+                {brandTitle}
+              </span>
+              <span className="text-[9px] text-slate-400 font-medium block truncate max-w-[150px]" title={brandTagline}>
+                {brandTagline}
               </span>
             </div>
           </div>
@@ -79,16 +113,17 @@ export const AppShellContent: React.FC = () => {
               onClick={() => setActiveTab('today')}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
                 activeTab === 'today'
-                  ? 'bg-teal-500 text-slate-950 shadow-sm font-bold'
+                  ? 'text-slate-950 shadow-sm font-bold'
                   : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
+              style={activeTab === 'today' ? { backgroundColor: brandColor } : {}}
             >
               <div className="flex items-center gap-2.5">
                 <Home className="w-4 h-4" />
                 <span>Today / Action Feed</span>
               </div>
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold ${
-                activeTab === 'today' ? 'bg-slate-950 text-teal-300' : 'bg-slate-800 text-slate-400'
+                activeTab === 'today' ? 'bg-slate-950 text-white' : 'bg-slate-800 text-slate-400'
               }`}>
                 Home
               </span>
@@ -99,9 +134,10 @@ export const AppShellContent: React.FC = () => {
               onClick={() => setActiveTab('browse')}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
                 activeTab === 'browse'
-                  ? 'bg-teal-500 text-slate-950 shadow-sm font-bold'
+                  ? 'text-slate-950 shadow-sm font-bold'
                   : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
+              style={activeTab === 'browse' ? { backgroundColor: brandColor } : {}}
             >
               <div className="flex items-center gap-2.5">
                 <Layers className="w-4 h-4" />
@@ -115,9 +151,10 @@ export const AppShellContent: React.FC = () => {
               onClick={() => setActiveTab('calendar')}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
                 activeTab === 'calendar'
-                  ? 'bg-teal-500 text-slate-950 shadow-sm font-bold'
+                  ? 'text-slate-950 shadow-sm font-bold'
                   : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
+              style={activeTab === 'calendar' ? { backgroundColor: brandColor } : {}}
             >
               <div className="flex items-center gap-2.5">
                 <Calendar className="w-4 h-4" />
@@ -184,13 +221,13 @@ export const AppShellContent: React.FC = () => {
           <button
             type="button"
             onClick={() => setShowGoogleCalSync(true)}
-            className="w-full bg-teal-950/60 hover:bg-teal-900/80 border border-teal-700/60 p-2.5 rounded-xl flex items-center justify-between text-xs text-teal-200 transition-colors group shadow-2xs"
+            className="w-full bg-slate-850 hover:bg-slate-800 border border-slate-750 p-2.5 rounded-xl flex items-center justify-between text-xs text-slate-200 transition-colors group shadow-2xs"
           >
             <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-teal-400" />
+              <Calendar className="w-4 h-4" style={{ color: brandColor }} />
               <span className="font-semibold text-[11px]">Google Cal Sync</span>
             </div>
-            <Sparkles className="w-3.5 h-3.5 text-teal-400" />
+            <Sparkles className="w-3.5 h-3.5" style={{ color: brandColor }} />
           </button>
 
           {/* Manage Alerts Pill */}
@@ -219,14 +256,17 @@ export const AppShellContent: React.FC = () => {
           {/* Bottom-left Sidebar User Footer */}
           <div className="bg-slate-850 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2 text-xs">
             <div className="min-w-0 flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-teal-500/20 text-teal-300 flex items-center justify-center font-bold text-xs shrink-0 border border-teal-500/30">
+              <div
+                className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 border border-white/20 text-slate-950"
+                style={{ backgroundColor: brandColor }}
+              >
                 <User className="w-3.5 h-3.5" />
               </div>
               <div className="truncate">
                 <span className="text-slate-200 font-semibold block truncate text-[11px]">
                   {displayEmail}
                 </span>
-                <span className="text-[9px] text-teal-400 font-mono uppercase tracking-wider block truncate">
+                <span className="text-[9px] font-mono uppercase tracking-wider block truncate" style={{ color: brandColor }}>
                   {displayRole} {team ? `• ${team.name}` : ''}
                 </span>
               </div>
