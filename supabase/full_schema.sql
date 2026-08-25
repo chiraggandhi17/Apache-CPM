@@ -1,155 +1,248 @@
 -- ============================================================================
--- CADENCE CPM: FULL PRODUCTION SCHEMA (Combined Single-File Script)
--- Includes: Recursive Nodes, Reminders, Date Cascade RPC, Today Feed RPC,
--- RLS Security, Seed Data, and Migration 00005 (RBAC, Admin Approval & Modular Features)
+-- CADENCE FOOTWEAR CPM & MULTI-TENANT SAAS — COMPLETE CONSOLIDATED SCHEMA
 -- ============================================================================
 
--- Enable required extensions
+-- 1. Enable Required PostgreSQL Extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "ltree";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- 1. Create Enums
-DO $$ BEGIN
-  CREATE TYPE user_role AS ENUM ('admin', 'manager', 'editor', 'viewer');
-EXCEPTION WHEN duplicate_object THEN null; END $$;
-
-DO $$ BEGIN
-  CREATE TYPE user_status AS ENUM ('pending', 'approved', 'revoked');
-EXCEPTION WHEN duplicate_object THEN null; END $$;
-
--- 2. Profiles Table
-CREATE TABLE IF NOT EXISTS public.profiles (
-  id                  UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  email               TEXT NOT NULL,
-  full_name           TEXT,
-  avatar_url          TEXT,
-  department          TEXT,
-  role                user_role NOT NULL DEFAULT 'viewer',
-  status              user_status NOT NULL DEFAULT 'pending',
-  approved_at         TIMESTAMPTZ,
-  approved_by         UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+-- 2. Organizations Table (Multi-Tenant SaaS Subscribers)
+CREATE TABLE IF NOT EXISTS public.organizations (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name                TEXT NOT NULL,
+  slug                TEXT UNIQUE NOT NULL,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 3. Features & User Entitlements
-CREATE TABLE IF NOT EXISTS public.features (
-  key                 TEXT PRIMARY KEY,
-  name                TEXT NOT NULL,
-  description         TEXT,
-  default_roles       user_role[] NOT NULL DEFAULT '{}',
-  is_active           BOOLEAN NOT NULL DEFAULT true,
-  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+-- Ensure all SaaS, Workspace Code, and Branding columns exist
+ALTER TABLE public.organizations ADD COLUMN IF NOT EXISTS org_code TEXT;
+ALTER TABLE public.organizations ADD COLUMN IF NOT EXISTS primary_admin_email TEXT;
+ALTER TABLE public.organizations ADD COLUMN IF NOT EXISTS is_activated BOOLEAN DEFAULT false;
+ALTER TABLE public.organizations ADD COLUMN IF NOT EXISTS subscription_tier TEXT NOT NULL DEFAULT 'pro';
+ALTER TABLE public.organizations ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE public.organizations ADD COLUMN IF NOT EXISTS logo_url TEXT;
+ALTER TABLE public.organizations ADD COLUMN IF NOT EXISTS brand_color TEXT DEFAULT '#0d9488';
+ALTER TABLE public.organizations ADD COLUMN IF NOT EXISTS brand_title TEXT;
+ALTER TABLE public.organizations ADD COLUMN IF NOT EXISTS brand_tagline TEXT DEFAULT 'Enterprise Ex-Factory CPM Tracker';
+ALTER TABLE public.organizations ADD COLUMN IF NOT EXISTS features JSONB NOT NULL DEFAULT '{
+  "google_calendar_sync": true,
+  "advanced_reports": true,
+  "node_mutation": true
+}'::jsonb;
 
-CREATE TABLE IF NOT EXISTS public.user_feature_entitlements (
+-- Seed Default Organization (Apache Footwear)
+INSERT INTO public.organizations (id, name, slug, org_code, primary_admin_email, is_activated, subscription_tier, status, brand_title, brand_tagline, brand_color)
+VALUES (
+  '00000000-0000-0000-0000-000000000001',
+  'Apache Footwear Inc',
+  'apache-footwear',
+  'APACHE',
+  'admin@apache.com',
+  true,
+  'enterprise',
+  'active',
+  'Cadence - Apache Footwear',
+  'adidas Ex-Factory Production Critical Path Tracker',
+  '#0d9488'
+)
+ON CONFLICT (id) DO UPDATE SET
+  org_code = 'APACHE',
+  primary_admin_email = 'admin@apache.com',
+  is_activated = true,
+  brand_title = EXCLUDED.brand_title,
+  brand_tagline = EXCLUDED.brand_tagline;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_organizations_org_code_upper ON public.organizations (UPPER(org_code));
+
+-- 3. Teams Table (Dynamic Company Org Structure)
+CREATE TABLE IF NOT EXISTS public.teams (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id             UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  feature_key         TEXT NOT NULL REFERENCES public.features(key) ON DELETE CASCADE,
-  enabled             BOOLEAN NOT NULL DEFAULT true,
-  granted_by          UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
-  granted_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE(user_id, feature_key)
+  org_id              UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  parent_team_id      UUID REFERENCES public.teams(id) ON DELETE CASCADE,
+  name                TEXT NOT NULL,
+  level_depth         INT NOT NULL DEFAULT 1,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 4. Nodes Table
+-- Seed Default Teams for Apache Footwear
+INSERT INTO public.teams (id, org_id, parent_team_id, name, level_depth)
+VALUES 
+  ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000001', NULL, 'Production Department', 1),
+  ('22222222-2222-2222-2222-222222222222', '00000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'Stitching Line A', 2),
+  ('33333333-3333-3333-3333-333333333333', '00000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'Outsole Assembly B', 2)
+ON CONFLICT (id) DO NOTHING;
+
+-- 4. Custom Types & Profiles Table
+DO $$ BEGIN
+  CREATE TYPE user_role AS ENUM ('super_admin', 'org_admin', 'senior_manager', 'junior_manager', 'admin', 'manager', 'editor', 'viewer');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE user_status AS ENUM ('pending', 'approved', 'revoked');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id          UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email       TEXT NOT NULL,
+  full_name   TEXT,
+  avatar_url  TEXT,
+  department  TEXT DEFAULT 'Production',
+  role        user_role NOT NULL DEFAULT 'viewer',
+  status      user_status NOT NULL DEFAULT 'pending',
+  approved_at TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS org_id UUID REFERENCES public.organizations(id) ON DELETE SET NULL;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS team_id UUID REFERENCES public.teams(id) ON DELETE SET NULL;
+
+-- 5. Nodes Table (Recursive Milestones & Critical Paths)
 CREATE TABLE IF NOT EXISTS public.nodes (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   parent_id           UUID REFERENCES public.nodes(id) ON DELETE CASCADE,
-  type                TEXT NOT NULL CHECK (type IN ('department', 'season', 'project', 'task', 'subtask', 'reminder')),
+  type                TEXT NOT NULL DEFAULT 'task',
   title               TEXT NOT NULL,
   description         TEXT,
   color               TEXT,
   planned_date        TIMESTAMPTZ,
   actual_date         TIMESTAMPTZ,
   trigger_offset_days INT,
-  status              TEXT NOT NULL DEFAULT 'not_started' CHECK (status IN ('not_started', 'in_progress', 'done', 'blocked')),
+  status              TEXT NOT NULL DEFAULT 'not_started',
   is_critical         BOOLEAN NOT NULL DEFAULT false,
   assignee            TEXT,
   vendor_contact      TEXT,
-  department          TEXT,
-  season              TEXT,
+  department          TEXT DEFAULT 'Production',
+  season              TEXT DEFAULT 'SS26',
   sort_order          INT NOT NULL DEFAULT 1,
-  path                ltree,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 5. Reminders Table
+ALTER TABLE public.nodes ADD COLUMN IF NOT EXISTS org_id UUID REFERENCES public.organizations(id) ON DELETE CASCADE;
+ALTER TABLE public.nodes ADD COLUMN IF NOT EXISTS team_id UUID REFERENCES public.teams(id) ON DELETE SET NULL;
+
+-- 6. Reminders Table
 CREATE TABLE IF NOT EXISTS public.reminders (
-  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  node_id             UUID NOT NULL REFERENCES public.nodes(id) ON DELETE CASCADE,
-  remind_at           TIMESTAMPTZ NOT NULL,
-  offset_mode         TEXT NOT NULL DEFAULT 'relative' CHECK (offset_mode IN ('relative', 'fixed')),
-  offset_days         INT,
-  message             TEXT NOT NULL,
-  note                TEXT,
-  is_recurring        BOOLEAN NOT NULL DEFAULT false,
-  dismissed_at        TIMESTAMPTZ,
-  snoozed_until       TIMESTAMPTZ,
-  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  node_id        UUID NOT NULL REFERENCES public.nodes(id) ON DELETE CASCADE,
+  remind_at      TIMESTAMPTZ NOT NULL,
+  offset_mode    TEXT NOT NULL DEFAULT 'fixed',
+  offset_days    INT,
+  message        TEXT NOT NULL,
+  note           TEXT,
+  is_recurring   BOOLEAN NOT NULL DEFAULT false,
+  dismissed_at   TIMESTAMPTZ,
+  snoozed_until  TIMESTAMPTZ,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Seed Features
-INSERT INTO public.features (key, name, description, default_roles)
-VALUES
-  ('base_tier', 'Base CPM Timeline', 'Browse milestone hierarchy and feeds', '{admin,manager,editor,viewer}'),
-  ('node_mutation', 'Create & Edit Milestones', 'Ability to create, update, or delete tasks', '{admin,manager,editor}'),
-  ('google_calendar_sync', 'Google Calendar Integration', 'Export milestones & 2-way Google Calendar sync', '{admin,manager}'),
-  ('advanced_reports', 'Advanced CPM Variance Reports', 'Executive bottleneck analytics', '{admin,manager}'),
-  ('admin_management', 'Admin Control Center', 'User access approval & feature entitlements', '{admin}')
-ON CONFLICT (key) DO NOTHING;
+-- 7. User Feature Entitlements Table
+CREATE TABLE IF NOT EXISTS public.user_feature_entitlements (
+  user_id     UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  feature_key TEXT NOT NULL,
+  enabled     BOOLEAN NOT NULL DEFAULT false,
+  PRIMARY KEY (user_id, feature_key)
+);
 
--- Security Definer Helpers
-CREATE OR REPLACE FUNCTION public.get_auth_status(p_user_id UUID DEFAULT auth.uid())
-RETURNS user_status LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
-  SELECT status FROM public.profiles WHERE id = p_user_id;
+-- 8. Enable Row Level Security (RLS)
+ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.teams ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.nodes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reminders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_feature_entitlements ENABLE ROW LEVEL SECURITY;
+
+-- 9. Open Permissive Policies for App
+DROP POLICY IF EXISTS "Allow public access to organizations" ON public.organizations;
+CREATE POLICY "Allow public access to organizations" ON public.organizations FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access to teams" ON public.teams;
+CREATE POLICY "Allow public access to teams" ON public.teams FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access to profiles" ON public.profiles;
+CREATE POLICY "Allow public access to profiles" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access to nodes" ON public.nodes;
+CREATE POLICY "Allow public access to nodes" ON public.nodes FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access to reminders" ON public.reminders;
+CREATE POLICY "Allow public access to reminders" ON public.reminders FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access to entitlements" ON public.user_feature_entitlements;
+CREATE POLICY "Allow public access to entitlements" ON public.user_feature_entitlements FOR ALL USING (true) WITH CHECK (true);
+
+-- 10. Enable Realtime Publications Safely (Ignore if already member)
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.nodes;
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.reminders;
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.organizations;
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.teams;
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+-- 11. Helper Functions
+CREATE OR REPLACE FUNCTION public.get_public_org_branding(p_code TEXT)
+RETURNS TABLE (
+  org_id UUID,
+  org_name TEXT,
+  org_code TEXT,
+  brand_title TEXT,
+  brand_tagline TEXT,
+  logo_url TEXT,
+  brand_color TEXT,
+  is_activated BOOLEAN,
+  primary_admin_email TEXT
+)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT 
+    id, 
+    name, 
+    org_code, 
+    COALESCE(brand_title, 'Cadence - ' || name), 
+    brand_tagline, 
+    logo_url, 
+    COALESCE(brand_color, '#0d9488'),
+    is_activated,
+    primary_admin_email
+  FROM public.organizations
+  WHERE UPPER(org_code) = UPPER(p_code) AND status = 'active'
+  LIMIT 1;
 $$;
 
-CREATE OR REPLACE FUNCTION public.is_admin(p_user_id UUID DEFAULT auth.uid())
-RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
-  SELECT EXISTS (SELECT 1 FROM public.profiles WHERE id = p_user_id AND role = 'admin' AND status = 'approved');
+-- 12. Helper Admin Check
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND (role = 'super_admin' OR role = 'admin' OR role = 'org_admin')
+  );
 $$;
 
-CREATE OR REPLACE FUNCTION public.has_feature(p_feature_key TEXT, p_user_id UUID DEFAULT auth.uid())
-RETURNS BOOLEAN LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
-DECLARE
-  v_status user_status; v_role user_role; v_override BOOLEAN; v_feature_active BOOLEAN; v_default_roles user_role[];
-BEGIN
-  SELECT status, role INTO v_status, v_role FROM public.profiles WHERE id = p_user_id;
-  IF v_status != 'approved' THEN RETURN false; END IF;
-
-  SELECT is_active, default_roles INTO v_feature_active, v_default_roles FROM public.features WHERE key = p_feature_key;
-  IF NOT FOUND OR NOT v_feature_active THEN RETURN false; END IF;
-
-  SELECT enabled INTO v_override FROM public.user_feature_entitlements WHERE user_id = p_user_id AND feature_key = p_feature_key;
-  IF v_override IS NOT NULL THEN RETURN v_override; END IF;
-
-  RETURN (v_role = ANY(v_default_roles));
-END;
-$$;
-
--- Admin RPC Procedures
-CREATE OR REPLACE FUNCTION public.admin_set_user_status(p_target_user_id UUID, p_new_status user_status, p_assigned_role user_role DEFAULT NULL)
-RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-BEGIN
-  IF NOT public.is_admin() THEN RAISE EXCEPTION 'Unauthorized'; END IF;
-  UPDATE public.profiles
-  SET status = p_new_status, role = COALESCE(p_assigned_role, role),
-      approved_at = CASE WHEN p_new_status = 'approved' THEN now() ELSE NULL END,
-      approved_by = CASE WHEN p_new_status = 'approved' THEN auth.uid() ELSE NULL END,
-      updated_at = now()
-  WHERE id = p_target_user_id;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.admin_toggle_feature_entitlement(p_target_user_id UUID, p_feature_key TEXT, p_enabled BOOLEAN)
-RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-BEGIN
-  IF NOT public.is_admin() THEN RAISE EXCEPTION 'Unauthorized'; END IF;
-  INSERT INTO public.user_feature_entitlements (user_id, feature_key, enabled, granted_by, granted_at)
-  VALUES (p_target_user_id, p_feature_key, p_enabled, auth.uid(), now())
-  ON CONFLICT (user_id, feature_key) DO UPDATE SET enabled = p_enabled, granted_by = auth.uid(), granted_at = now();
-END;
-$$;
+-- Notify PostgREST to reload schema cache
+NOTIFY pgrst, 'reload schema';

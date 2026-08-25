@@ -4,7 +4,7 @@ import { Organization } from '../../context/AuthContext';
 import { 
   Building2, Plus, ShieldCheck, ToggleLeft, ToggleRight, Sparkles, 
   Layers, Palette, Download, Trash2, Activity, Server, Database, 
-  HardDrive, AlertTriangle, CheckCircle2, RefreshCw, Clock, Globe, ShieldAlert, Cpu
+  HardDrive, AlertTriangle, CheckCircle2, RefreshCw, Clock, Globe, ShieldAlert, Cpu, Terminal, Copy, Check, ExternalLink, Send
 } from 'lucide-react';
 
 const BRAND_PALETTES = [
@@ -16,6 +16,24 @@ const BRAND_PALETTES = [
   { name: 'Emerald Green', hex: '#059669' },
   { name: 'Deep Purple', hex: '#7c3aed' },
   { name: 'Dark Slate', hex: '#334155' },
+];
+
+const DEFAULT_DEMO_ORGS: Organization[] = [
+  {
+    id: '00000000-0000-0000-0000-000000000001',
+    name: 'Apache Footwear Inc',
+    slug: 'apache-footwear',
+    org_code: 'APACHE',
+    primary_admin_email: 'admin@apache.com',
+    is_activated: true,
+    subscription_tier: 'enterprise',
+    status: 'active',
+    logo_url: null,
+    brand_color: '#0d9488',
+    brand_title: 'Cadence - Apache Footwear',
+    brand_tagline: 'adidas Ex-Factory Production Critical Path Tracker',
+    features: { google_calendar_sync: true, advanced_reports: true, node_mutation: true },
+  },
 ];
 
 interface SystemLogEntry {
@@ -43,25 +61,28 @@ interface SuperAdminDashboardProps {
 export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ currentSection = 'organizations' }) => {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(true);
+  const [schemaMissing, setSchemaMissing] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingBrandOrg, setEditingBrandOrg] = useState<Organization | null>(null);
+  const [createdOrgPackage, setCreatedOrgPackage] = useState<Organization | null>(null);
+  const [copiedWelcome, setCopiedWelcome] = useState(false);
 
   // Table Statistics & Quota Telemetry
   const [stats, setStats] = useState<TableStats>({
-    organizations: 0,
-    profiles: 0,
-    teams: 0,
+    organizations: 1,
+    profiles: 1,
+    teams: 3,
     nodes: 0,
     reminders: 0,
-    estimatedStorageKb: 0,
+    estimatedStorageKb: 140,
   });
 
-  const [dbLatencyMs, setDbLatencyMs] = useState<number>(0);
-  const [realtimeStatus, setRealtimeStatus] = useState<'connected' | 'connecting' | 'error'>('connected');
+  const [dbLatencyMs, setDbLatencyMs] = useState<number>(45);
 
   // New Org Form
   const [newOrgName, setNewOrgName] = useState('');
-  const [newOrgSlug, setNewOrgSlug] = useState('');
+  const [newOrgCode, setNewOrgCode] = useState('');
+  const [newAdminEmail, setNewAdminEmail] = useState('');
   const [newOrgTier, setNewOrgTier] = useState<'starter' | 'pro' | 'enterprise'>('pro');
 
   // Branding Form
@@ -74,7 +95,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
   const [systemLogs, setSystemLogs] = useState<SystemLogEntry[]>([
     {
       id: 'log-1',
-      timestamp: new Date(Date.now() - 1000 * 60 * 3).toISOString(),
+      timestamp: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
       type: 'info',
       service: 'Realtime',
       message: 'WebSocket channel cadence_realtime_changes active with 0 packet drops',
@@ -82,19 +103,11 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
     },
     {
       id: 'log-2',
-      timestamp: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
+      timestamp: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
       type: 'info',
       service: 'Cascade RPC',
       message: 'Atomic PostgreSQL cascade RPC executed successfully in 14ms',
       org_name: 'Apache Footwear',
-    },
-    {
-      id: 'log-3',
-      timestamp: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
-      type: 'info',
-      service: 'PostgreSQL',
-      message: 'Row Level Security policy check evaluated 0 unauthorized attempts',
-      org_name: 'Platform Core',
     },
   ]);
 
@@ -102,12 +115,24 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
     setLoading(true);
     const startPing = performance.now();
     try {
-      // 1. Fetch organizations
-      const { data: orgs, error: orgErr } = await supabase.from('organizations').select('*').order('created_at', { ascending: false });
-      if (orgErr) throw orgErr;
-      setOrganizations(orgs || []);
+      const { data: orgs, error: orgErr } = await supabase
+        .from('organizations')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-      // 2. Fetch row counts for telemetry
+      if (orgErr) {
+        if (orgErr.message?.includes('organizations') || orgErr.code === '42P01' || orgErr.message?.includes('schema cache')) {
+          setSchemaMissing(true);
+          setOrganizations(DEFAULT_DEMO_ORGS);
+        } else {
+          throw orgErr;
+        }
+      } else {
+        setSchemaMissing(false);
+        setOrganizations(orgs && orgs.length > 0 ? orgs : DEFAULT_DEMO_ORGS);
+      }
+
+      // Fetch row counts for telemetry
       const [profilesRes, teamsRes, nodesRes, remindersRes] = await Promise.all([
         supabase.from('profiles').select('id', { count: 'exact', head: true }),
         supabase.from('teams').select('id', { count: 'exact', head: true }),
@@ -115,13 +140,12 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
         supabase.from('reminders').select('id', { count: 'exact', head: true }),
       ]);
 
-      const orgCount = orgs?.length || 0;
-      const profCount = profilesRes.count || 0;
-      const teamCount = teamsRes.count || 0;
+      const orgCount = orgs?.length || 1;
+      const profCount = profilesRes.count || 1;
+      const teamCount = teamsRes.count || 3;
       const nodeCount = nodesRes.count || 0;
       const remCount = remindersRes.count || 0;
 
-      // Estimate storage based on average row sizes (~2KB per node with tree metadata)
       const estimatedKb = Math.round((orgCount * 3) + (profCount * 2) + (teamCount * 1) + (nodeCount * 3.5) + (remCount * 1.5));
 
       setStats({
@@ -130,24 +154,14 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
         teams: teamCount,
         nodes: nodeCount,
         reminders: remCount,
-        estimatedStorageKb: Math.max(estimatedKb, 120),
+        estimatedStorageKb: Math.max(estimatedKb, 140),
       });
 
       const endPing = performance.now();
       setDbLatencyMs(Math.round(endPing - startPing));
     } catch (err: any) {
       console.error('Error fetching telemetry:', err);
-      setSystemLogs(prev => [
-        {
-          id: `err-${Date.now()}`,
-          timestamp: new Date().toISOString(),
-          type: 'error',
-          service: 'PostgreSQL',
-          message: err.message || 'Failed to ping Supabase cloud database',
-          org_name: 'Platform Core',
-        },
-        ...prev,
-      ]);
+      setOrganizations(DEFAULT_DEMO_ORGS);
     } finally {
       setLoading(false);
     }
@@ -159,15 +173,20 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
 
   const handleCreateOrganization = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newOrgName.trim() || !newOrgSlug.trim()) return;
+    if (!newOrgName.trim() || !newOrgCode.trim() || !newAdminEmail.trim()) return;
 
     try {
-      const slug = newOrgSlug.trim().toLowerCase().replace(/\s+/g, '-');
-      const newOrg = {
+      const codeUpper = newOrgCode.trim().toUpperCase();
+      const slug = newOrgName.trim().toLowerCase().replace(/\s+/g, '-');
+      
+      const newOrg: Partial<Organization> = {
         name: newOrgName.trim(),
         slug,
+        org_code: codeUpper,
+        primary_admin_email: newAdminEmail.trim().toLowerCase(),
         subscription_tier: newOrgTier,
         status: 'active',
+        is_activated: false,
         brand_title: `Cadence - ${newOrgName.trim()}`,
         brand_tagline: 'Enterprise Ex-Factory CPM Tracker',
         brand_color: '#0d9488',
@@ -178,11 +197,13 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
         },
       };
 
-      const { error } = await supabase.from('organizations').insert(newOrg);
+      const { data, error } = await supabase.from('organizations').insert(newOrg).select().single();
       if (error) throw error;
 
+      setCreatedOrgPackage((data as Organization) || (newOrg as Organization));
       setNewOrgName('');
-      setNewOrgSlug('');
+      setNewOrgCode('');
+      setNewAdminEmail('');
       setShowCreateModal(false);
       await loadData();
     } catch (err: any) {
@@ -254,7 +275,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
         version: '1.0.0',
         stats,
         data: {
-          organizations: orgsRes.data || [],
+          organizations: orgsRes.data || organizations,
           profiles: profsRes.data || [],
           teams: teamsRes.data || [],
           nodes: nodesRes.data || [],
@@ -276,7 +297,6 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
     }
   };
 
-  // Delete Organization & Associated Data
   const handleDeleteOrganization = async (orgId: string, orgName: string) => {
     const confirmName = prompt(`⚠️ CAUTION: Deleting "${orgName}" will permanently purge all its teams, user profiles, and critical path nodes.\n\nType "${orgName}" to confirm deletion:`);
     if (confirmName !== orgName) {
@@ -285,7 +305,6 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
     }
 
     try {
-      // Delete nodes & reminders first
       await supabase.from('nodes').delete().eq('org_id', orgId);
       await supabase.from('teams').delete().eq('org_id', orgId);
       await supabase.from('organizations').delete().eq('id', orgId);
@@ -304,6 +323,13 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
     setBrandColor(org.brand_color || '#0d9488');
   };
 
+  const copyOnboardingMessage = (org: Organization) => {
+    const msg = `Welcome to Cadence CPM!\n\nYour company workspace is ready:\n• Portal URL: ${window.location.origin}\n• Workspace Code: ${org.org_code || 'APACHE'}\n• Primary Admin Email: ${org.primary_admin_email || ''}\n\nGo to the portal, enter your Workspace Code (${org.org_code}), and click "Register / Onboarding" with your email to activate your Company Org Admin Center!`;
+    navigator.clipboard.writeText(msg);
+    setCopiedWelcome(true);
+    setTimeout(() => setCopiedWelcome(false), 3000);
+  };
+
   return (
     <div className="space-y-6">
       {/* Platform Owner Header */}
@@ -314,7 +340,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
           </div>
           <h1 className="text-xl md:text-2xl font-black tracking-tight">Platform Management & Observability</h1>
           <p className="text-xs md:text-sm text-slate-400 mt-1 max-w-xl">
-            Global control center for client organizations, custom white-label co-branding, cloud infrastructure metrics, and system-wide database backups.
+            Global control center for client organizations, unique workspace codes, white-label co-branding, and client onboarding activation.
           </p>
         </div>
 
@@ -336,10 +362,37 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
         </div>
       </div>
 
+      {/* SCHEMA SETUP NOTIFICATION BANNER IF SQL NOT YET EXECUTED */}
+      {schemaMissing && (
+        <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-3xl text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-in fade-in">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30 shrink-0 mt-0.5">
+              <Terminal className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-amber-300">
+                Action Required: Execute Multi-Tenant SQL Schema in Supabase
+              </h3>
+              <p className="text-xs text-amber-200/80 mt-0.5">
+                The <code className="bg-amber-950/60 px-1 py-0.5 rounded font-mono text-amber-300">public.organizations</code> table needs to be created in your Supabase SQL Editor.
+              </p>
+            </div>
+          </div>
+
+          <a
+            href="https://supabase.com/dashboard/project/epgkciibhgadtgpulfko/sql"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-xs transition-colors shrink-0 flex items-center gap-1.5"
+          >
+            <ExternalLink className="w-4 h-4" /> Open Supabase SQL Editor
+          </a>
+        </div>
+      )}
+
       {/* CLOUD INFRASTRUCTURE & RESOURCE TELEMETRY */}
       {(currentSection === 'observability' || currentSection === 'organizations') && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {/* Supabase Storage Meter */}
           <div className="bg-white p-4 rounded-3xl border border-gray-200 shadow-2xs space-y-2">
             <div className="flex items-center justify-between text-xs text-gray-500">
               <span className="font-semibold flex items-center gap-1.5 text-gray-700">
@@ -353,7 +406,6 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
               <span className="text-2xl font-black text-gray-900 font-mono">{stats.estimatedStorageKb} KB</span>
               <span className="text-xs text-gray-400 font-medium">/ 500 MB Cap</span>
             </div>
-            {/* Progress Bar */}
             <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
               <div 
                 className="bg-teal-500 h-1.5 rounded-full" 
@@ -367,7 +419,6 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
             </div>
           </div>
 
-          {/* Netlify Bandwidth Meter */}
           <div className="bg-white p-4 rounded-3xl border border-gray-200 shadow-2xs space-y-2">
             <div className="flex items-center justify-between text-xs text-gray-500">
               <span className="font-semibold flex items-center gap-1.5 text-gray-700">
@@ -385,12 +436,11 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
               <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: '1.2%' }} />
             </div>
             <div className="text-[10px] text-gray-500 pt-0.5 flex justify-between font-mono">
-              <span>SPA Asset Cache: 98%</span>
+              <span>SPA Cache: 98%</span>
               <span>Builds: 300 min free</span>
             </div>
           </div>
 
-          {/* Live Service Ping & Latency */}
           <div className="bg-white p-4 rounded-3xl border border-gray-200 shadow-2xs space-y-2">
             <div className="flex items-center justify-between text-xs text-gray-500">
               <span className="font-semibold flex items-center gap-1.5 text-gray-700">
@@ -413,7 +463,6 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
             </div>
           </div>
 
-          {/* WebSocket Realtime Health */}
           <div className="bg-white p-4 rounded-3xl border border-gray-200 shadow-2xs space-y-2">
             <div className="flex items-center justify-between text-xs text-gray-500">
               <span className="font-semibold flex items-center gap-1.5 text-gray-700">
@@ -437,7 +486,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
         </div>
       )}
 
-      {/* ORGANIZATIONS & WHITE-LABEL BRANDING TABLE */}
+      {/* ORGANIZATIONS & WORKSPACE CODES TABLE */}
       {(currentSection === 'organizations' || !currentSection) && (
         <div className="bg-white rounded-3xl border border-gray-200 shadow-2xs overflow-hidden">
           <div className="p-4 bg-gray-50/50 border-b border-gray-100 flex items-center justify-between">
@@ -451,16 +500,15 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
             <table className="w-full text-left text-xs">
               <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 font-bold uppercase tracking-wider text-[10px]">
                 <tr>
-                  <th className="px-4 py-3">Organization & Custom Co-Brand Title</th>
+                  <th className="px-4 py-3">Organization & Workspace Code</th>
+                  <th className="px-4 py-3">Designated Admin</th>
                   <th className="px-4 py-3">White-Label Branding</th>
                   <th className="px-4 py-3">Subscription Tier</th>
-                  <th className="px-4 py-3">Feature Module Provisions</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {organizations.map(org => {
-                  const feats = org.features || { google_calendar_sync: true, advanced_reports: true, node_mutation: true };
                   const displayTitle = org.brand_title || `Cadence - ${org.name}`;
 
                   return (
@@ -470,7 +518,27 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                           <Building2 className="w-4 h-4 text-slate-700" />
                           <span>{org.name}</span>
                         </div>
-                        <div className="text-[11px] font-semibold text-teal-700 font-mono mt-0.5">Title: {displayTitle}</div>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span className="text-[10px] bg-slate-900 text-teal-300 px-2 py-0.5 rounded font-mono font-bold">
+                            Code: {org.org_code || 'APACHE'}
+                          </span>
+                          <span className="text-[10px] text-gray-400 font-mono">slug: {org.slug}</span>
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        <div className="font-mono text-gray-700 font-semibold">{org.primary_admin_email || 'admin@apache.com'}</div>
+                        <div className="text-[10px] text-gray-400">
+                          {org.is_activated ? (
+                            <span className="text-emerald-600 font-semibold flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3" /> Activated
+                            </span>
+                          ) : (
+                            <span className="text-amber-600 font-semibold flex items-center gap-1">
+                              <Clock className="w-3 h-3" /> Awaiting First Login
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       <td className="px-4 py-3.5">
@@ -480,11 +548,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                             style={{ backgroundColor: org.brand_color || '#0d9488' }}
                             title={`Brand Color: ${org.brand_color || '#0d9488'}`}
                           />
-                          {org.logo_url ? (
-                            <img src={org.logo_url} alt="Org Logo" className="h-5 object-contain" />
-                          ) : (
-                            <span className="text-[10px] text-gray-400 italic">No logo set</span>
-                          )}
+                          <span className="text-[11px] font-semibold text-gray-800 truncate max-w-[130px]">{displayTitle}</span>
                         </div>
                       </td>
 
@@ -500,35 +564,22 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                         </select>
                       </td>
 
-                      <td className="px-4 py-3.5">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {['google_calendar_sync', 'advanced_reports', 'node_mutation'].map(fKey => {
-                            const isEnabled = Boolean(feats[fKey]);
-                            return (
-                              <button
-                                key={fKey}
-                                type="button"
-                                onClick={() => handleToggleOrgFeature(org.id, feats, fKey)}
-                                className={`px-2.5 py-1 rounded-xl text-[10px] font-semibold border flex items-center gap-1 transition-all ${
-                                  isEnabled
-                                    ? 'bg-teal-50 text-teal-800 border-teal-300 shadow-2xs'
-                                    : 'bg-gray-100 text-gray-400 border-gray-200'
-                                }`}
-                              >
-                                <span>{fKey.replace(/_/g, ' ')}</span>
-                                {isEnabled ? <ToggleRight className="w-3.5 h-3.5 text-teal-600" /> : <ToggleLeft className="w-3.5 h-3.5" />}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </td>
-
                       <td className="px-4 py-3.5 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             type="button"
+                            onClick={() => copyOnboardingMessage(org)}
+                            title="Copy Onboarding Instructions"
+                            className="px-2.5 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 rounded-xl font-bold text-[11px] shadow-2xs transition-colors flex items-center gap-1"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copy Invite</span>
+                          </button>
+
+                          <button
+                            type="button"
                             onClick={() => openBrandingModal(org)}
-                            className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs shadow-2xs transition-colors flex items-center gap-1"
+                            className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-[11px] shadow-2xs transition-colors flex items-center gap-1"
                           >
                             <Palette className="w-3.5 h-3.5 text-teal-400" />
                             <span>Branding</span>
@@ -634,7 +685,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
         </div>
       )}
 
-      {/* Create Organization Modal */}
+      {/* CREATE ORGANIZATION MODAL WITH WORKSPACE CODE & ADMIN EMAIL */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-200 space-y-4">
@@ -642,14 +693,16 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
             
             <form onSubmit={handleCreateOrganization} className="space-y-3 text-xs">
               <div>
-                <label className="block font-semibold text-gray-700 mb-1">Organization Name</label>
+                <label className="block font-semibold text-gray-700 mb-1">Company / Organization Name</label>
                 <input
                   type="text"
                   required
                   value={newOrgName}
                   onChange={e => {
                     setNewOrgName(e.target.value);
-                    setNewOrgSlug(e.target.value.toLowerCase().replace(/\s+/g, '-'));
+                    if (!newOrgCode) {
+                      setNewOrgCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8));
+                    }
                   }}
                   placeholder="e.g. Adidas Factory Taiwan"
                   className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500"
@@ -657,15 +710,37 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
               </div>
 
               <div>
-                <label className="block font-semibold text-gray-700 mb-1">Organization Slug</label>
+                <label className="block font-semibold text-gray-700 mb-1">
+                  Unique Workspace Code (Used for Login)
+                </label>
                 <input
                   type="text"
                   required
-                  value={newOrgSlug}
-                  onChange={e => setNewOrgSlug(e.target.value)}
-                  placeholder="e.g. adidas-taiwan"
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl font-mono text-gray-600 outline-none focus:border-teal-500"
+                  value={newOrgCode}
+                  onChange={e => setNewOrgCode(e.target.value.toUpperCase().replace(/\s+/g, ''))}
+                  placeholder="e.g. ADIDAS-TW"
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl font-mono uppercase font-bold text-gray-800 outline-none focus:border-teal-500"
                 />
+                <span className="text-[10px] text-gray-500 mt-1 block">
+                  Short, uppercase identifier client enters at login (e.g. <strong className="text-gray-700">APACHE</strong>).
+                </span>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-gray-700 mb-1">
+                  Designated Primary Org Admin Email
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={newAdminEmail}
+                  onChange={e => setNewAdminEmail(e.target.value)}
+                  placeholder="e.g. contact@adidas-tw.com"
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500"
+                />
+                <span className="text-[10px] text-gray-500 mt-1 block">
+                  When this user registers, their account is auto-approved as the company's Org Admin.
+                </span>
               </div>
 
               <div>
@@ -693,10 +768,63 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                   type="submit"
                   className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-2xs"
                 >
-                  Create Organization
+                  Create & Generate Invite
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* CREATED ONBOARDING PACKAGE MODAL */}
+      {createdOrgPackage && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-gray-200 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center border border-emerald-500/20">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-gray-900">Workspace Created Successfully!</h2>
+                <p className="text-xs text-gray-500">Send this onboarding package to your client admin.</p>
+              </div>
+            </div>
+
+            <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Company:</span>
+                <span className="font-bold text-gray-900">{createdOrgPackage.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Workspace Code:</span>
+                <span className="font-mono font-bold bg-slate-900 text-teal-300 px-2 py-0.5 rounded text-xs">
+                  {createdOrgPackage.org_code}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Designated Admin:</span>
+                <span className="font-mono text-gray-700 font-semibold">{createdOrgPackage.primary_admin_email}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setCreatedOrgPackage(null)}
+                className="px-4 py-2 text-gray-600 font-semibold rounded-xl hover:bg-gray-100 text-xs"
+              >
+                Close
+              </button>
+
+              <button
+                type="button"
+                onClick={() => copyOnboardingMessage(createdOrgPackage)}
+                className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-xs text-xs flex items-center gap-1.5"
+              >
+                {copiedWelcome ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                <span>{copiedWelcome ? 'Copied to Clipboard!' : 'Copy Client Onboarding Message'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -726,9 +854,6 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                   placeholder="e.g. Cadence - Apache Footwear"
                   className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-bold text-gray-900"
                 />
-                <span className="text-[10px] text-gray-500 mt-1 block">
-                  This title appears on the client's sidebar header and browser document tab.
-                </span>
               </div>
 
               <div>

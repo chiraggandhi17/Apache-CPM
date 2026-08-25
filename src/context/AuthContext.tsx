@@ -10,6 +10,9 @@ export interface Organization {
   id: string;
   name: string;
   slug: string;
+  org_code: string | null;
+  primary_admin_email: string | null;
+  is_activated?: boolean;
   subscription_tier: 'starter' | 'pro' | 'enterprise';
   status: 'active' | 'suspended';
   logo_url: string | null;
@@ -81,7 +84,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .eq('id', userId)
         .maybeSingle();
 
-      // If no profile exists yet in public.profiles, auto-create fallback
+      // If no profile exists yet in public.profiles, check if super admin or first user
       if (!prof && userEmail) {
         const { count } = await supabase.from('profiles').select('id', { count: 'exact', head: true });
         const isFirstUser = (count === null || count === 0);
@@ -109,7 +112,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setProfile(prof || null);
 
       if (prof) {
-        // Fetch Organization & Team details if available
+        // Fetch Organization & Team details
         if (prof.org_id) {
           const { data: orgData } = await supabase
             .from('organizations')
