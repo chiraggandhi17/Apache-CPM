@@ -4,7 +4,8 @@ import { Organization } from '../../context/AuthContext';
 import { 
   Building2, Plus, ShieldCheck, ToggleLeft, ToggleRight, Sparkles, 
   Layers, Palette, Download, Trash2, Activity, Server, Database, 
-  HardDrive, AlertTriangle, CheckCircle2, RefreshCw, Clock, Globe, ShieldAlert, Cpu, Terminal, Copy, Check, ExternalLink, Send
+  HardDrive, AlertTriangle, CheckCircle2, RefreshCw, Clock, Globe, 
+  ShieldAlert, Cpu, Terminal, Copy, Check, ExternalLink, Edit3, Settings
 } from 'lucide-react';
 
 const BRAND_PALETTES = [
@@ -62,9 +63,12 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(true);
   const [schemaMissing, setSchemaMissing] = useState(false);
+  
+  // Modals
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [editingBrandOrg, setEditingBrandOrg] = useState<Organization | null>(null);
+  const [editingOrg, setEditingOrg] = useState<Organization | null>(null);
   const [createdOrgPackage, setCreatedOrgPackage] = useState<Organization | null>(null);
+  const [copiedOrgId, setCopiedOrgId] = useState<string | null>(null);
   const [copiedWelcome, setCopiedWelcome] = useState(false);
 
   // Table Statistics & Quota Telemetry
@@ -85,11 +89,15 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [newOrgTier, setNewOrgTier] = useState<'starter' | 'pro' | 'enterprise'>('pro');
 
-  // Branding Form
-  const [brandTitle, setBrandTitle] = useState('');
-  const [brandTagline, setBrandTagline] = useState('');
-  const [brandLogoUrl, setBrandLogoUrl] = useState('');
-  const [brandColor, setBrandColor] = useState('#0d9488');
+  // Edit Org Form
+  const [editName, setEditName] = useState('');
+  const [editOrgCode, setEditOrgCode] = useState('');
+  const [editAdminEmail, setEditAdminEmail] = useState('');
+  const [editTier, setEditTier] = useState<'starter' | 'pro' | 'enterprise'>('pro');
+  const [editBrandTitle, setEditBrandTitle] = useState('');
+  const [editBrandTagline, setEditBrandTagline] = useState('');
+  const [editBrandLogoUrl, setEditBrandLogoUrl] = useState('');
+  const [editBrandColor, setEditBrandColor] = useState('#0d9488');
 
   // Telemetry Logs
   const [systemLogs, setSystemLogs] = useState<SystemLogEntry[]>([
@@ -171,6 +179,34 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
     loadData();
   }, []);
 
+  // Bulletproof clipboard helper with fallback
+  const copyTextToClipboard = async (text: string): Promise<boolean> => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      // Fallback
+    }
+
+    try {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      return successful;
+    } catch {
+      return false;
+    }
+  };
+
   const handleCreateOrganization = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newOrgName.trim() || !newOrgCode.trim() || !newAdminEmail.trim()) return;
@@ -211,54 +247,46 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
     }
   };
 
-  const handleSaveBranding = async (e: React.FormEvent) => {
+  const openEditModal = (org: Organization) => {
+    setEditingOrg(org);
+    setEditName(org.name);
+    setEditOrgCode(org.org_code || 'APACHE');
+    setEditAdminEmail(org.primary_admin_email || 'admin@apache.com');
+    setEditTier(org.subscription_tier || 'pro');
+    setEditBrandTitle(org.brand_title || `Cadence - ${org.name}`);
+    setEditBrandTagline(org.brand_tagline || 'Enterprise Ex-Factory CPM Tracker');
+    setEditBrandLogoUrl(org.logo_url || '');
+    setEditBrandColor(org.brand_color || '#0d9488');
+  };
+
+  const handleSaveEditOrganization = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingBrandOrg) return;
+    if (!editingOrg) return;
 
     try {
       const { error } = await supabase
         .from('organizations')
         .update({
-          brand_title: brandTitle.trim() || `Cadence - ${editingBrandOrg.name}`,
-          brand_tagline: brandTagline.trim() || 'Enterprise Ex-Factory CPM Tracker',
-          logo_url: brandLogoUrl.trim() || null,
-          brand_color: brandColor,
+          name: editName.trim(),
+          org_code: editOrgCode.trim().toUpperCase(),
+          primary_admin_email: editAdminEmail.trim().toLowerCase(),
+          subscription_tier: editTier,
+          brand_title: editBrandTitle.trim() || `Cadence - ${editName.trim()}`,
+          brand_tagline: editBrandTagline.trim() || 'Enterprise Ex-Factory CPM Tracker',
+          logo_url: editBrandLogoUrl.trim() || null,
+          brand_color: editBrandColor,
         })
-        .eq('id', editingBrandOrg.id);
+        .eq('id', editingOrg.id);
 
       if (error) throw error;
 
-      setEditingBrandOrg(null);
+      setEditingOrg(null);
       await loadData();
     } catch (err: any) {
-      alert('Error saving branding: ' + err.message);
+      alert('Error saving organization changes: ' + err.message);
     }
   };
 
-  const handleToggleOrgFeature = async (orgId: string, currentFeatures: Record<string, boolean>, featureKey: string) => {
-    const updatedFeatures = {
-      ...currentFeatures,
-      [featureKey]: !currentFeatures[featureKey],
-    };
-
-    try {
-      await supabase.from('organizations').update({ features: updatedFeatures }).eq('id', orgId);
-      await loadData();
-    } catch (err) {
-      console.error('Error toggling org feature:', err);
-    }
-  };
-
-  const handleUpdateTier = async (orgId: string, newTier: 'starter' | 'pro' | 'enterprise') => {
-    try {
-      await supabase.from('organizations').update({ subscription_tier: newTier }).eq('id', orgId);
-      await loadData();
-    } catch (err) {
-      console.error('Error updating tier:', err);
-    }
-  };
-
-  // Full Database JSON Backup Generator
   const handleDownloadFullBackup = async () => {
     try {
       const [orgsRes, profsRes, teamsRes, nodesRes, remsRes] = await Promise.all([
@@ -315,49 +343,52 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
     }
   };
 
-  const openBrandingModal = (org: Organization) => {
-    setEditingBrandOrg(org);
-    setBrandTitle(org.brand_title || `Cadence - ${org.name}`);
-    setBrandTagline(org.brand_tagline || 'Enterprise Ex-Factory CPM Tracker');
-    setBrandLogoUrl(org.logo_url || '');
-    setBrandColor(org.brand_color || '#0d9488');
-  };
-
-  const copyOnboardingMessage = (org: Organization) => {
-    const msg = `Welcome to Cadence CPM!\n\nYour company workspace is ready:\n• Portal URL: ${window.location.origin}\n• Workspace Code: ${org.org_code || 'APACHE'}\n• Primary Admin Email: ${org.primary_admin_email || ''}\n\nGo to the portal, enter your Workspace Code (${org.org_code}), and click "Register / Onboarding" with your email to activate your Company Org Admin Center!`;
-    navigator.clipboard.writeText(msg);
-    setCopiedWelcome(true);
-    setTimeout(() => setCopiedWelcome(false), 3000);
+  const copyOnboardingMessage = async (org: Organization) => {
+    const portalUrl = window.location.origin;
+    const msg = `Welcome to Cadence CPM!\n\nYour company workspace is ready:\n• Portal URL: ${portalUrl}\n• Workspace Code: ${org.org_code || 'APACHE'}\n• Primary Admin Email: ${org.primary_admin_email || ''}\n\nGo to the portal, enter your Workspace Code (${org.org_code || 'APACHE'}), and click "Register / Onboarding" with your email to activate your Company Org Admin Center!`;
+    
+    const success = await copyTextToClipboard(msg);
+    if (success) {
+      setCopiedOrgId(org.id);
+      setCopiedWelcome(true);
+      setTimeout(() => {
+        setCopiedOrgId(null);
+        setCopiedWelcome(false);
+      }, 3000);
+    } else {
+      prompt('Copy your client onboarding invite below:', msg);
+    }
   };
 
   return (
     <div className="space-y-6">
       {/* Platform Owner Header */}
-      <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-teal-950 text-white p-6 rounded-3xl border border-slate-800 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
+      <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-teal-950 text-white p-6 rounded-3xl border border-slate-800 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+        <div className="max-w-2xl">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30 mb-2">
             <ShieldCheck className="w-3.5 h-3.5" /> SaaS Platform Super Admin
           </div>
           <h1 className="text-xl md:text-2xl font-black tracking-tight">Platform Management & Observability</h1>
-          <p className="text-xs md:text-sm text-slate-400 mt-1 max-w-xl">
-            Global control center for client organizations, unique workspace codes, white-label co-branding, and client onboarding activation.
+          <p className="text-xs md:text-sm text-slate-400 mt-1">
+            Global control center for client organizations, workspace codes, white-label co-branding, edit settings, and system-wide database backups.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleDownloadFullBackup}
-            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 rounded-2xl font-bold text-xs shadow-sm transition-all flex items-center gap-1.5 shrink-0"
-          >
-            <Download className="w-4 h-4 text-teal-400" /> Download Full DB Backup
-          </button>
+        {/* Action Buttons Stack */}
+        <div className="flex flex-col sm:flex-row md:flex-col gap-2.5 w-full md:w-56 shrink-0">
           <button
             type="button"
             onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 rounded-2xl font-bold text-xs shadow-lg shadow-teal-500/20 transition-all flex items-center gap-1.5 shrink-0"
+            className="w-full h-10 px-4 bg-teal-500 hover:bg-teal-400 text-slate-950 rounded-xl font-bold text-xs shadow-lg shadow-teal-500/20 transition-all flex items-center justify-center gap-2 shrink-0"
           >
             <Plus className="w-4 h-4" /> Add Client Organization
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadFullBackup}
+            className="w-full h-10 px-4 bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 rounded-xl font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-2 shrink-0"
+          >
+            <Download className="w-4 h-4 text-teal-400" /> Download DB Backup
           </button>
         </div>
       </div>
@@ -383,7 +414,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
             href="https://supabase.com/dashboard/project/epgkciibhgadtgpulfko/sql"
             target="_blank"
             rel="noopener noreferrer"
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-xs transition-colors shrink-0 flex items-center gap-1.5"
+            className="h-9 px-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-xs transition-colors shrink-0 flex items-center gap-1.5"
           >
             <ExternalLink className="w-4 h-4" /> Open Supabase SQL Editor
           </a>
@@ -486,7 +517,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
         </div>
       )}
 
-      {/* ORGANIZATIONS & WORKSPACE CODES TABLE */}
+      {/* ORGANIZATIONS TABLE WITH UNIFORM SYMBOL-ONLY ACTIONS */}
       {(currentSection === 'organizations' || !currentSection) && (
         <div className="bg-white rounded-3xl border border-gray-200 shadow-2xs overflow-hidden">
           <div className="p-4 bg-gray-50/50 border-b border-gray-100 flex items-center justify-between">
@@ -510,6 +541,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
               <tbody className="divide-y divide-gray-100">
                 {organizations.map(org => {
                   const displayTitle = org.brand_title || `Cadence - ${org.name}`;
+                  const isCopied = copiedOrgId === org.id;
 
                   return (
                     <tr key={org.id} className="hover:bg-gray-50/60 transition-colors">
@@ -528,7 +560,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
 
                       <td className="px-4 py-3.5">
                         <div className="font-mono text-gray-700 font-semibold">{org.primary_admin_email || 'admin@apache.com'}</div>
-                        <div className="text-[10px] text-gray-400">
+                        <div className="text-[10px] text-gray-400 mt-0.5">
                           {org.is_activated ? (
                             <span className="text-emerald-600 font-semibold flex items-center gap-1">
                               <CheckCircle2 className="w-3 h-3" /> Activated
@@ -553,46 +585,49 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                       </td>
 
                       <td className="px-4 py-3.5">
-                        <select
-                          value={org.subscription_tier}
-                          onChange={e => handleUpdateTier(org.id, e.target.value as any)}
-                          className="px-2.5 py-1.5 bg-white border border-gray-300 rounded-xl text-xs font-bold shadow-2xs outline-none focus:border-teal-500"
-                        >
-                          <option value="starter">Starter Plan</option>
-                          <option value="pro">Pro Tier</option>
-                          <option value="enterprise">Enterprise Tier</option>
-                        </select>
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-xl text-[11px] font-bold uppercase tracking-wider bg-slate-100 text-slate-800 border border-slate-200">
+                          {org.subscription_tier}
+                        </span>
                       </td>
 
+                      {/* UNIFORM SYMBOL-ONLY BUTTONS (Matching h-8 w-8) */}
                       <td className="px-4 py-3.5 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          
+                          {/* Copy Onboarding Message */}
                           <button
                             type="button"
                             onClick={() => copyOnboardingMessage(org)}
-                            title="Copy Onboarding Instructions"
-                            className="px-2.5 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 rounded-xl font-bold text-[11px] shadow-2xs transition-colors flex items-center gap-1"
+                            title={isCopied ? 'Copied to Clipboard!' : 'Copy Client Onboarding Invite'}
+                            className={`h-8 w-8 flex items-center justify-center rounded-xl transition-all border ${
+                              isCopied
+                                ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-xs'
+                                : 'bg-teal-50 hover:bg-teal-100 text-teal-700 border-teal-200 shadow-2xs'
+                            }`}
                           >
-                            <Copy className="w-3.5 h-3.5" />
-                            <span>Copy Invite</span>
+                            {isCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                           </button>
 
+                          {/* Edit Organization */}
                           <button
                             type="button"
-                            onClick={() => openBrandingModal(org)}
-                            className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-[11px] shadow-2xs transition-colors flex items-center gap-1"
+                            onClick={() => openEditModal(org)}
+                            title="Edit Organization Settings & Branding"
+                            className="h-8 w-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl transition-all border border-slate-300 shadow-2xs"
                           >
-                            <Palette className="w-3.5 h-3.5 text-teal-400" />
-                            <span>Branding</span>
+                            <Edit3 className="w-4 h-4 text-slate-700" />
                           </button>
 
+                          {/* Delete Organization */}
                           <button
                             type="button"
                             onClick={() => handleDeleteOrganization(org.id, org.name)}
                             title="Delete Organization and Purge Data"
-                            className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-colors border border-rose-200"
+                            className="h-8 w-8 flex items-center justify-center text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl transition-all border border-rose-200 shadow-2xs"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
+
                         </div>
                       </td>
                     </tr>
@@ -614,7 +649,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
             <button
               type="button"
               onClick={loadData}
-              className="text-xs text-gray-500 hover:text-gray-800 flex items-center gap-1 font-semibold"
+              className="h-8 px-3 text-xs text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-xl flex items-center gap-1 font-semibold"
             >
               <RefreshCw className="w-3.5 h-3.5" /> Refresh Telemetry
             </button>
@@ -678,14 +713,14 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
           <button
             type="button"
             onClick={handleDownloadFullBackup}
-            className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-2"
+            className="h-10 px-5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-2"
           >
             <Download className="w-4 h-4" /> Download Complete JSON Snapshot
           </button>
         </div>
       )}
 
-      {/* CREATE ORGANIZATION MODAL WITH WORKSPACE CODE & ADMIN EMAIL */}
+      {/* CREATE ORGANIZATION MODAL */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-200 space-y-4">
@@ -705,7 +740,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                     }
                   }}
                   placeholder="e.g. Adidas Factory Taiwan"
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500"
+                  className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500"
                 />
               </div>
 
@@ -719,11 +754,8 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                   value={newOrgCode}
                   onChange={e => setNewOrgCode(e.target.value.toUpperCase().replace(/\s+/g, ''))}
                   placeholder="e.g. ADIDAS-TW"
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl font-mono uppercase font-bold text-gray-800 outline-none focus:border-teal-500"
+                  className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl font-mono uppercase font-bold text-gray-800 outline-none focus:border-teal-500"
                 />
-                <span className="text-[10px] text-gray-500 mt-1 block">
-                  Short, uppercase identifier client enters at login (e.g. <strong className="text-gray-700">APACHE</strong>).
-                </span>
               </div>
 
               <div>
@@ -736,11 +768,8 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                   value={newAdminEmail}
                   onChange={e => setNewAdminEmail(e.target.value)}
                   placeholder="e.g. contact@adidas-tw.com"
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500"
+                  className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500"
                 />
-                <span className="text-[10px] text-gray-500 mt-1 block">
-                  When this user registers, their account is auto-approved as the company's Org Admin.
-                </span>
               </div>
 
               <div>
@@ -748,7 +777,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                 <select
                   value={newOrgTier}
                   onChange={e => setNewOrgTier(e.target.value as any)}
-                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                  className="w-full h-9 px-3 bg-white border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
                 >
                   <option value="starter">Starter Tier</option>
                   <option value="pro">Pro Tier</option>
@@ -760,15 +789,165 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-gray-600 font-semibold rounded-xl hover:bg-gray-100"
+                  className="h-9 px-4 text-gray-600 font-semibold rounded-xl hover:bg-gray-100"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-2xs"
+                  className="h-9 px-4 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-2xs"
                 >
                   Create & Generate Invite
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT ORGANIZATION MODAL */}
+      {editingOrg && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-gray-200 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                <Edit3 className="w-5 h-5 text-teal-600" />
+                <span>Edit Organization: {editingOrg.name}</span>
+              </h2>
+              <button onClick={() => setEditingOrg(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+
+            <form onSubmit={handleSaveEditOrganization} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-bold text-gray-800 mb-1">Company Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={e => setEditName(e.target.value)}
+                  className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold text-gray-900"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-gray-800 mb-1">Workspace Code</label>
+                  <input
+                    type="text"
+                    required
+                    value={editOrgCode}
+                    onChange={e => setEditOrgCode(e.target.value.toUpperCase().replace(/\s+/g, ''))}
+                    className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl font-mono uppercase font-bold text-gray-900 outline-none focus:border-teal-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-gray-800 mb-1">Subscription Tier</label>
+                  <select
+                    value={editTier}
+                    onChange={e => setEditTier(e.target.value as any)}
+                    className="w-full h-9 px-3 bg-white border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                  >
+                    <option value="starter">Starter Tier</option>
+                    <option value="pro">Pro Tier</option>
+                    <option value="enterprise">Enterprise Tier</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-gray-800 mb-1">Primary Org Admin Email</label>
+                <input
+                  type="email"
+                  required
+                  value={editAdminEmail}
+                  onChange={e => setEditAdminEmail(e.target.value)}
+                  className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl font-mono outline-none focus:border-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-gray-800 mb-1">Co-Brand Software Title</label>
+                <input
+                  type="text"
+                  required
+                  value={editBrandTitle}
+                  onChange={e => setEditBrandTitle(e.target.value)}
+                  placeholder="e.g. Cadence - Apache Footwear"
+                  className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-gray-800 mb-1">Company Subtitle / Tagline</label>
+                <input
+                  type="text"
+                  value={editBrandTagline}
+                  onChange={e => setEditBrandTagline(e.target.value)}
+                  className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-gray-800 mb-1">Company Logo Image URL</label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={editBrandLogoUrl}
+                    onChange={e => setEditBrandLogoUrl(e.target.value)}
+                    placeholder="https://example.com/logo.png"
+                    className="flex-1 h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl font-mono outline-none focus:border-teal-500"
+                  />
+                  {editBrandLogoUrl && (
+                    <div className="w-9 h-9 border border-gray-200 rounded-xl flex items-center justify-center p-1 bg-white shrink-0">
+                      <img src={editBrandLogoUrl} alt="Preview" className="max-h-full max-w-full object-contain" />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-gray-800 mb-1">Brand Accent Color</label>
+                <div className="grid grid-cols-4 gap-2 mb-2">
+                  {BRAND_PALETTES.map(p => (
+                    <button
+                      key={p.hex}
+                      type="button"
+                      onClick={() => setEditBrandColor(p.hex)}
+                      className={`h-8 px-2 rounded-xl border text-[10px] font-semibold flex items-center gap-1.5 transition-all ${
+                        editBrandColor === p.hex ? 'border-slate-900 ring-2 ring-slate-900/20 bg-gray-50' : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: p.hex }} />
+                      <span className="truncate">{p.name.split(' ')[0]}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-600 font-semibold">Custom HEX:</span>
+                  <input
+                    type="color"
+                    value={editBrandColor}
+                    onChange={e => setEditBrandColor(e.target.value)}
+                    className="w-7 h-7 rounded-lg cursor-pointer border border-gray-300 p-0"
+                  />
+                  <span className="font-mono text-gray-700 font-bold">{editBrandColor}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingOrg(null)}
+                  className="h-9 px-4 text-gray-600 font-semibold rounded-xl hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="h-9 px-4 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-2xs"
+                >
+                  Save Changes
                 </button>
               </div>
             </form>
@@ -786,7 +965,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
               </div>
               <div>
                 <h2 className="text-base font-bold text-gray-900">Workspace Created Successfully!</h2>
-                <p className="text-xs text-gray-500">Send this onboarding package to your client admin.</p>
+                <p className="text-xs text-gray-500">Send this onboarding invite package to your client admin.</p>
               </div>
             </div>
 
@@ -811,7 +990,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
               <button
                 type="button"
                 onClick={() => setCreatedOrgPackage(null)}
-                className="px-4 py-2 text-gray-600 font-semibold rounded-xl hover:bg-gray-100 text-xs"
+                className="h-9 px-4 text-gray-600 font-semibold rounded-xl hover:bg-gray-100 text-xs"
               >
                 Close
               </button>
@@ -819,118 +998,12 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
               <button
                 type="button"
                 onClick={() => copyOnboardingMessage(createdOrgPackage)}
-                className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-xs text-xs flex items-center gap-1.5"
+                className="h-9 px-4 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-xs text-xs flex items-center gap-1.5"
               >
                 {copiedWelcome ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                 <span>{copiedWelcome ? 'Copied to Clipboard!' : 'Copy Client Onboarding Message'}</span>
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Branding Modal */}
-      {editingBrandOrg && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-gray-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
-                <Palette className="w-5 h-5 text-teal-600" />
-                <span>White-Label Branding: {editingBrandOrg.name}</span>
-              </h2>
-              <button onClick={() => setEditingBrandOrg(null)} className="text-gray-400 hover:text-gray-600">
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveBranding} className="space-y-4 text-xs">
-              <div>
-                <label className="block font-bold text-gray-800 mb-1">Co-Brand Software Title</label>
-                <input
-                  type="text"
-                  required
-                  value={brandTitle}
-                  onChange={e => setBrandTitle(e.target.value)}
-                  placeholder="e.g. Cadence - Apache Footwear"
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-bold text-gray-900"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-gray-800 mb-1">Company Subtitle / Tagline</label>
-                <input
-                  type="text"
-                  value={brandTagline}
-                  onChange={e => setBrandTagline(e.target.value)}
-                  placeholder="e.g. adidas Ex-Factory Production Critical Path Tracker"
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-gray-800 mb-1">Company Logo Image URL</label>
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    value={brandLogoUrl}
-                    onChange={e => setBrandLogoUrl(e.target.value)}
-                    placeholder="https://example.com/logo.png"
-                    className="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl font-mono outline-none focus:border-teal-500"
-                  />
-                  {brandLogoUrl && (
-                    <div className="w-10 h-10 border border-gray-200 rounded-xl flex items-center justify-center p-1 bg-white shrink-0">
-                      <img src={brandLogoUrl} alt="Preview" className="max-h-full max-w-full object-contain" />
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-gray-800 mb-1.5">Primary Brand Accent Color Palette</label>
-                <div className="grid grid-cols-4 gap-2">
-                  {BRAND_PALETTES.map(p => (
-                    <button
-                      key={p.hex}
-                      type="button"
-                      onClick={() => setBrandColor(p.hex)}
-                      className={`p-2 rounded-xl border text-[10px] font-semibold flex items-center gap-1.5 transition-all ${
-                        brandColor === p.hex ? 'border-slate-900 ring-2 ring-slate-900/20 bg-gray-50' : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <span className="w-3.5 h-3.5 rounded-full shrink-0" style={{ backgroundColor: p.hex }} />
-                      <span className="truncate">{p.name.split(' ')[0]}</span>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="flex items-center gap-2 pt-2">
-                  <span className="text-gray-600 font-semibold">Custom HEX:</span>
-                  <input
-                    type="color"
-                    value={brandColor}
-                    onChange={e => setBrandColor(e.target.value)}
-                    className="w-8 h-8 rounded-lg cursor-pointer border border-gray-300 p-0"
-                  />
-                  <span className="font-mono text-gray-700 font-bold">{brandColor}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setEditingBrandOrg(null)}
-                  className="px-4 py-2 text-gray-600 font-semibold rounded-xl hover:bg-gray-100"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-2xs"
-                >
-                  Save Branding Configurations
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}

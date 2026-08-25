@@ -19,12 +19,11 @@ interface PublicOrgBranding {
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
-  // Read initial workspace code from URL ?org=xyz or localStorage
   const [workspaceCode, setWorkspaceCode] = useState(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const orgParam = urlParams.get('org') || urlParams.get('workspace');
     if (orgParam) return orgParam.toUpperCase();
-    return localStorage.getItem('cadence_last_workspace_code') || 'APACHE';
+    return localStorage.getItem('cadence_last_workspace_code') || '';
   });
 
   const [email, setEmail] = useState('');
@@ -38,18 +37,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
   // Live Real-Time Brand Preview State
   const [orgBranding, setOrgBranding] = useState<PublicOrgBranding | null>(null);
-  const [isLookingUpOrg, setIsLookingUpOrg] = useState(false);
 
-  // Debounced Organization Brand Lookup
+  // Debounced Organization Brand Lookup (No administrative hints revealed)
   useEffect(() => {
     const trimmed = workspaceCode.trim().toUpperCase();
-    if (!trimmed || trimmed === 'CADENCE' || trimmed === 'ADMIN' || trimmed === 'SUPER') {
+    if (!trimmed) {
       setOrgBranding(null);
       return;
     }
 
     const timer = setTimeout(async () => {
-      setIsLookingUpOrg(true);
       try {
         const { data, error } = await supabase
           .from('organizations')
@@ -71,27 +68,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             primary_admin_email: data.primary_admin_email,
           });
         } else {
-          // Fallback if Apache default
-          if (trimmed === 'APACHE') {
-            setOrgBranding({
-              org_id: '00000000-0000-0000-0000-000000000001',
-              org_name: 'Apache Footwear Inc',
-              org_code: 'APACHE',
-              brand_title: 'Cadence - Apache Footwear',
-              brand_tagline: 'adidas Ex-Factory Production Critical Path Tracker',
-              logo_url: null,
-              brand_color: '#0d9488',
-              is_activated: true,
-              primary_admin_email: 'admin@apache.com',
-            });
-          } else {
-            setOrgBranding(null);
-          }
+          setOrgBranding(null);
         }
       } catch (err) {
-        console.error('Org lookup error:', err);
-      } finally {
-        setIsLookingUpOrg(false);
+        setOrgBranding(null);
       }
     }, 250);
 
@@ -111,13 +91,21 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       }
 
       if (isSignUp) {
+        if (!codeUpper) {
+          throw new Error('Please enter a valid Organization Workspace Code provided by your company.');
+        }
+
+        if (!orgBranding) {
+          throw new Error(`Invalid Workspace Code "${codeUpper}". Please verify with your organization administrator.`);
+        }
+
         const { data: authData, error: authError } = await supabase.auth.signUp({
           email,
           password,
           options: {
             data: { 
               full_name: fullName.trim() || email.split('@')[0],
-              workspace_code: codeUpper || 'APACHE',
+              workspace_code: codeUpper,
             },
           },
         });
@@ -131,7 +119,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
           setIsPrimaryAdminSuccess(Boolean(isPrimary));
 
-          // Auto-assign profile
           await supabase.from('profiles').upsert({
             id: userId,
             org_id: orgBranding.org_id,
@@ -149,6 +136,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
         setSignUpSuccess(true);
       } else {
+        // Standard Secure Sign In
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         if (onLoginSuccess) onLoginSuccess();
@@ -161,14 +149,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   };
 
   const activeBrandColor = orgBranding?.brand_color || '#0d9488';
-  const activeTitle = orgBranding?.brand_title || 'Cadence Footwear CPM';
-  const activeTagline = orgBranding?.brand_tagline || 'Sign in to access critical path timelines';
+  const activeTitle = orgBranding?.brand_title || 'Cadence';
+  const activeTagline = orgBranding?.brand_tagline || 'Enterprise Critical Path Management System';
 
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-md w-full shadow-2xl space-y-6 transition-all">
         
-        {/* Dynamic Brand Header */}
+        {/* Clean, Zero-Leakage Brand Header */}
         <div className="text-center space-y-2">
           {orgBranding?.logo_url ? (
             <div className="h-12 flex items-center justify-center mx-auto mb-2">
@@ -187,7 +175,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             {activeTitle}
           </h1>
           <p className="text-xs text-slate-400">
-            {isSignUp ? 'Register account or activate organization' : activeTagline}
+            {isSignUp ? 'Register company account' : activeTagline}
           </p>
         </div>
 
@@ -220,7 +208,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             }`}
             style={isSignUp ? { backgroundColor: activeBrandColor } : {}}
           >
-            <UserPlus className="w-3.5 h-3.5" /> Register / Onboarding
+            <UserPlus className="w-3.5 h-3.5" /> Register
           </button>
         </div>
 
@@ -239,19 +227,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             <p className="text-slate-300 text-[11px]">
               {isPrimaryAdminSuccess 
                 ? 'Your Primary Organization Admin account has been activated! Sign in below to access your Company Org Admin Center.' 
-                : 'Your employee registration has been submitted. Your Company Org Admin has received an approval notification.'}
+                : 'Your registration has been submitted. Your Company Org Admin will review and approve your account access.'}
             </p>
           </div>
         )}
 
-        {/* Email Auth Form with Workspace Code */}
+        {/* Secure Form */}
         <form onSubmit={handleEmailAuth} className="space-y-4">
           
           {/* Workspace ID / Organization Code Input */}
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="block text-xs font-semibold text-slate-300">
-                Organization Workspace Code
+                Workspace Code {isSignUp && <span className="text-rose-400">*</span>}
               </label>
               {orgBranding && (
                 <span className="text-[10px] text-teal-400 font-mono font-bold flex items-center gap-1">
@@ -259,19 +247,17 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 </span>
               )}
             </div>
+            
             <div className="relative">
               <input
                 type="text"
                 value={workspaceCode}
                 onChange={e => setWorkspaceCode(e.target.value.toUpperCase())}
-                placeholder="e.g. APACHE (Leave blank for Platform Admin)"
-                className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-850 border border-slate-700 rounded-xl text-white font-mono uppercase font-bold outline-none focus:border-teal-500"
+                placeholder="Enter company workspace code"
+                className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-850 border border-slate-700 rounded-xl text-white font-mono uppercase font-bold outline-none focus:border-teal-500 placeholder:text-slate-500 placeholder:normal-case placeholder:font-normal"
               />
               <Building2 className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
             </div>
-            <span className="text-[10px] text-slate-500 mt-1 block">
-              Provided by your platform administrator (e.g. <strong className="text-slate-400">APACHE</strong>).
-            </span>
           </div>
 
           {isSignUp && (
@@ -296,7 +282,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 required
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                placeholder="merchandiser@apache.com"
+                placeholder="name@company.com"
                 className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-850 border border-slate-700 rounded-xl text-white outline-none focus:border-teal-500"
               />
               <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
@@ -324,7 +310,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             className="w-full py-2.5 text-slate-950 font-bold text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-1.5"
             style={{ backgroundColor: activeBrandColor }}
           >
-            <span>{loading ? 'Processing...' : isSignUp ? 'Submit Registration' : 'Sign In to Workspace'}</span>
+            <span>{loading ? 'Authenticating...' : isSignUp ? 'Submit Registration' : 'Sign In'}</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>

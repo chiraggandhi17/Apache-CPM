@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { useAuth, UserProfile, UserRole, UserStatus, FeatureKey, Team } from '../../context/AuthContext';
+import { useAuth, UserProfile, UserRole, UserStatus, FeatureKey, Team, Organization } from '../../context/AuthContext';
 import { 
   ShieldCheck, Layers, Plus, Check, X, Search, Clock, CheckCircle2, 
   ShieldAlert, Users, FolderTree, ToggleLeft, ToggleRight, Bell, Download, 
-  Trash2, FileSpreadsheet, HardDrive
+  Trash2, FileSpreadsheet, HardDrive, Edit3, Palette, Settings
 } from 'lucide-react';
 
 interface FeatureDef {
@@ -40,10 +40,15 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
   const [newTeamName, setNewTeamName] = useState('');
   const [newParentTeamId, setNewParentTeamId] = useState<string>('');
 
+  // Edit Company Settings Modal
+  const [showEditSettingsModal, setShowEditSettingsModal] = useState(false);
+  const [editBrandTitle, setEditBrandTitle] = useState('');
+  const [editBrandTagline, setEditBrandTagline] = useState('');
+  const [editLogoUrl, setEditLogoUrl] = useState('');
+
   const loadData = async () => {
     setLoading(true);
     try {
-      // Fetch teams for organization
       const { data: teamsData } = await supabase
         .from('teams')
         .select('*')
@@ -51,13 +56,11 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
 
       setTeams(teamsData || []);
 
-      // Fetch profiles
       const { data: profs } = await supabase
         .from('profiles')
         .select('*')
         .order('created_at', { ascending: false });
 
-      // Fetch feature entitlements
       const { data: entitlements } = await supabase
         .from('user_feature_entitlements')
         .select('*');
@@ -90,6 +93,37 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
   useEffect(() => {
     loadData();
   }, []);
+
+  const openSettingsModal = () => {
+    setEditBrandTitle(organization?.brand_title || `Cadence - ${organization?.name || 'Company'}`);
+    setEditBrandTagline(organization?.brand_tagline || 'Enterprise Ex-Factory CPM Tracker');
+    setEditLogoUrl(organization?.logo_url || '');
+    setShowEditSettingsModal(true);
+  };
+
+  const handleSaveCompanySettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!organization?.id) return;
+
+    try {
+      const { error } = await supabase
+        .from('organizations')
+        .update({
+          brand_title: editBrandTitle.trim(),
+          brand_tagline: editBrandTagline.trim(),
+          logo_url: editLogoUrl.trim() || null,
+        })
+        .eq('id', organization.id);
+
+      if (error) throw error;
+
+      setShowEditSettingsModal(false);
+      await refreshProfile();
+      await loadData();
+    } catch (err: any) {
+      alert('Error saving company settings: ' + err.message);
+    }
+  };
 
   const handleCreateTeam = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -206,42 +240,51 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
 
   return (
     <div className="space-y-6">
-      {/* Organization Header */}
-      <div className="bg-slate-900 text-white p-6 rounded-3xl border border-slate-800 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
+      {/* Organization Header with Vertically Aligned Stack of Action Buttons */}
+      <div className="bg-slate-900 text-white p-6 rounded-3xl border border-slate-800 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+        <div className="max-w-2xl">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30 mb-2">
             <ShieldCheck className="w-3.5 h-3.5" /> Company Organization Admin
           </div>
           <h1 className="text-xl md:text-2xl font-black tracking-tight">Organization Control & Access Center</h1>
-          <p className="text-xs md:text-sm text-slate-400 mt-1 max-w-xl">
+          <p className="text-xs md:text-sm text-slate-400 mt-1">
             Manage company department hierarchy, approve registered employees, configure role levels, and export company data backups.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleDownloadOrgBackup}
-            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 rounded-2xl font-bold text-xs shadow-sm transition-all flex items-center gap-1.5 shrink-0"
-          >
-            <Download className="w-4 h-4 text-teal-400" /> Export Company Backup
-          </button>
-
+        {/* Clean Stacked Action Buttons */}
+        <div className="flex flex-col sm:flex-row md:flex-col gap-2.5 w-full md:w-56 shrink-0">
           <button
             type="button"
             onClick={() => setShowAddTeamModal(true)}
-            className="px-3.5 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 rounded-2xl font-bold text-xs shadow-lg shadow-teal-500/20 transition-all flex items-center gap-1.5 shrink-0"
+            className="w-full h-10 px-4 bg-teal-500 hover:bg-teal-400 text-slate-950 rounded-xl font-bold text-xs shadow-lg shadow-teal-500/20 transition-all flex items-center justify-center gap-2 shrink-0"
           >
-            <Plus className="w-4 h-4" /> Add Team / Department
+            <Plus className="w-4 h-4" /> Add Team / Dept
+          </button>
+          
+          <button
+            type="button"
+            onClick={openSettingsModal}
+            className="w-full h-10 px-4 bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 rounded-xl font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-2 shrink-0"
+          >
+            <Edit3 className="w-4 h-4 text-teal-400" /> Edit Company Info
+          </button>
+          
+          <button
+            type="button"
+            onClick={handleDownloadOrgBackup}
+            className="w-full h-10 px-4 bg-slate-850 hover:bg-slate-800 text-slate-300 border border-slate-750 rounded-xl font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-2 shrink-0"
+          >
+            <Download className="w-4 h-4 text-teal-400" /> Export Backup
           </button>
         </div>
       </div>
 
-      {/* PROMINENT PENDING APPROVAL NOTIFICATION BANNER */}
+      {/* PENDING APPROVAL NOTIFICATION BANNER */}
       {pendingCount > 0 && (
-        <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl text-amber-200 flex items-center justify-between gap-4 shadow-sm animate-in fade-in duration-150">
+        <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-3xl text-amber-200 flex items-center justify-between gap-4 shadow-sm animate-in fade-in">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30 shrink-0">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30 shrink-0">
               <Bell className="w-5 h-5 animate-bounce" />
             </div>
             <div>
@@ -257,7 +300,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
           <button
             type="button"
             onClick={() => setStatusFilter('pending')}
-            className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-xs transition-colors shrink-0"
+            className="h-9 px-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-xs transition-colors shrink-0"
           >
             Review Pending ({pendingCount})
           </button>
@@ -272,7 +315,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
           </h3>
 
           {teams.length === 0 ? (
-            <p className="text-xs text-gray-400 italic">No custom teams created yet. Click "Add Team / Department" above.</p>
+            <p className="text-xs text-gray-400 italic">No custom teams created yet. Click "Add Team / Dept" above.</p>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
               {teams.map(t => {
@@ -280,7 +323,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                 const membersCount = profiles.filter(p => p.team_id === t.id).length;
 
                 return (
-                  <div key={t.id} className="p-3 bg-gray-50 border border-gray-200 rounded-2xl space-y-1">
+                  <div key={t.id} className="p-3.5 bg-gray-50 border border-gray-200 rounded-2xl space-y-1">
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-gray-900 text-xs">{t.name}</span>
                       <span className="text-[10px] bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full font-mono font-bold">
@@ -329,18 +372,16 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
 
                   return (
                     <tr key={prof.id} className="hover:bg-gray-50/60 transition-colors">
-                      {/* User Info */}
                       <td className="px-4 py-3.5">
                         <div className="font-bold text-gray-900">{prof.full_name || 'Registered Employee'}</div>
                         <div className="text-[11px] text-gray-500 font-mono">{prof.email}</div>
                       </td>
 
-                      {/* Team Selector */}
                       <td className="px-4 py-3.5">
                         <select
                           value={prof.team_id || ''}
                           onChange={e => handleUpdateStatus(prof.id, prof.status, prof.role, e.target.value || undefined)}
-                          className="px-2.5 py-1.5 bg-white border border-gray-300 rounded-xl text-xs font-semibold shadow-2xs outline-none focus:border-teal-500 max-w-[160px]"
+                          className="h-8 px-2.5 bg-white border border-gray-300 rounded-xl text-xs font-semibold shadow-2xs outline-none focus:border-teal-500 max-w-[160px]"
                         >
                           <option value="">No Team Assigned</option>
                           {teams.map(t => (
@@ -351,12 +392,11 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                         </select>
                       </td>
 
-                      {/* Role Level Selector */}
                       <td className="px-4 py-3.5">
                         <select
                           value={prof.role}
                           onChange={e => handleUpdateStatus(prof.id, prof.status, e.target.value as UserRole, prof.team_id || undefined)}
-                          className="px-2.5 py-1.5 bg-white border border-gray-300 rounded-xl text-xs font-semibold shadow-2xs outline-none focus:border-teal-500"
+                          className="h-8 px-2.5 bg-white border border-gray-300 rounded-xl text-xs font-semibold shadow-2xs outline-none focus:border-teal-500"
                         >
                           <option value="org_admin">Org Admin (Full Access)</option>
                           <option value="senior_manager">Senior Manager (Inherited Access)</option>
@@ -365,7 +405,6 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                         </select>
                       </td>
 
-                      {/* Status Badge */}
                       <td className="px-4 py-3.5">
                         {prof.status === 'approved' ? (
                           <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full font-bold border border-emerald-200">
@@ -382,7 +421,6 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                         )}
                       </td>
 
-                      {/* Modular Feature Toggles */}
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-1 flex-wrap">
                           {FEATURE_LIST.map(f => {
@@ -403,14 +441,13 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                         </div>
                       </td>
 
-                      {/* Actions */}
                       <td className="px-4 py-3.5 text-right">
-                        <div className="flex flex-col items-end gap-1.5">
+                        <div className="flex items-center justify-end gap-1.5">
                           {prof.status !== 'approved' && (
                             <button
                               type="button"
                               onClick={() => handleUpdateStatus(prof.id, 'approved', prof.role, prof.team_id || undefined)}
-                              className="w-24 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs transition-colors shadow-2xs flex items-center justify-center gap-1"
+                              className="h-8 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs transition-colors shadow-2xs flex items-center justify-center gap-1"
                             >
                               <Check className="w-3.5 h-3.5" /> Approve
                             </button>
@@ -419,7 +456,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                             <button
                               type="button"
                               onClick={() => handleUpdateStatus(prof.id, 'revoked', prof.role, prof.team_id || undefined)}
-                              className="w-24 px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl font-bold text-xs transition-colors border border-rose-200 flex items-center justify-center gap-1"
+                              className="h-8 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl font-bold text-xs transition-colors border border-rose-200 flex items-center justify-center gap-1"
                             >
                               <X className="w-3.5 h-3.5" /> Revoke
                             </button>
@@ -453,10 +490,84 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
           <button
             type="button"
             onClick={handleDownloadOrgBackup}
-            className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-2"
+            className="h-10 px-5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-2"
           >
             <Download className="w-4 h-4" /> Download Company JSON Backup
           </button>
+        </div>
+      )}
+
+      {/* EDIT COMPANY SETTINGS MODAL */}
+      {showEditSettingsModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                <Edit3 className="w-5 h-5 text-teal-600" />
+                <span>Edit Company Information & Logo</span>
+              </h2>
+              <button onClick={() => setShowEditSettingsModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+
+            <form onSubmit={handleSaveCompanySettings} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-bold text-gray-800 mb-1">Company Display Title</label>
+                <input
+                  type="text"
+                  required
+                  value={editBrandTitle}
+                  onChange={e => setEditBrandTitle(e.target.value)}
+                  placeholder="e.g. Cadence - Apache Footwear"
+                  className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-gray-800 mb-1">Company Tagline</label>
+                <input
+                  type="text"
+                  value={editBrandTagline}
+                  onChange={e => setEditBrandTagline(e.target.value)}
+                  placeholder="e.g. adidas Ex-Factory Production Critical Path Tracker"
+                  className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-gray-800 mb-1">Company Logo URL</label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={editLogoUrl}
+                    onChange={e => setEditLogoUrl(e.target.value)}
+                    placeholder="https://example.com/logo.png"
+                    className="flex-1 h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl font-mono outline-none focus:border-teal-500"
+                  />
+                  {editLogoUrl && (
+                    <div className="w-9 h-9 border border-gray-200 rounded-xl flex items-center justify-center p-1 bg-white shrink-0">
+                      <img src={editLogoUrl} alt="Logo" className="max-h-full max-w-full object-contain" />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEditSettingsModal(false)}
+                  className="h-9 px-4 text-gray-600 font-semibold rounded-xl hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="h-9 px-4 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-2xs"
+                >
+                  Save Settings
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
@@ -475,7 +586,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                   value={newTeamName}
                   onChange={e => setNewTeamName(e.target.value)}
                   placeholder="e.g. Stitching Line A"
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500"
+                  className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500"
                 />
               </div>
 
@@ -484,7 +595,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                 <select
                   value={newParentTeamId}
                   onChange={e => setNewParentTeamId(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                  className="w-full h-9 px-3 bg-white border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
                 >
                   <option value="">Top-Level Department (Level 1)</option>
                   {teams.map(t => (
@@ -499,13 +610,13 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                 <button
                   type="button"
                   onClick={() => setShowAddTeamModal(false)}
-                  className="px-4 py-2 text-gray-600 font-semibold rounded-xl hover:bg-gray-100"
+                  className="h-9 px-4 text-gray-600 font-semibold rounded-xl hover:bg-gray-100"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-2xs"
+                  className="h-9 px-4 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-2xs"
                 >
                   Create Team
                 </button>
