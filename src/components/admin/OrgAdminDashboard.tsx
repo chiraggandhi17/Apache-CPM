@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth, UserProfile, UserRole, UserStatus, FeatureKey, Team } from '../../context/AuthContext';
-import { ShieldCheck, Layers, Plus, Check, X, Search, Clock, CheckCircle2, ShieldAlert, Users, FolderTree, ToggleLeft, ToggleRight, Bell } from 'lucide-react';
+import { 
+  ShieldCheck, Layers, Plus, Check, X, Search, Clock, CheckCircle2, 
+  ShieldAlert, Users, FolderTree, ToggleLeft, ToggleRight, Bell, Download, 
+  Trash2, FileSpreadsheet, HardDrive
+} from 'lucide-react';
 
 interface FeatureDef {
   key: FeatureKey;
@@ -16,8 +20,12 @@ const FEATURE_LIST: FeatureDef[] = [
   { key: 'advanced_reports', name: 'Variance Reports', description: 'Bottleneck and critical path analytics' },
 ];
 
-export const OrgAdminDashboard: React.FC = () => {
-  const { profile, refreshProfile } = useAuth();
+interface OrgAdminDashboardProps {
+  currentSection?: 'teams' | 'users' | 'features' | 'backup';
+}
+
+export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSection = 'users' }) => {
+  const { profile, organization, refreshProfile } = useAuth();
   
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -145,6 +153,45 @@ export const OrgAdminDashboard: React.FC = () => {
     await loadData();
   };
 
+  // Export Organization Data Backup
+  const handleDownloadOrgBackup = async () => {
+    try {
+      const orgId = profile?.org_id || '00000000-0000-0000-0000-000000000001';
+      const [nodesRes, remsRes, teamsRes, profsRes] = await Promise.all([
+        supabase.from('nodes').select('*').eq('org_id', orgId),
+        supabase.from('reminders').select('*'),
+        supabase.from('teams').select('*').eq('org_id', orgId),
+        supabase.from('profiles').select('*').eq('org_id', orgId),
+      ]);
+
+      const orgBackupData = {
+        organization: organization?.name || 'Company Workspace',
+        exported_at: new Date().toISOString(),
+        nodes_count: nodesRes.data?.length || 0,
+        teams_count: teamsRes.data?.length || 0,
+        members_count: profsRes.data?.length || 0,
+        data: {
+          teams: teamsRes.data || [],
+          nodes: nodesRes.data || [],
+          reminders: remsRes.data || [],
+          members: profsRes.data || [],
+        },
+      };
+
+      const blob = new Blob([JSON.stringify(orgBackupData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(organization?.name || 'company').toLowerCase().replace(/\s+/g, '_')}_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert('Failed to export organization backup: ' + err.message);
+    }
+  };
+
   const filteredProfiles = profiles.filter(p => {
     if (statusFilter !== 'all' && p.status !== statusFilter) return false;
     if (searchQuery.trim()) {
@@ -163,19 +210,27 @@ export const OrgAdminDashboard: React.FC = () => {
       <div className="bg-slate-900 text-white p-6 rounded-3xl border border-slate-800 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30 mb-2">
-            <ShieldCheck className="w-3.5 h-3.5" /> Organization Admin Center
+            <ShieldCheck className="w-3.5 h-3.5" /> Company Organization Admin
           </div>
-          <h1 className="text-xl md:text-2xl font-black tracking-tight">Company Management Hierarchy & Access Control</h1>
+          <h1 className="text-xl md:text-2xl font-black tracking-tight">Organization Control & Access Center</h1>
           <p className="text-xs md:text-sm text-slate-400 mt-1 max-w-xl">
-            Build your company's custom department/team tree and assign employee accounts with team-level inherited task access.
+            Manage company department hierarchy, approve registered employees, configure role levels, and export company data backups.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleDownloadOrgBackup}
+            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 rounded-2xl font-bold text-xs shadow-sm transition-all flex items-center gap-1.5 shrink-0"
+          >
+            <Download className="w-4 h-4 text-teal-400" /> Export Company Backup
+          </button>
+
           <button
             type="button"
             onClick={() => setShowAddTeamModal(true)}
-            className="px-3.5 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 rounded-2xl font-bold text-xs shadow-lg shadow-teal-500/20 transition-all flex items-center gap-1.5"
+            className="px-3.5 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 rounded-2xl font-bold text-xs shadow-lg shadow-teal-500/20 transition-all flex items-center gap-1.5 shrink-0"
           >
             <Plus className="w-4 h-4" /> Add Team / Department
           </button>
@@ -210,171 +265,200 @@ export const OrgAdminDashboard: React.FC = () => {
       )}
 
       {/* DYNAMIC COMPANY ORG CHART / TEAMS DISPLAY */}
-      <div className="bg-white p-5 rounded-3xl border border-gray-200 shadow-2xs space-y-3">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
-          <FolderTree className="w-4 h-4 text-teal-600" /> Company Org Structure ({teams.length} Teams / Departments)
-        </h3>
+      {(currentSection === 'teams' || currentSection === 'users' || !currentSection) && (
+        <div className="bg-white p-5 rounded-3xl border border-gray-200 shadow-2xs space-y-3">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
+            <FolderTree className="w-4 h-4 text-teal-600" /> Company Org Structure ({teams.length} Teams / Departments)
+          </h3>
 
-        {teams.length === 0 ? (
-          <p className="text-xs text-gray-400 italic">No custom teams created yet. Click "Add Team / Department" above.</p>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {teams.map(t => {
-              const parent = teams.find(p => p.id === t.parent_team_id);
-              const membersCount = profiles.filter(p => p.team_id === t.id).length;
-
-              return (
-                <div key={t.id} className="p-3 bg-gray-50 border border-gray-200 rounded-2xl space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-gray-900 text-xs">{t.name}</span>
-                    <span className="text-[10px] bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full font-mono font-bold">
-                      Level {t.level_depth}
-                    </span>
-                  </div>
-                  {parent && (
-                    <div className="text-[10px] text-gray-500">Parent: {parent.name}</div>
-                  )}
-                  <div className="text-[11px] text-gray-600 font-semibold pt-1">
-                    👥 {membersCount} Assigned User{membersCount === 1 ? '' : 's'}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* User Directory Table */}
-      <div className="bg-white rounded-3xl border border-gray-200 shadow-2xs overflow-hidden">
-        <div className="p-4 bg-gray-50/50 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
-            <Layers className="w-4 h-4 text-teal-600" /> User Accounts & Inherited Team Assignments
-          </h2>
-          {loading && <span className="text-xs text-gray-400 animate-pulse">Syncing DB...</span>}
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 font-bold uppercase tracking-wider text-[10px]">
-              <tr>
-                <th className="px-4 py-3">User / Account</th>
-                <th className="px-4 py-3">Assigned Team / Level</th>
-                <th className="px-4 py-3">Role Level</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Feature Flags</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filteredProfiles.map(prof => {
-                const userFeats = userFeatures[prof.id] || { base_tier: true, node_mutation: true, google_calendar_sync: false, advanced_reports: false, admin_management: false };
+          {teams.length === 0 ? (
+            <p className="text-xs text-gray-400 italic">No custom teams created yet. Click "Add Team / Department" above.</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {teams.map(t => {
+                const parent = teams.find(p => p.id === t.parent_team_id);
+                const membersCount = profiles.filter(p => p.team_id === t.id).length;
 
                 return (
-                  <tr key={prof.id} className="hover:bg-gray-50/60 transition-colors">
-                    {/* User Info */}
-                    <td className="px-4 py-3.5">
-                      <div className="font-bold text-gray-900">{prof.full_name || 'Registered Employee'}</div>
-                      <div className="text-[11px] text-gray-500 font-mono">{prof.email}</div>
-                    </td>
-
-                    {/* Team Selector */}
-                    <td className="px-4 py-3.5">
-                      <select
-                        value={prof.team_id || ''}
-                        onChange={e => handleUpdateStatus(prof.id, prof.status, prof.role, e.target.value || undefined)}
-                        className="px-2.5 py-1.5 bg-white border border-gray-300 rounded-xl text-xs font-semibold shadow-2xs outline-none focus:border-teal-500 max-w-[160px]"
-                      >
-                        <option value="">No Team Assigned</option>
-                        {teams.map(t => (
-                          <option key={t.id} value={t.id}>
-                            {t.name} (L{t.level_depth})
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-
-                    {/* Role Level Selector */}
-                    <td className="px-4 py-3.5">
-                      <select
-                        value={prof.role}
-                        onChange={e => handleUpdateStatus(prof.id, prof.status, e.target.value as UserRole, prof.team_id || undefined)}
-                        className="px-2.5 py-1.5 bg-white border border-gray-300 rounded-xl text-xs font-semibold shadow-2xs outline-none focus:border-teal-500"
-                      >
-                        <option value="org_admin">Org Admin (Full Access)</option>
-                        <option value="senior_manager">Senior Manager (Inherited Access)</option>
-                        <option value="junior_manager">Junior Manager (Scoped Access)</option>
-                        <option value="viewer">Viewer (Read-Only)</option>
-                      </select>
-                    </td>
-
-                    {/* Status Badge */}
-                    <td className="px-4 py-3.5">
-                      {prof.status === 'approved' ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full font-bold border border-emerald-200">
-                          <CheckCircle2 className="w-3 h-3" /> Approved
-                        </span>
-                      ) : prof.status === 'pending' ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] bg-amber-50 text-amber-800 px-2.5 py-1 rounded-full font-bold border border-amber-200">
-                          <Clock className="w-3 h-3 animate-pulse" /> Pending Approval
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] bg-rose-50 text-rose-700 px-2.5 py-1 rounded-full font-bold border border-rose-200">
-                          <ShieldAlert className="w-3 h-3" /> Revoked
-                        </span>
-                      )}
-                    </td>
-
-                    {/* Modular Feature Toggles */}
-                    <td className="px-4 py-3.5">
-                      <div className="flex items-center gap-1 flex-wrap">
-                        {FEATURE_LIST.map(f => {
-                          const isEnabled = Boolean(userFeats[f.key]);
-                          return (
-                            <button
-                              key={f.key}
-                              type="button"
-                              onClick={() => handleToggleFeature(prof.id, f.key)}
-                              className={`px-2 py-0.5 rounded-lg text-[9px] font-semibold border flex items-center gap-1 ${
-                                isEnabled ? 'bg-teal-50 text-teal-800 border-teal-300' : 'bg-gray-100 text-gray-400 border-gray-200'
-                              }`}
-                            >
-                              <span>{f.name}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </td>
-
-                    {/* Actions */}
-                    <td className="px-4 py-3.5 text-right">
-                      <div className="flex flex-col items-end gap-1.5">
-                        {prof.status !== 'approved' && (
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateStatus(prof.id, 'approved', prof.role, prof.team_id || undefined)}
-                            className="w-24 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs transition-colors shadow-2xs flex items-center justify-center gap-1"
-                          >
-                            <Check className="w-3.5 h-3.5" /> Approve
-                          </button>
-                        )}
-                        {prof.status !== 'revoked' && (
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateStatus(prof.id, 'revoked', prof.role, prof.team_id || undefined)}
-                            className="w-24 px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl font-bold text-xs transition-colors border border-rose-200 flex items-center justify-center gap-1"
-                          >
-                            <X className="w-3.5 h-3.5" /> Revoke
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
+                  <div key={t.id} className="p-3 bg-gray-50 border border-gray-200 rounded-2xl space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-gray-900 text-xs">{t.name}</span>
+                      <span className="text-[10px] bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full font-mono font-bold">
+                        Level {t.level_depth}
+                      </span>
+                    </div>
+                    {parent && (
+                      <div className="text-[10px] text-gray-500">Parent: {parent.name}</div>
+                    )}
+                    <div className="text-[11px] text-gray-600 font-semibold pt-1">
+                      👥 {membersCount} Assigned Employee{membersCount === 1 ? '' : 's'}
+                    </div>
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
+            </div>
+          )}
         </div>
-      </div>
+      )}
+
+      {/* User Directory Table */}
+      {(currentSection === 'users' || !currentSection) && (
+        <div className="bg-white rounded-3xl border border-gray-200 shadow-2xs overflow-hidden">
+          <div className="p-4 bg-gray-50/50 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
+              <Layers className="w-4 h-4 text-teal-600" /> Employee Accounts & Inherited Team Assignments
+            </h2>
+            {loading && <span className="text-xs text-gray-400 animate-pulse">Syncing DB...</span>}
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 font-bold uppercase tracking-wider text-[10px]">
+                <tr>
+                  <th className="px-4 py-3">User / Account</th>
+                  <th className="px-4 py-3">Assigned Team / Level</th>
+                  <th className="px-4 py-3">Role Level</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Feature Flags</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredProfiles.map(prof => {
+                  const userFeats = userFeatures[prof.id] || { base_tier: true, node_mutation: true, google_calendar_sync: false, advanced_reports: false, admin_management: false };
+
+                  return (
+                    <tr key={prof.id} className="hover:bg-gray-50/60 transition-colors">
+                      {/* User Info */}
+                      <td className="px-4 py-3.5">
+                        <div className="font-bold text-gray-900">{prof.full_name || 'Registered Employee'}</div>
+                        <div className="text-[11px] text-gray-500 font-mono">{prof.email}</div>
+                      </td>
+
+                      {/* Team Selector */}
+                      <td className="px-4 py-3.5">
+                        <select
+                          value={prof.team_id || ''}
+                          onChange={e => handleUpdateStatus(prof.id, prof.status, prof.role, e.target.value || undefined)}
+                          className="px-2.5 py-1.5 bg-white border border-gray-300 rounded-xl text-xs font-semibold shadow-2xs outline-none focus:border-teal-500 max-w-[160px]"
+                        >
+                          <option value="">No Team Assigned</option>
+                          {teams.map(t => (
+                            <option key={t.id} value={t.id}>
+                              {t.name} (L{t.level_depth})
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+
+                      {/* Role Level Selector */}
+                      <td className="px-4 py-3.5">
+                        <select
+                          value={prof.role}
+                          onChange={e => handleUpdateStatus(prof.id, prof.status, e.target.value as UserRole, prof.team_id || undefined)}
+                          className="px-2.5 py-1.5 bg-white border border-gray-300 rounded-xl text-xs font-semibold shadow-2xs outline-none focus:border-teal-500"
+                        >
+                          <option value="org_admin">Org Admin (Full Access)</option>
+                          <option value="senior_manager">Senior Manager (Inherited Access)</option>
+                          <option value="junior_manager">Junior Manager (Scoped Access)</option>
+                          <option value="viewer">Viewer (Read-Only)</option>
+                        </select>
+                      </td>
+
+                      {/* Status Badge */}
+                      <td className="px-4 py-3.5">
+                        {prof.status === 'approved' ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full font-bold border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3" /> Approved
+                          </span>
+                        ) : prof.status === 'pending' ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] bg-amber-50 text-amber-800 px-2.5 py-1 rounded-full font-bold border border-amber-200">
+                            <Clock className="w-3 h-3 animate-pulse" /> Pending Approval
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] bg-rose-50 text-rose-700 px-2.5 py-1 rounded-full font-bold border border-rose-200">
+                            <ShieldAlert className="w-3 h-3" /> Revoked
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Modular Feature Toggles */}
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {FEATURE_LIST.map(f => {
+                            const isEnabled = Boolean(userFeats[f.key]);
+                            return (
+                              <button
+                                key={f.key}
+                                type="button"
+                                onClick={() => handleToggleFeature(prof.id, f.key)}
+                                className={`px-2 py-0.5 rounded-lg text-[9px] font-semibold border flex items-center gap-1 ${
+                                  isEnabled ? 'bg-teal-50 text-teal-800 border-teal-300' : 'bg-gray-100 text-gray-400 border-gray-200'
+                                }`}
+                              >
+                                <span>{f.name}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-4 py-3.5 text-right">
+                        <div className="flex flex-col items-end gap-1.5">
+                          {prof.status !== 'approved' && (
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateStatus(prof.id, 'approved', prof.role, prof.team_id || undefined)}
+                              className="w-24 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs transition-colors shadow-2xs flex items-center justify-center gap-1"
+                            >
+                              <Check className="w-3.5 h-3.5" /> Approve
+                            </button>
+                          )}
+                          {prof.status !== 'revoked' && (
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateStatus(prof.id, 'revoked', prof.role, prof.team_id || undefined)}
+                              className="w-24 px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl font-bold text-xs transition-colors border border-rose-200 flex items-center justify-center gap-1"
+                            >
+                              <X className="w-3.5 h-3.5" /> Revoke
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* COMPANY BACKUP PANEL */}
+      {currentSection === 'backup' && (
+        <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-2xs space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-teal-500/10 text-teal-600 flex items-center justify-center border border-teal-500/20">
+              <HardDrive className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-gray-900">Company Data Backup & Export Center</h2>
+              <p className="text-xs text-gray-500">
+                Download and archive your organization's milestone hierarchy, teams, and employee directories.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleDownloadOrgBackup}
+            className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-2"
+          >
+            <Download className="w-4 h-4" /> Download Company JSON Backup
+          </button>
+        </div>
+      )}
 
       {/* Add Team Modal */}
       {showAddTeamModal && (
