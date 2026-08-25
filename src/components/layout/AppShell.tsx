@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNodes } from '../../context/NodeContext';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
 import { TodayView } from '../today/TodayView';
 import { NodeTree } from '../nodes/NodeTree';
 import { CalendarView } from '../calendar/CalendarView';
@@ -21,6 +22,32 @@ export const AppShellContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NavTab>('today');
   const [showManageAlerts, setShowManageAlerts] = useState(false);
   const [showGoogleCalSync, setShowGoogleCalSync] = useState(false);
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
+
+  // Poll for pending user approvals to notify Admin
+  useEffect(() => {
+    if (!hasRole(['admin'])) return;
+
+    const checkPendingApprovals = async () => {
+      try {
+        const { count } = await supabase
+          .from('profiles')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'pending');
+        setPendingApprovalsCount(count || 0);
+      } catch {
+        setPendingApprovalsCount(0);
+      }
+    };
+
+    checkPendingApprovals();
+    const interval = setInterval(checkPendingApprovals, 30000);
+    return () => clearInterval(interval);
+  }, [hasRole]);
+
+  const handleSignOut = async () => {
+    await signOut();
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row text-gray-900 antialiased">
@@ -92,7 +119,7 @@ export const AppShellContent: React.FC = () => {
               <span className="text-[10px] text-slate-400 font-mono">Grid</span>
             </button>
 
-            {/* Admin Control Center Link (For Admin Roles) */}
+            {/* Admin Security Center (With Pending Notifications Badge) */}
             {hasRole(['admin']) && (
               <button
                 type="button"
@@ -107,9 +134,16 @@ export const AppShellContent: React.FC = () => {
                   <ShieldCheck className="w-4 h-4" />
                   <span>Admin Security Center</span>
                 </div>
-                <span className="text-[9px] bg-amber-400/20 text-amber-300 px-1.5 py-0.5 rounded-full font-mono font-bold">
-                  Admin
-                </span>
+
+                {pendingApprovalsCount > 0 ? (
+                  <span className="text-[9px] bg-amber-400 text-slate-950 px-2 py-0.5 rounded-full font-mono font-extrabold animate-bounce">
+                    {pendingApprovalsCount} New
+                  </span>
+                ) : (
+                  <span className="text-[9px] bg-amber-400/20 text-amber-300 px-1.5 py-0.5 rounded-full font-mono font-bold">
+                    Admin
+                  </span>
+                )}
               </button>
             )}
           </nav>
@@ -118,7 +152,7 @@ export const AppShellContent: React.FC = () => {
         {/* Global Manage Alerts & Google Cal Buttons */}
         <div className="pt-4 border-t border-slate-800/80 space-y-2">
           
-          {/* Premium Google Cal Sync Launcher */}
+          {/* Google Cal Sync Launcher */}
           <button
             type="button"
             onClick={() => setShowGoogleCalSync(true)}
@@ -154,6 +188,7 @@ export const AppShellContent: React.FC = () => {
             <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-slate-300 transition-colors" />
           </button>
 
+          {/* User Profile Footer & Working Sign Out Button */}
           {profile && (
             <div className="flex items-center justify-between px-2 pt-1 text-xs">
               <div className="truncate">
@@ -166,9 +201,9 @@ export const AppShellContent: React.FC = () => {
               </div>
               <button
                 type="button"
-                onClick={() => signOut()}
-                title="Sign Out"
-                className="p-1 text-slate-400 hover:text-rose-400 transition-colors"
+                onClick={handleSignOut}
+                title="Sign Out of Cadence"
+                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
               >
                 <LogOut className="w-4 h-4" />
               </button>

@@ -30,68 +30,77 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Initial fallback entitlements for demo mode when Supabase backend is disconnected
-const DEFAULT_DEMO_PROFILE: UserProfile = {
-  id: 'demo-user-1',
-  email: 'merchandiser@apache.com',
-  full_name: 'Apache Merchandiser',
-  avatar_url: null,
-  department: 'Production',
-  role: 'admin',
-  status: 'approved',
-  approved_at: new Date().toISOString(),
-};
-
-const DEFAULT_DEMO_ENTITLEMENTS: Record<FeatureKey, boolean> = {
-  base_tier: true,
-  node_mutation: true,
-  google_calendar_sync: true,
-  advanced_reports: true,
-  admin_management: true,
-};
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(DEFAULT_DEMO_PROFILE);
-  const [entitlements, setEntitlements] = useState<Record<FeatureKey, boolean>>(DEFAULT_DEMO_ENTITLEMENTS);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [entitlements, setEntitlements] = useState<Record<FeatureKey, boolean>>({
+    base_tier: true,
+    node_mutation: true,
+    google_calendar_sync: true,
+    advanced_reports: true,
+    admin_management: true,
+  });
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  const fetchProfileAndEntitlements = async (userId: string) => {
+  const fetchProfileAndEntitlements = async (userId: string, userEmail?: string, userMeta?: any) => {
     try {
-      const { data: prof, error: profError } = await supabase
+      let { data: prof } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
-      if (profError || !prof) {
-        setProfile(DEFAULT_DEMO_PROFILE);
-        setEntitlements(DEFAULT_DEMO_ENTITLEMENTS);
-        return;
+      // If no profile exists yet in public.profiles (e.g. before trigger execution), auto-create fallback
+      if (!prof && userEmail) {
+        const { count } = await supabase.from('profiles').select('id', { count: 'exact', head: true });
+        const isFirstUser = (count === null || count === 0);
+
+        const newProf = {
+          id: userId,
+          email: userEmail,
+          full_name: userMeta?.full_name || userEmail.split('@')[0],
+          avatar_url: userMeta?.avatar_url || null,
+          role: isFirstUser ? ('admin' as UserRole) : ('viewer' as UserRole),
+          status: isFirstUser ? ('approved' as UserStatus) : ('pending' as UserStatus),
+          approved_at: isFirstUser ? new Date().toISOString() : null,
+        };
+
+        const { data: createdProf } = await supabase
+          .from('profiles')
+          .insert(newProf)
+          .select()
+          .single();
+
+        prof = createdProf || newProf;
       }
 
-      setProfile(prof);
+      setProfile(prof || null);
 
-      // Compute modular entitlements via RPC
-      const featureKeys: FeatureKey[] = [
-        'base_tier',
-        'node_mutation',
-        'google_calendar_sync',
-        'advanced_reports',
-        'admin_management',
-      ];
+      if (prof) {
+        // Fetch granular entitlements via RPC
+        const featureKeys: FeatureKey[] = [
+          'base_tier',
+          'node_mutation',
+          'google_calendar_sync',
+          'advanced_reports',
+          'admin_management',
+        ];
 
-      const checks = await Promise.all(
-        featureKeys.map(async (key) => {
-          const { data } = await supabase.rpc('has_feature', { p_feature_key: key, p_user_id: userId });
-          return [key, data !== null && data !== undefined ? Boolean(data) : true] as [FeatureKey, boolean];
-        })
-      );
+        const checks = await Promise.all(
+          featureKeys.map(async (key) => {
+            try {
+              const { data } = await supabase.rpc('has_feature', { p_feature_key: key, p_user_id: userId });
+              return [key, data !== null && data !== undefined ? Boolean(data) : true] as [FeatureKey, boolean];
+            } catch {
+              return [key, true] as [FeatureKey, boolean];
+            }
+          })
+        );
 
-      setEntitlements(Object.fromEntries(checks) as Record<FeatureKey, boolean>);
-    } catch {
-      setProfile(DEFAULT_DEMO_PROFILE);
-      setEntitlements(DEFAULT_DEMO_ENTITLEMENTS);
+        setEntitlements(Object.fromEntries(checks) as Record<FeatureKey, boolean>);
+      }
+    } catch (err) {
+      console.error('Profile fetch error:', err);
     } finally {
       setIsLoading(false);
     }
@@ -99,19 +108,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfileAndEntitlements(session.user.id);
+      const u = session?.user ?? null;
+      setUser(u);
+      if (u) {
+        fetchProfileAndEntitlements(u.id, u.email, u.user_metadata);
+      } else {
+        setIsLoading(false);
       }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfileAndEntitlements(session.user.id);
+      const u = session?.user ?? null;
+      setUser(u);
+      if (u) {
+        fetchProfileAndEntitlements(u.id, u.email, u.user_metadata);
       } else {
-        setProfile(DEFAULT_DEMO_PROFILE);
-        setEntitlements(DEFAULT_DEMO_ENTITLEMENTS);
+        setProfile(null);
+        setIsLoading(false);
       }
     });
 
@@ -122,13 +135,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const hasRole = (roles: UserRole[]): boolean => Boolean(profile && roles.includes(profile.role));
 
   const signOut = async () => {
+    setIsLoading(true);
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
+    setIsLoading(false);
   };
 
   const refreshProfile = async () => {
-    if (user) await fetchProfileAndEntitlements(user.id);
+    if (user) await fetchProfileAndEntitlements(user.id, user.email, user.user_metadata);
   };
 
   return (

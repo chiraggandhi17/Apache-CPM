@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Lock, Mail, ArrowRight } from 'lucide-react';
+import { Lock, Mail, ArrowRight, CheckCircle2, Clock } from 'lucide-react';
 
 interface LoginPageProps {
   onLoginSuccess?: () => void;
@@ -12,21 +12,30 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [signUpSuccess, setSignUpSuccess] = useState<boolean>(false);
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setErrorMsg(null);
+    setSignUpSuccess(false);
 
     try {
       if (isSignUp) {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { full_name: email.split('@')[0] },
+          },
+        });
         if (error) throw error;
+        setSignUpSuccess(true);
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        if (onLoginSuccess) onLoginSuccess();
       }
-      if (onLoginSuccess) onLoginSuccess();
     } catch (err: any) {
       setErrorMsg(err.message || 'Authentication failed');
     } finally {
@@ -57,13 +66,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           </div>
           <h1 className="text-2xl font-extrabold text-white tracking-tight">Cadence Sign In</h1>
           <p className="text-xs text-slate-400">
-            {isSignUp ? 'Create a new account to request access' : 'Enter your credentials to access production timelines'}
+            {isSignUp ? 'Register a new account to request Admin approval' : 'Enter your credentials to access production timelines'}
           </p>
         </div>
 
         {errorMsg && (
           <div className="bg-rose-500/10 border border-rose-500/30 p-3 rounded-2xl text-xs text-rose-300 text-center font-medium">
             {errorMsg}
+          </div>
+        )}
+
+        {signUpSuccess && (
+          <div className="bg-emerald-500/10 border border-emerald-500/30 p-4 rounded-2xl text-xs text-emerald-300 text-center space-y-1">
+            <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto" />
+            <p className="font-bold text-white text-sm">Registration Successful!</p>
+            <p className="text-slate-300 text-[11px]">
+              Your account has been created. An administrator has received a notification to review and approve your account.
+            </p>
           </div>
         )}
 
@@ -104,7 +123,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             disabled={loading}
             className="w-full py-2.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-teal-500/20 transition-all flex items-center justify-center gap-1.5"
           >
-            <span>{loading ? 'Processing...' : isSignUp ? 'Register Account' : 'Sign In with Email'}</span>
+            <span>{loading ? 'Processing...' : isSignUp ? 'Register New Account' : 'Sign In with Email'}</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
@@ -133,7 +152,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         <div className="text-center pt-2">
           <button
             type="button"
-            onClick={() => setIsSignUp(!isSignUp)}
+            onClick={() => {
+              setIsSignUp(!isSignUp);
+              setSignUpSuccess(false);
+              setErrorMsg(null);
+            }}
             className="text-xs text-teal-400 hover:underline font-semibold"
           >
             {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Register"}
