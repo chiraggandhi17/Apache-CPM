@@ -19,26 +19,30 @@ interface PublicOrgBranding {
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
+  // Read URL query parameters (?org=XYZ&register=true&email=...)
+  const urlParams = new URLSearchParams(window.location.search);
+  const initialOrgParam = urlParams.get('org') || urlParams.get('workspace') || '';
+  const initialRegisterParam = urlParams.get('register') === 'true' || urlParams.get('signup') === 'true';
+  const initialEmailParam = urlParams.get('email') || '';
+
   const [workspaceCode, setWorkspaceCode] = useState(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const orgParam = urlParams.get('org') || urlParams.get('workspace');
-    if (orgParam) return orgParam.toUpperCase();
+    if (initialOrgParam) return initialOrgParam.toUpperCase();
     return localStorage.getItem('cadence_last_workspace_code') || '';
   });
 
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(() => initialEmailParam);
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(() => initialRegisterParam);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [signUpSuccess, setSignUpSuccess] = useState<boolean>(false);
   const [isPrimaryAdminSuccess, setIsPrimaryAdminSuccess] = useState<boolean>(false);
 
-  // Live Real-Time Brand Preview State
+  // Dynamic Live Real-Time Brand State
   const [orgBranding, setOrgBranding] = useState<PublicOrgBranding | null>(null);
 
-  // Debounced Organization Brand Lookup (No administrative hints revealed)
+  // 100% Dynamic Database Lookup for any Organization Code created by Super Admin
   useEffect(() => {
     const trimmed = workspaceCode.trim().toUpperCase();
     if (!trimmed) {
@@ -55,7 +59,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           .eq('status', 'active')
           .maybeSingle();
 
-        if (data) {
+        if (data && !error) {
           setOrgBranding({
             org_id: data.id,
             org_name: data.name,
@@ -67,13 +71,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             is_activated: Boolean(data.is_activated),
             primary_admin_email: data.primary_admin_email,
           });
+
+          // Pre-fill email if passed in query or matching primary admin
+          if (!email && data.primary_admin_email && initialRegisterParam) {
+            setEmail(data.primary_admin_email);
+          }
         } else {
           setOrgBranding(null);
         }
       } catch (err) {
         setOrgBranding(null);
       }
-    }, 250);
+    }, 200);
 
     return () => clearTimeout(timer);
   }, [workspaceCode]);
@@ -92,15 +101,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
       if (isSignUp) {
         if (!codeUpper) {
-          throw new Error('Please enter a valid Organization Workspace Code provided by your company.');
+          throw new Error('Please enter a valid Workspace Code provided by your organization.');
         }
 
         if (!orgBranding) {
-          throw new Error(`Invalid Workspace Code "${codeUpper}". Please verify with your organization administrator.`);
+          throw new Error(`Invalid Workspace Code "${codeUpper}". Organization not found or not active.`);
         }
 
         const { data: authData, error: authError } = await supabase.auth.signUp({
-          email,
+          email: email.trim().toLowerCase(),
           password,
           options: {
             data: { 
@@ -115,14 +124,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         const userId = authData.user?.id;
         if (userId && orgBranding) {
           const isPrimary = orgBranding.primary_admin_email && 
-            orgBranding.primary_admin_email.toLowerCase() === email.toLowerCase();
+            orgBranding.primary_admin_email.toLowerCase() === email.trim().toLowerCase();
 
           setIsPrimaryAdminSuccess(Boolean(isPrimary));
 
+          // Auto-assign profile to the specific organization
           await supabase.from('profiles').upsert({
             id: userId,
             org_id: orgBranding.org_id,
-            email,
+            email: email.trim().toLowerCase(),
             full_name: fullName.trim() || email.split('@')[0],
             role: isPrimary ? 'org_admin' : 'junior_manager',
             status: isPrimary ? 'approved' : 'pending',
@@ -136,8 +146,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
         setSignUpSuccess(true);
       } else {
-        // Standard Secure Sign In
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        // Standard Sign In
+        const { error } = await supabase.auth.signInWithPassword({
+          email: email.trim().toLowerCase(),
+          password,
+        });
         if (error) throw error;
         if (onLoginSuccess) onLoginSuccess();
       }
@@ -156,7 +169,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-md w-full shadow-2xl space-y-6 transition-all">
         
-        {/* Clean, Zero-Leakage Brand Header */}
+        {/* Dynamic Brand Header */}
         <div className="text-center space-y-2">
           {orgBranding?.logo_url ? (
             <div className="h-12 flex items-center justify-center mx-auto mb-2">
@@ -175,7 +188,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             {activeTitle}
           </h1>
           <p className="text-xs text-slate-400">
-            {isSignUp ? 'Register company account' : activeTagline}
+            {isSignUp ? 'Register company account & activate workspace' : activeTagline}
           </p>
         </div>
 
@@ -208,7 +221,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             }`}
             style={isSignUp ? { backgroundColor: activeBrandColor } : {}}
           >
-            <UserPlus className="w-3.5 h-3.5" /> Register
+            <UserPlus className="w-3.5 h-3.5" /> Register / Onboarding
           </button>
         </div>
 
@@ -227,12 +240,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             <p className="text-slate-300 text-[11px]">
               {isPrimaryAdminSuccess 
                 ? 'Your Primary Organization Admin account has been activated! Sign in below to access your Company Org Admin Center.' 
-                : 'Your registration has been submitted. Your Company Org Admin will review and approve your account access.'}
+                : 'Your registration has been submitted. Your Company Org Admin will review and approve your access.'}
             </p>
           </div>
         )}
 
-        {/* Secure Form */}
+        {/* Auth Form */}
         <form onSubmit={handleEmailAuth} className="space-y-4">
           
           {/* Workspace ID / Organization Code Input */}
@@ -253,7 +266,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 type="text"
                 value={workspaceCode}
                 onChange={e => setWorkspaceCode(e.target.value.toUpperCase())}
-                placeholder="Enter company workspace code"
+                placeholder="e.g. ADIDAS-TW"
                 className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-850 border border-slate-700 rounded-xl text-white font-mono uppercase font-bold outline-none focus:border-teal-500 placeholder:text-slate-500 placeholder:normal-case placeholder:font-normal"
               />
               <Building2 className="w-4 h-4 text-slate-500 absolute left-3 top-3" />

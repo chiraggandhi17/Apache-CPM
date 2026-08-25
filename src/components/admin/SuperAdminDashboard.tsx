@@ -115,7 +115,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
       type: 'info',
       service: 'Cascade RPC',
       message: 'Atomic PostgreSQL cascade RPC executed successfully in 14ms',
-      org_name: 'Apache Footwear',
+      org_name: 'Platform Core',
     },
   ]);
 
@@ -140,7 +140,6 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
         setOrganizations(orgs && orgs.length > 0 ? orgs : DEFAULT_DEMO_ORGS);
       }
 
-      // Fetch row counts for telemetry
       const [profilesRes, teamsRes, nodesRes, remindersRes] = await Promise.all([
         supabase.from('profiles').select('id', { count: 'exact', head: true }),
         supabase.from('teams').select('id', { count: 'exact', head: true }),
@@ -179,7 +178,6 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
     loadData();
   }, []);
 
-  // Bulletproof clipboard helper with fallback
   const copyTextToClipboard = async (text: string): Promise<boolean> => {
     try {
       if (navigator.clipboard && window.isSecureContext) {
@@ -343,9 +341,20 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
     }
   };
 
+  // Get production URL (default to live https://cadence-cpm.netlify.app)
+  const getBasePortalUrl = (): string => {
+    if (typeof window !== 'undefined') {
+      if (window.location.hostname.includes('netlify.app') || window.location.hostname.includes('cadence')) {
+        return window.location.origin;
+      }
+    }
+    return 'https://cadence-cpm.netlify.app';
+  };
+
   const copyOnboardingMessage = async (org: Organization) => {
-    const portalUrl = window.location.origin;
-    const msg = `Welcome to Cadence CPM!\n\nYour company workspace is ready:\n• Portal URL: ${portalUrl}\n• Workspace Code: ${org.org_code || 'APACHE'}\n• Primary Admin Email: ${org.primary_admin_email || ''}\n\nGo to the portal, enter your Workspace Code (${org.org_code || 'APACHE'}), and click "Register / Onboarding" with your email to activate your Company Org Admin Center!`;
+    const baseUrl = getBasePortalUrl();
+    const directActivationUrl = `${baseUrl}/?org=${org.org_code || 'APACHE'}&register=true&email=${encodeURIComponent(org.primary_admin_email || '')}`;
+    const msg = `Welcome to Cadence CPM!\n\nYour dedicated company workspace is ready:\n• Direct 1-Click Activation Link: ${directActivationUrl}\n• Workspace Code: ${org.org_code || 'APACHE'}\n• Primary Admin Email: ${org.primary_admin_email || ''}\n\nClick the link above to set your password and activate your Company Org Admin Center!`;
     
     const success = await copyTextToClipboard(msg);
     if (success) {
@@ -356,7 +365,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
         setCopiedWelcome(false);
       }, 3000);
     } else {
-      prompt('Copy your client onboarding invite below:', msg);
+      prompt('Copy your direct client onboarding invite below:', msg);
     }
   };
 
@@ -517,7 +526,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
         </div>
       )}
 
-      {/* ORGANIZATIONS TABLE WITH UNIFORM SYMBOL-ONLY ACTIONS */}
+      {/* ORGANIZATIONS TABLE */}
       {(currentSection === 'organizations' || !currentSection) && (
         <div className="bg-white rounded-3xl border border-gray-200 shadow-2xs overflow-hidden">
           <div className="p-4 bg-gray-50/50 border-b border-gray-100 flex items-center justify-between">
@@ -590,7 +599,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                         </span>
                       </td>
 
-                      {/* UNIFORM SYMBOL-ONLY BUTTONS (Matching h-8 w-8) */}
+                      {/* UNIFORM SYMBOL-ONLY BUTTONS */}
                       <td className="px-4 py-3.5 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           
@@ -598,7 +607,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                           <button
                             type="button"
                             onClick={() => copyOnboardingMessage(org)}
-                            title={isCopied ? 'Copied to Clipboard!' : 'Copy Client Onboarding Invite'}
+                            title={isCopied ? 'Copied to Clipboard!' : 'Copy Client Onboarding Direct Link'}
                             className={`h-8 w-8 flex items-center justify-center rounded-xl transition-all border ${
                               isCopied
                                 ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-xs'
@@ -1001,7 +1010,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                 className="h-9 px-4 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-xs text-xs flex items-center gap-1.5"
               >
                 {copiedWelcome ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                <span>{copiedWelcome ? 'Copied to Clipboard!' : 'Copy Client Onboarding Message'}</span>
+                <span>{copiedWelcome ? 'Copied to Clipboard!' : 'Copy Direct Activation Link'}</span>
               </button>
             </div>
           </div>
