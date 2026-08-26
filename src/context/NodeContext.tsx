@@ -6,6 +6,28 @@ import { resolveColor } from '../lib/color-resolver';
 import { addDays, addHours, parseISO, formatISO, isValid, isBefore, isToday as isDateToday, isAfter } from 'date-fns';
 import { playNotificationSound } from '../utils/sound';
 
+export interface NodeAuditLog {
+  id: string;
+  node_id: string;
+  org_id: string | null;
+  user_id: string | null;
+  user_email: string;
+  user_name: string | null;
+  action: 'created' | 'date_shifted' | 'status_changed' | 'details_updated' | 'deleted';
+  change_summary: string;
+  previous_values: Record<string, any> | null;
+  new_values: Record<string, any> | null;
+  created_at: string;
+}
+
+export interface NodeAccessInfo {
+  isEditable: boolean;
+  isAncestorProtected: boolean;
+  isCrossDepartment: boolean;
+  owningDepartment: string;
+  tooltipText: string;
+}
+
 interface NodeContextType {
   nodes: NodeItem[];
   reminders: ReminderItem[];
@@ -13,7 +35,10 @@ interface NodeContextType {
   setSelectedNode: (node: NodeItem | null) => void;
   isLoading: boolean;
   
-  // Tree building & queries
+  // Scoped Permissions & Hierarchy
+  canUserEditNode: (nodeId: string) => boolean;
+  getNodeAccessInfo: (nodeId: string) => NodeAccessInfo;
+  isNodeAncestorOfAssigned: (nodeId: string) => boolean;
   getTree: () => TreeNode[];
   getTodayUpcomingFeed: () => {
     overdue: TodayItem[];
@@ -21,6 +46,16 @@ interface NodeContextType {
     upcoming: TodayItem[];
     triggeredReminders: ReminderItem[];
   };
+
+  // Activity Audit Logs
+  fetchNodeAuditLogs: (nodeId: string) => Promise<NodeAuditLog[]>;
+  logNodeActivity: (
+    nodeId: string, 
+    action: NodeAuditLog['action'], 
+    summary: string, 
+    prevValues?: Record<string, any> | null, 
+    newValues?: Record<string, any> | null
+  ) => Promise<void>;
 
   // Actions
   cascadeDateChange: (nodeId: string, newPlannedDate: string | null) => Promise<void>;
@@ -45,7 +80,7 @@ interface NodeContextType {
 const NodeContext = createContext<NodeContextType | undefined>(undefined);
 
 export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { profile, isOrgAdmin } = useAuth();
+  const { profile, isOrgAdmin, accessLevel } = useAuth();
   
   const [nodes, setNodes] = useState<NodeItem[]>([]);
   const [reminders, setReminders] = useState<ReminderItem[]>([]);
@@ -89,6 +124,9 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .on('postgres_changes', { event: '*', schema: 'public', table: 'reminders' }, () => {
         fetchNodesAndReminders();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'node_audit_logs' }, () => {
+        // Realtime logs notification
+      })
       .subscribe();
 
     return () => {
@@ -124,56 +162,170 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => clearInterval(interval);
   }, [reminders]);
 
-  // Inherited Team Scoped Visibility Filter
-  const getScopedNodes = useCallback((): NodeItem[] => {
-    if (!profile) return nodes;
+  // Activity Audit Log Logger
+  const logNodeActivity = async (
+    nodeId: string, 
+    action: NodeAuditLog['action'], 
+    summary: string, 
+    prevValues?: Record<string, any> | null, 
+    newValues?: Record<string, any> | null
+  ) => {
+    try {
+      const userEmail = profile?.email || 'user@cadence.app';
+      const userName = profile?.full_name || userEmail.split('@')[0];
 
-    // 1. Super Admins & Org Admins see all nodes for their organization
-    if (isOrgAdmin) {
-      return nodes;
+      await supabase.from('node_audit_logs').insert({
+        node_id: nodeId,
+        org_id: profile?.org_id || null,
+        user_id: profile?.id || null,
+        user_email: userEmail,
+        user_name: userName,
+        action,
+        change_summary: summary,
+        previous_values: prevValues || null,
+        new_values: newValues || null,
+      });
+    } catch (err) {
+      console.error('Audit log write error:', err);
     }
+  };
 
-    // 2. Junior Managers & Scoped Roles: Filter nodes assigned to user OR sub-tree subtasks
+  const fetchNodeAuditLogs = async (nodeId: string): Promise<NodeAuditLog[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('node_audit_logs')
+        .select('*')
+        .eq('node_id', nodeId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      return (data as NodeAuditLog[]) || [];
+    } catch (err) {
+      console.error('Failed to fetch node audit logs:', err);
+      return [];
+    }
+  };
+
+  // Helper: check if a node is an ancestor of any node assigned to the user
+  const isNodeAncestorOfAssigned = useCallback((nodeId: string): boolean => {
+    if (!profile || isOrgAdmin || accessLevel === 1) return false;
+
     const userEmail = profile.email.toLowerCase();
     const userFullName = (profile.full_name || '').toLowerCase();
 
-    // Directly assigned node IDs
-    const directlyAssignedNodeIds = new Set(
-      nodes
-        .filter(n => {
-          if (!n.assignee) return false;
-          const a = n.assignee.toLowerCase();
-          return a.includes(userEmail) || (userFullName && a.includes(userFullName));
-        })
-        .map(n => n.id)
-    );
+    // Directly assigned nodes
+    const assignedNodes = nodes.filter(n => {
+      if (!n.assignee) return false;
+      const a = n.assignee.toLowerCase();
+      return a.includes(userEmail) || (userFullName && a.includes(userFullName));
+    });
 
-    // Recursively include all descendant child subtasks of directly assigned nodes
-    const visibleNodeIds = new Set<string>(directlyAssignedNodeIds);
-
-    const addSubtree = (parentId: string) => {
-      const children = nodes.filter(n => n.parent_id === parentId);
-      for (const child of children) {
-        visibleNodeIds.add(child.id);
-        addSubtree(child.id);
+    // Check if nodeId is in the ancestor chain of any assigned node
+    for (const assigned of assignedNodes) {
+      let curr = nodes.find(n => n.id === assigned.parent_id);
+      while (curr) {
+        if (curr.id === nodeId) return true;
+        if (!curr.parent_id) break;
+        curr = nodes.find(n => n.id === curr!.parent_id);
       }
+    }
+
+    return false;
+  }, [nodes, profile, isOrgAdmin, accessLevel]);
+
+  // Scoped Edit Permission Check (Level 1 vs Level 2 vs Level 3 + Cross-Department)
+  const canUserEditNode = useCallback((nodeId: string): boolean => {
+    if (!profile) return false;
+    
+    // 1. Super Admin & Org Admin have universal edit access
+    if (isOrgAdmin || profile.role === 'super_admin' || profile.role === 'org_admin') {
+      return true;
+    }
+
+    // 2. Level 3 (View Only) has zero edit access
+    if (accessLevel === 3 || profile.role === 'level_3' || profile.role === 'viewer') {
+      return false;
+    }
+
+    // 3. Level 1 (Full Access): Can edit all nodes within their organization
+    if (accessLevel === 1 || profile.role === 'level_1' || profile.role === 'senior_manager') {
+      return true;
+    }
+
+    // 4. Level 2 (Limited Access):
+    // If target node is an ANCESTOR of their assigned milestone -> View-Only
+    if (isNodeAncestorOfAssigned(nodeId)) {
+      return false;
+    }
+
+    // If target node is their assigned task OR a child/descendant of their assigned task -> Editable!
+    const userEmail = profile.email.toLowerCase();
+    const userFullName = (profile.full_name || '').toLowerCase();
+
+    const assignedNodes = nodes.filter(n => {
+      if (!n.assignee) return false;
+      const a = n.assignee.toLowerCase();
+      return a.includes(userEmail) || (userFullName && a.includes(userFullName));
+    });
+
+    if (assignedNodes.some(n => n.id === nodeId)) {
+      return true;
+    }
+
+    const isDescendantOf = (targetId: string, ancestorId: string): boolean => {
+      let curr = nodes.find(n => n.id === targetId);
+      while (curr && curr.parent_id) {
+        if (curr.parent_id === ancestorId) return true;
+        curr = nodes.find(n => n.id === curr!.parent_id);
+      }
+      return false;
     };
 
-    directlyAssignedNodeIds.forEach(id => addSubtree(id));
-
-    // Also include top-level project containers if they contain visible subtasks
-    const includeAncestors = (nodeId: string) => {
-      const node = nodes.find(n => n.id === nodeId);
-      if (node && node.parent_id) {
-        visibleNodeIds.add(node.parent_id);
-        includeAncestors(node.parent_id);
+    for (const assigned of assignedNodes) {
+      if (isDescendantOf(nodeId, assigned.id)) {
+        return true;
       }
+    }
+
+    // If user has no specific assignments on the tree, allow task creation/editing within their team
+    return true;
+  }, [nodes, profile, isOrgAdmin, accessLevel, isNodeAncestorOfAssigned]);
+
+  // Clean compact access info helper for UI tooltips
+  const getNodeAccessInfo = useCallback((nodeId: string): NodeAccessInfo => {
+    const node = nodes.find(n => n.id === nodeId);
+    const owningDept = node?.department || 'Production';
+    const isAncestor = isNodeAncestorOfAssigned(nodeId);
+    const isCrossDept = Boolean(profile?.department && node?.department && profile.department.toLowerCase() !== node.department.toLowerCase());
+    const isEditable = canUserEditNode(nodeId);
+
+    let tooltipText = 'Full Edit Access';
+    if (!isEditable) {
+      if (isAncestor) {
+        tooltipText = 'Parent Milestone (View-Only context)';
+      } else if (accessLevel === 3) {
+        tooltipText = 'Level 3: View-Only Account';
+      } else if (isCrossDept) {
+        tooltipText = `Owned by ${owningDept} Department (View-Only)`;
+      } else {
+        tooltipText = 'View-Only Mode';
+      }
+    }
+
+    return {
+      isEditable,
+      isAncestorProtected: isAncestor,
+      isCrossDepartment: isCrossDept,
+      owningDepartment: owningDept,
+      tooltipText,
     };
+  }, [nodes, profile, isNodeAncestorOfAssigned, canUserEditNode, accessLevel]);
 
-    Array.from(visibleNodeIds).forEach(id => includeAncestors(id));
-
-    return nodes.filter(n => visibleNodeIds.has(n.id));
-  }, [nodes, profile, isOrgAdmin]);
+  // Unified Open Visibility (Every department sees full CPM lineage for cross-functional awareness)
+  const getScopedNodes = useCallback((): NodeItem[] => {
+    // In footwear CPM, open transparency allows all teams to see cross-department schedules
+    return nodes;
+  }, [nodes]);
 
   const getAncestorColors = (nodeId: string, allNodes: NodeItem[]): string[] => {
     const colors: string[] = [];
@@ -309,11 +461,24 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const cascadeDateChange = async (nodeId: string, newPlannedDateStr: string | null) => {
+    const existingNode = nodes.find(n => n.id === nodeId);
+    const prevDate = existingNode?.planned_date;
+
     try {
       await supabase.rpc('cascade_dates', {
-        p_target_node_id: nodeId,
+        p_node_id: nodeId,
         p_new_planned_date: newPlannedDateStr,
       });
+
+      // Log date shift
+      await logNodeActivity(
+        nodeId,
+        'date_shifted',
+        `Planned Date shifted from ${prevDate ? prevDate.slice(0, 10) : 'None'} to ${newPlannedDateStr ? newPlannedDateStr.slice(0, 10) : 'None'} (Relative cascade applied)`,
+        { planned_date: prevDate },
+        { planned_date: newPlannedDateStr }
+      );
+
       await fetchNodesAndReminders();
       return;
     } catch {
@@ -359,13 +524,23 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     for (const n of updatedNodes) {
       await supabase.from('nodes').update({ planned_date: n.planned_date, updated_at: n.updated_at }).eq('id', n.id);
     }
+
+    await logNodeActivity(
+      nodeId,
+      'date_shifted',
+      `Planned Date shifted to ${newPlannedDateStr ? newPlannedDateStr.slice(0, 10) : 'None'}`,
+      { planned_date: prevDate },
+      { planned_date: newPlannedDateStr }
+    );
+
     fetchNodesAndReminders();
   };
 
   const addNode = async (data: Partial<NodeItem>) => {
+    const newNodeId = crypto.randomUUID();
     const newNode = {
-      id: crypto.randomUUID(),
-      org_id: profile?.org_id || '00000000-0000-0000-0000-000000000001',
+      id: newNodeId,
+      org_id: profile?.org_id || null,
       parent_id: data.parent_id || null,
       type: data.type || 'task',
       title: data.title || 'Untitled Task',
@@ -378,26 +553,66 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       is_critical: data.is_critical || false,
       assignee: data.assignee || null,
       vendor_contact: data.vendor_contact || null,
-      department: data.department || 'Production',
+      department: data.department || profile?.department || 'Production',
       season: data.season || 'SS26',
       sort_order: data.sort_order || 1,
     };
 
     const { error } = await supabase.from('nodes').insert(newNode);
     if (error) console.error('addNode error:', error);
+
+    // Log creation
+    await logNodeActivity(
+      newNodeId,
+      'created',
+      `Milestone "${newNode.title}" created (${newNode.department})`,
+      null,
+      newNode
+    );
+
     fetchNodesAndReminders();
   };
 
   const updateNode = async (nodeId: string, data: Partial<NodeItem>) => {
-    if (data.planned_date !== undefined) {
+    const existingNode = nodes.find(n => n.id === nodeId);
+    const prevValues: Record<string, any> = {};
+    if (existingNode) {
+      Object.keys(data).forEach(k => {
+        prevValues[k] = (existingNode as any)[k];
+      });
+    }
+
+    if (data.planned_date !== undefined && data.planned_date !== existingNode?.planned_date) {
       await cascadeDateChange(nodeId, data.planned_date);
     }
+
     const { error } = await supabase.from('nodes').update({ ...data, updated_at: new Date().toISOString() }).eq('id', nodeId);
     if (error) console.error('updateNode error:', error);
+
+    // Log update
+    const changes = Object.keys(data).map(k => `${k}: ${data[k as keyof NodeItem]}`).join(', ');
+    await logNodeActivity(
+      nodeId,
+      'details_updated',
+      `Updated milestone (${changes})`,
+      prevValues,
+      data
+    );
+
     fetchNodesAndReminders();
   };
 
   const deleteNode = async (nodeId: string) => {
+    const existingNode = nodes.find(n => n.id === nodeId);
+
+    await logNodeActivity(
+      nodeId,
+      'deleted',
+      `Milestone "${existingNode?.title || nodeId}" deleted`,
+      existingNode,
+      null
+    );
+
     const { error } = await supabase.from('nodes').delete().eq('id', nodeId);
     if (error) console.error('deleteNode error:', error);
     if (selectedNode && selectedNode.id === nodeId) setSelectedNode(null);
@@ -407,13 +622,33 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const toggleCritical = async (nodeId: string) => {
     const node = nodes.find(n => n.id === nodeId);
     if (!node) return;
-    await supabase.from('nodes').update({ is_critical: !node.is_critical, updated_at: new Date().toISOString() }).eq('id', nodeId);
+    const newCrit = !node.is_critical;
+    await supabase.from('nodes').update({ is_critical: newCrit, updated_at: new Date().toISOString() }).eq('id', nodeId);
+    
+    await logNodeActivity(
+      nodeId,
+      'details_updated',
+      `Critical path flagged: ${newCrit ? 'YES' : 'NO'}`
+    );
+
     fetchNodesAndReminders();
   };
 
   const updateStatus = async (nodeId: string, status: NodeStatus) => {
+    const node = nodes.find(n => n.id === nodeId);
+    const prevStatus = node?.status;
     const actual_date = status === 'done' ? new Date().toISOString() : null;
+    
     await supabase.from('nodes').update({ status, actual_date, updated_at: new Date().toISOString() }).eq('id', nodeId);
+
+    await logNodeActivity(
+      nodeId,
+      'status_changed',
+      `Status changed from "${prevStatus}" to "${status}"`,
+      { status: prevStatus },
+      { status }
+    );
+
     fetchNodesAndReminders();
   };
 
@@ -423,6 +658,15 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const newStatus: NodeStatus = node.status === 'done' ? 'in_progress' : 'done';
     const actual_date = newStatus === 'done' ? new Date().toISOString() : null;
     await supabase.from('nodes').update({ status: newStatus, actual_date, updated_at: new Date().toISOString() }).eq('id', nodeId);
+
+    await logNodeActivity(
+      nodeId,
+      'status_changed',
+      `Marked as ${newStatus === 'done' ? 'DONE' : 'IN PROGRESS'}`,
+      { status: node.status },
+      { status: newStatus }
+    );
+
     fetchNodesAndReminders();
   };
 
@@ -500,8 +744,13 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         selectedNode,
         setSelectedNode,
         isLoading,
+        canUserEditNode,
+        getNodeAccessInfo,
+        isNodeAncestorOfAssigned,
         getTree,
         getTodayUpcomingFeed,
+        fetchNodeAuditLogs,
+        logNodeActivity,
         cascadeDateChange,
         addNode,
         updateNode,

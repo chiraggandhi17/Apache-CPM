@@ -5,7 +5,7 @@ import { StatusBadge } from '../shared/StatusBadge';
 import { CriticalFlag } from '../shared/CriticalFlag';
 import { formatLocalDate, getRelativeDateBadge } from '../../utils/date-format';
 import { NodeForm } from './NodeForm';
-import { ChevronRight, ChevronDown, Plus, Folder, Calendar, CheckSquare, Layers, Clock, Check } from 'lucide-react';
+import { ChevronRight, ChevronDown, Plus, Folder, Calendar, CheckSquare, Layers, Clock, Check, Lock } from 'lucide-react';
 
 interface NodeRowProps {
   node: TreeNode;
@@ -22,11 +22,13 @@ const TYPE_ICONS: Record<NodeType, React.ReactNode> = {
 };
 
 export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
-  const { toggleCritical, updateStatus, toggleDone } = useNodes();
+  const { toggleCritical, updateStatus, toggleDone, getNodeAccessInfo } = useNodes();
   const [isExpanded, setIsExpanded] = useState(false);
   const [showAddChild, setShowAddChild] = useState(false);
 
   const hasChildren = node.children && node.children.length > 0;
+  const accessInfo = getNodeAccessInfo(node.id);
+  const isEditable = accessInfo.isEditable;
 
   const countAllSubtasks = (n: TreeNode): { total: number; done: number } => {
     let total = 0;
@@ -80,22 +82,28 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
             <span className="w-6" />
           )}
 
-          {/* Quick 1-click Completion Checkbox */}
-          <button
-            type="button"
-            onClick={e => {
-              e.stopPropagation();
-              toggleDone(node.id);
-            }}
-            title={isCompleted ? 'Mark incomplete' : 'Mark complete'}
-            className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0 ${
-              isCompleted
-                ? 'bg-emerald-600 border-emerald-600 text-white'
-                : 'border-gray-300 hover:border-teal-500 bg-white'
-            }`}
-          >
-            {isCompleted && <Check className="w-3 h-3 stroke-[3]" />}
-          </button>
+          {/* Quick 1-click Completion Checkbox (Locked if view-only) */}
+          {isEditable ? (
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                toggleDone(node.id);
+              }}
+              title={isCompleted ? 'Mark incomplete' : 'Mark complete'}
+              className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0 ${
+                isCompleted
+                  ? 'bg-emerald-600 border-emerald-600 text-white'
+                  : 'border-gray-300 hover:border-teal-500 bg-white'
+              }`}
+            >
+              {isCompleted && <Check className="w-3 h-3 stroke-[3]" />}
+            </button>
+          ) : (
+            <span className="w-4 h-4 flex items-center justify-center shrink-0" title={accessInfo.tooltipText}>
+              <Lock className="w-3.5 h-3.5 text-gray-400" />
+            </span>
+          )}
 
           {/* Type Icon */}
           <span className="shrink-0">{TYPE_ICONS[node.type] || TYPE_ICONS.task}</span>
@@ -110,8 +118,8 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
           {/* Critical Flag */}
           <CriticalFlag
             isCritical={node.is_critical}
-            onToggle={() => toggleCritical(node.id)}
-            interactive
+            onToggle={isEditable ? () => toggleCritical(node.id) : undefined}
+            interactive={isEditable}
             size="sm"
           />
 
@@ -145,20 +153,26 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
             </span>
           )}
 
-          <StatusBadge status={node.status} onChange={s => updateStatus(node.id, s)} size="sm" />
+          <StatusBadge 
+            status={node.status} 
+            onChange={isEditable ? s => updateStatus(node.id, s) : undefined} 
+            size="sm" 
+          />
 
-          <button
-            type="button"
-            onClick={e => {
-              e.stopPropagation();
-              setShowAddChild(true);
-            }}
-            title={`Add item under ${node.title}`}
-            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-teal-700 hover:bg-teal-50 rounded-md border border-teal-200 text-[11px] font-semibold flex items-center gap-0.5"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">Add</span>
-          </button>
+          {isEditable && (
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                setShowAddChild(true);
+              }}
+              title={`Add item under ${node.title}`}
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-teal-700 hover:bg-teal-50 rounded-md border border-teal-200 text-[11px] font-semibold flex items-center gap-0.5"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Add</span>
+            </button>
+          )}
         </div>
       </div>
 

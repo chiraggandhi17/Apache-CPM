@@ -1,13 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NodeItem } from '../../types/domain';
-import { useNodes } from '../../context/NodeContext';
+import { useNodes, NodeAuditLog } from '../../context/NodeContext';
 import { StatusBadge } from '../shared/StatusBadge';
 import { CriticalFlag } from '../shared/CriticalFlag';
 import { formatLocalDate } from '../../utils/date-format';
 import { getAncestorPath, getSiblingNodes } from '../../utils/hierarchy';
 import { GoogleCalendarSyncModal } from '../calendar/GoogleCalendarSyncModal';
 import { NodeForm } from './NodeForm';
-import { X, Calendar, Edit3, Trash2, Plus, Bell, User, Tag, ChevronRight, ChevronLeft, ArrowLeft, ArrowRight, CornerDownRight, FileText, Sparkles } from 'lucide-react';
+import { 
+  X, Calendar, Edit3, Trash2, Plus, Bell, User, Tag, ChevronRight, 
+  ChevronLeft, ArrowLeft, ArrowRight, FileText, Sparkles, History, 
+  Lock, RefreshCw, Clock, Building2
+} from 'lucide-react';
 import { formatISO, addDays } from 'date-fns';
 
 interface NodeInspectorModalProps {
@@ -16,13 +20,19 @@ interface NodeInspectorModalProps {
 }
 
 export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialNode, onClose }) => {
-  const { nodes, reminders, deleteNode, toggleCritical, updateStatus, addReminder, dismissReminder } = useNodes();
+  const { 
+    nodes, reminders, deleteNode, toggleCritical, updateStatus, 
+    addReminder, dismissReminder, getNodeAccessInfo, fetchNodeAuditLogs 
+  } = useNodes();
   
   const [currentNodeId, setCurrentNodeId] = useState<string>(initialNode.id);
   const [isEditing, setIsEditing] = useState(false);
   const [showAddSubtask, setShowAddSubtask] = useState(false);
   const [showAddReminder, setShowAddReminder] = useState(false);
   const [showCalModal, setShowCalModal] = useState(false);
+  const [showLogsModal, setShowLogsModal] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<NodeAuditLog[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
 
   const [reminderMessage, setReminderMessage] = useState('');
   const [reminderOffset, setReminderOffset] = useState(-2);
@@ -32,8 +42,23 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
   const ancestorPath = getAncestorPath(currentNode.id, nodes);
   const { prevNode, nextNode } = getSiblingNodes(currentNode.id, nodes);
 
+  const accessInfo = getNodeAccessInfo(currentNode.id);
+  const isEditable = accessInfo.isEditable;
   const children = nodes.filter(n => n.parent_id === currentNode.id);
   const nodeReminders = reminders.filter(r => r.node_id === currentNode.id && !r.dismissed_at);
+
+  const loadLogs = async (nodeId: string) => {
+    setLoadingLogs(true);
+    const logs = await fetchNodeAuditLogs(nodeId);
+    setAuditLogs(logs);
+    setLoadingLogs(false);
+  };
+
+  useEffect(() => {
+    if (showLogsModal) {
+      loadLogs(currentNode.id);
+    }
+  }, [showLogsModal, currentNode.id]);
 
   const handleCreateReminder = (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,7 +79,7 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
     <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-gray-100 flex flex-col max-h-[90vh]">
         
-        {/* Top Control Bar with Parent Back Button & Sibling Arrows */}
+        {/* Top Control Bar */}
         <div className="px-6 py-3 bg-slate-900 text-slate-100 flex items-center justify-between text-xs shrink-0">
           {parentNode ? (
             <button
@@ -104,7 +129,7 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
 
         {/* Interactive Clickable Breadcrumb Bar */}
         <div className="px-6 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center flex-wrap gap-1 text-xs text-gray-500 font-medium shrink-0">
-          <span className="text-[10px] uppercase font-bold text-gray-400 mr-1">Hierarchy Path:</span>
+          <span className="text-[10px] uppercase font-bold text-gray-400 mr-1">Hierarchy:</span>
           {ancestorPath.map((step, idx) => (
             <React.Fragment key={step.id}>
               <button
@@ -126,10 +151,10 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5">
           
-          {/* Main Title & Status Bar */}
+          {/* Main Title & Compact Access Chip */}
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="flex items-center gap-2 mb-1">
+              <div className="flex items-center flex-wrap gap-2 mb-1">
                 <span
                   className="w-3 h-3 rounded-full shadow-2xs shrink-0"
                   style={{ backgroundColor: currentNode.color || '#6B7280' }}
@@ -137,11 +162,38 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
                 <span className="text-xs uppercase font-bold text-gray-400 tracking-wider">
                   {currentNode.type}
                 </span>
+
+                {/* Clean Department Chip */}
+                {currentNode.department && (
+                  <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-semibold flex items-center gap-1 border border-slate-200">
+                    <Building2 className="w-3 h-3 text-slate-500" /> {currentNode.department}
+                  </span>
+                )}
+
+                {/* Sleek Compact View-Only Lock Chip with Tooltip */}
+                {!isEditable && (
+                  <span 
+                    title={accessInfo.tooltipText}
+                    className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 text-[10px] font-bold flex items-center gap-1 border border-amber-200 cursor-help"
+                  >
+                    <Lock className="w-3 h-3 text-amber-600" /> View-Only
+                  </span>
+                )}
               </div>
               <h1 className="text-xl font-extrabold text-gray-900 leading-snug">{currentNode.title}</h1>
             </div>
 
             <div className="flex items-center gap-2">
+              {/* Activity Audit Logs Button */}
+              <button
+                type="button"
+                onClick={() => setShowLogsModal(true)}
+                title="View Node Activity Audit Logs"
+                className="px-2.5 py-1.5 rounded-xl border border-slate-200 text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors text-xs font-semibold flex items-center gap-1 shadow-2xs"
+              >
+                <History className="w-3.5 h-3.5 text-slate-600" /> Logs
+              </button>
+
               <button
                 type="button"
                 onClick={() => setShowCalModal(true)}
@@ -151,34 +203,47 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
                 <Sparkles className="w-3.5 h-3.5 text-teal-600" /> Google Cal
               </button>
 
-              <button
-                type="button"
-                onClick={() => setIsEditing(true)}
-                title="Edit Milestone"
-                className="p-1.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
-              >
-                <Edit3 className="w-4 h-4" />
-              </button>
+              {isEditable && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(true)}
+                    title="Edit Milestone"
+                    className="p-1.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                  </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  if (confirm(`Delete "${currentNode.title}" and all its subtasks?`)) {
-                    deleteNode(currentNode.id);
-                    onClose();
-                  }
-                }}
-                title="Delete Milestone"
-                className="p-1.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm(`Delete "${currentNode.title}" and all its subtasks?`)) {
+                        deleteNode(currentNode.id);
+                        onClose();
+                      }
+                    }}
+                    title="Delete Milestone"
+                    className="p-1.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <StatusBadge status={currentNode.status} onChange={s => updateStatus(currentNode.id, s)} size="md" />
-            <CriticalFlag isCritical={currentNode.is_critical} onToggle={() => toggleCritical(currentNode.id)} interactive size="md" />
+            <StatusBadge 
+              status={currentNode.status} 
+              onChange={isEditable ? s => updateStatus(currentNode.id, s) : undefined} 
+              size="md" 
+            />
+            <CriticalFlag 
+              isCritical={currentNode.is_critical} 
+              onToggle={isEditable ? () => toggleCritical(currentNode.id) : undefined} 
+              interactive={isEditable} 
+              size="md" 
+            />
           </div>
 
           {/* Target Dates Card */}
@@ -234,16 +299,18 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
               <h3 className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
                 <Bell className="w-4 h-4 text-amber-500" /> Active Alerts & Reminders ({nodeReminders.length})
               </h3>
-              <button
-                type="button"
-                onClick={() => setShowAddReminder(!showAddReminder)}
-                className="text-xs text-teal-600 font-semibold hover:underline flex items-center gap-0.5"
-              >
-                <Plus className="w-3.5 h-3.5" /> Add Alert
-              </button>
+              {isEditable && (
+                <button
+                  type="button"
+                  onClick={() => setShowAddReminder(!showAddReminder)}
+                  className="text-xs text-teal-600 font-semibold hover:underline flex items-center gap-0.5"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add Alert
+                </button>
+              )}
             </div>
 
-            {showAddReminder && (
+            {showAddReminder && isEditable && (
               <form onSubmit={handleCreateReminder} className="bg-amber-50/80 p-3.5 rounded-2xl border border-amber-200 space-y-2 text-xs">
                 <div>
                   <label className="block font-semibold text-amber-900 mb-1">Alert Message</label>
@@ -287,13 +354,15 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
                         Trigger: {formatLocalDate(rem.remind_at)}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => dismissReminder(rem.id)}
-                      className="text-amber-800 hover:text-amber-950 text-[11px] font-semibold underline"
-                    >
-                      Dismiss
-                    </button>
+                    {isEditable && (
+                      <button
+                        type="button"
+                        onClick={() => dismissReminder(rem.id)}
+                        className="text-amber-800 hover:text-amber-950 text-[11px] font-semibold underline"
+                      >
+                        Dismiss
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -304,13 +373,15 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
           <div className="space-y-2 pt-2 border-t border-gray-100">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold text-gray-900">Sub-Milestones ({children.length})</h3>
-              <button
-                type="button"
-                onClick={() => setShowAddSubtask(true)}
-                className="text-xs text-teal-600 font-semibold hover:underline flex items-center gap-0.5"
-              >
-                <Plus className="w-3.5 h-3.5" /> Add Sub-task
-              </button>
+              {isEditable && (
+                <button
+                  type="button"
+                  onClick={() => setShowAddSubtask(true)}
+                  className="text-xs text-teal-600 font-semibold hover:underline flex items-center gap-0.5"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add Sub-task
+                </button>
+              )}
             </div>
 
             {children.length === 0 ? (
@@ -344,6 +415,7 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
         </div>
       </div>
 
+      {/* EDIT MODAL */}
       {isEditing && (
         <NodeForm
           initialNode={currentNode}
@@ -352,6 +424,7 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
         />
       )}
 
+      {/* ADD SUBTASK MODAL */}
       {showAddSubtask && (
         <NodeForm
           parentId={currentNode.id}
@@ -361,6 +434,7 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
         />
       )}
 
+      {/* GOOGLE CALENDAR MODAL */}
       {showCalModal && (
         <GoogleCalendarSyncModal
           eventPayload={{
@@ -372,6 +446,75 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
           }}
           onClose={() => setShowCalModal(false)}
         />
+      )}
+
+      {/* ACTIVITY AUDIT LOGS MODAL */}
+      {showLogsModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 space-y-4 max-h-[85vh] flex flex-col border border-gray-200">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-slate-900 text-teal-400 flex items-center justify-center">
+                  <History className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-gray-900">Activity Audit History</h2>
+                  <p className="text-[11px] text-gray-500 font-medium truncate max-w-xs">{currentNode.title}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => loadLogs(currentNode.id)}
+                  className="p-1.5 text-gray-500 hover:text-gray-900 rounded-lg hover:bg-gray-100 transition-colors"
+                  title="Refresh Audit Logs"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingLogs ? 'animate-spin' : ''}`} />
+                </button>
+                <button onClick={() => setShowLogsModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2.5 text-xs pr-1">
+              {loadingLogs ? (
+                <div className="p-8 text-center text-gray-400 animate-pulse">Loading activity logs...</div>
+              ) : auditLogs.length === 0 ? (
+                <div className="p-8 text-center text-gray-400 italic bg-gray-50 rounded-2xl border border-dashed">
+                  No activity history recorded for this milestone yet. All future changes will be logged here automatically.
+                </div>
+              ) : (
+                auditLogs.map(log => (
+                  <div key={log.id} className="p-3 bg-gray-50 rounded-2xl border border-gray-200 space-y-1 hover:bg-gray-100/70 transition-colors">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-gray-900 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-teal-500" />
+                        {log.user_name || log.user_email.split('@')[0]}
+                      </span>
+                      <span className="text-[10px] text-gray-400 font-mono flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {new Date(log.created_at).toLocaleString()}
+                      </span>
+                    </div>
+
+                    <p className="text-gray-700 text-[11px] font-medium pl-3.5">{log.change_summary}</p>
+                    <div className="text-[10px] text-gray-400 pl-3.5 font-mono">{log.user_email}</div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setShowLogsModal(false)}
+                className="h-8 px-4 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-2xs"
+              >
+                Close Logs
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

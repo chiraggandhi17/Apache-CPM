@@ -10,19 +10,20 @@ import { ManageAlertsModal } from '../reminders/ManageAlertsModal';
 import { SuperAdminDashboard } from '../admin/SuperAdminDashboard';
 import { OrgAdminDashboard } from '../admin/OrgAdminDashboard';
 import { GoogleCalendarSyncModal } from '../calendar/GoogleCalendarSyncModal';
+import { TierPricingModal } from '../shared/TierPricingModal';
 import { ProtectedAppGuard } from '../auth/Guards';
 import { LoginPage } from '../auth/LoginPage';
 import { 
   Bell, Calendar, Home, Layers, LogOut, Footprints, ChevronRight, 
   ShieldCheck, Sparkles, User, Building2, FolderTree, Activity, 
-  AlertTriangle, Download, HardDrive, Users, CheckCircle2
+  AlertTriangle, Download, HardDrive, Users, CheckCircle2, Zap
 } from 'lucide-react';
 
 type NavTab = 'today' | 'browse' | 'calendar' | 'super_admin' | 'super_observability' | 'super_errors' | 'super_backups' | 'org_admin' | 'org_teams' | 'org_backup';
 
 export const AppShellContent: React.FC = () => {
   const { selectedNode, setSelectedNode, totalScheduledAlertsCount, triggeredAlertsCount } = useNodes();
-  const { user, profile, organization, team, isSuperAdmin, isOrgAdmin, signOut } = useAuth();
+  const { user, profile, organization, team, isSuperAdmin, isOrgAdmin, isIndividual, tier, signOut } = useAuth();
   
   // Set default landing tab based on role
   const isCompanyOrgAdmin = Boolean(profile && profile.role === 'org_admin');
@@ -45,19 +46,27 @@ export const AppShellContent: React.FC = () => {
 
   const [showManageAlerts, setShowManageAlerts] = useState(false);
   const [showGoogleCalSync, setShowGoogleCalSync] = useState(false);
+  const [showTierPricingModal, setShowTierPricingModal] = useState(false);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
 
   // Determine Dynamic Branding
   const brandTitle = isSuperAdmin 
     ? 'Cadence' 
-    : (organization?.brand_title || (organization ? `Cadence - ${organization.name}` : 'Cadence - Apache Footwear'));
+    : isIndividual 
+    ? 'Cadence Personal'
+    : (organization?.brand_title || (organization ? `Cadence - ${organization.name}` : 'Cadence CPM'));
 
   const brandTagline = isSuperAdmin
     ? 'SaaS Platform Super Admin'
-    : (organization?.brand_tagline || 'adidas Ex-Factory Production Critical Path Tracker');
+    : isIndividual
+    ? 'Personal Critical Path & Task Workspace'
+    : (organization?.brand_tagline || 'Enterprise Production Critical Path Tracker');
 
-  const brandColor = organization?.brand_color || '#0d9488';
-  const logoUrl = organization?.logo_url;
+  const brandColor = isIndividual 
+    ? (tier === 1 ? '#0d9488' : '#6366f1') 
+    : (organization?.brand_color || '#0d9488');
+    
+  const logoUrl = !isIndividual ? organization?.logo_url : null;
 
   // Update Browser Document Tab Title Dynamically
   useEffect(() => {
@@ -104,13 +113,19 @@ export const AppShellContent: React.FC = () => {
   const displayEmail = profile?.email || user?.email || 'Logged In User';
   const displayRole = profile?.role ? profile.role.replace(/_/g, ' ') : 'user';
 
+  const tierLabels = {
+    1: { name: 'Tier 1: Personal', color: 'bg-teal-500/20 text-teal-300 border-teal-500/30' },
+    2: { name: 'Tier 2: Pro', color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' },
+    3: { name: 'Tier 3: Enterprise', color: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row text-gray-900 antialiased">
       {/* Sidebar Navigation */}
       <aside className="w-full md:w-64 bg-slate-900 text-slate-100 flex md:flex-col justify-between shrink-0 p-4 border-r border-slate-800">
         <div>
           {/* Logo Brand Header (Co-Branded) */}
-          <div className="flex items-center gap-3 px-2 py-3 mb-6 border-b border-slate-800 pb-4">
+          <div className="flex items-center gap-3 px-2 py-3 mb-4 border-b border-slate-800 pb-4">
             {logoUrl && !isSuperAdmin ? (
               <img src={logoUrl} alt="Company Logo" className="w-9 h-9 object-contain rounded-xl bg-white p-1 shrink-0" />
             ) : (
@@ -130,6 +145,21 @@ export const AppShellContent: React.FC = () => {
               </span>
             </div>
           </div>
+
+          {/* Active Workspace Tier Selector Button */}
+          {!isSuperAdmin && (
+            <button
+              type="button"
+              onClick={() => setShowTierPricingModal(true)}
+              className={`w-full mb-4 px-3 py-2 rounded-xl border text-[11px] font-bold flex items-center justify-between transition-all hover:brightness-110 shadow-2xs ${tierLabels[tier].color}`}
+            >
+              <div className="flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5" />
+                <span>{tierLabels[tier].name}</span>
+              </div>
+              <span className="text-[10px] underline text-slate-400">Plans</span>
+            </button>
+          )}
 
           {/* DEDICATED SUPER ADMIN NAVIGATION (No Manufacturing Task Clutter) */}
           {isSuperAdmin ? (
@@ -281,7 +311,7 @@ export const AppShellContent: React.FC = () => {
               </button>
             </nav>
           ) : (
-            /* OPERATIONAL CPM USER NAVIGATION (Managers & Assignees) */
+            /* OPERATIONAL CPM USER NAVIGATION (Managers & Personal Users) */
             <nav className="space-y-1">
               <button
                 type="button"
@@ -347,17 +377,27 @@ export const AppShellContent: React.FC = () => {
           {/* Operational Tools (Only shown for non-Super Admin operational users) */}
           {!isSuperAdmin && !isCompanyOrgAdmin && (
             <>
-              {/* Google Cal Sync Launcher */}
+              {/* Google Cal Sync Launcher (Tier 2 & 3 Feature) */}
               <button
                 type="button"
-                onClick={() => setShowGoogleCalSync(true)}
+                onClick={() => {
+                  if (tier < 2) {
+                    setShowTierPricingModal(true);
+                  } else {
+                    setShowGoogleCalSync(true);
+                  }
+                }}
                 className="w-full bg-slate-850 hover:bg-slate-800 border border-slate-750 p-2.5 rounded-xl flex items-center justify-between text-xs text-slate-200 transition-colors group shadow-2xs"
               >
                 <div className="flex items-center gap-2">
                   <Calendar className="w-4 h-4" style={{ color: brandColor }} />
                   <span className="font-semibold text-[11px]">Google Cal Sync</span>
                 </div>
-                <Sparkles className="w-3.5 h-3.5" style={{ color: brandColor }} />
+                {tier < 2 ? (
+                  <span className="text-[9px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded font-mono font-bold">PRO</span>
+                ) : (
+                  <Sparkles className="w-3.5 h-3.5" style={{ color: brandColor }} />
+                )}
               </button>
 
               {/* Manage Alerts Pill */}
@@ -454,6 +494,13 @@ export const AppShellContent: React.FC = () => {
       {showGoogleCalSync && (
         <GoogleCalendarSyncModal
           onClose={() => setShowGoogleCalSync(false)}
+        />
+      )}
+
+      {/* Tier Pricing & Upgrade Modal */}
+      {showTierPricingModal && (
+        <TierPricingModal
+          onClose={() => setShowTierPricingModal(false)}
         />
       )}
     </div>
