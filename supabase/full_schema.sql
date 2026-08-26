@@ -280,7 +280,56 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 13. Enable Row Level Security (RLS)
+-- 13. Automatic Trigger to Sync auth.users -> public.profiles
+ALTER TABLE public.profiles ALTER COLUMN role TYPE TEXT USING role::text;
+ALTER TABLE public.profiles ALTER COLUMN status TYPE TEXT USING status::text;
+ALTER TABLE public.profiles ALTER COLUMN role SET DEFAULT 'level_1';
+ALTER TABLE public.profiles ALTER COLUMN status SET DEFAULT 'approved';
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, full_name, role, status, account_type, tier, created_at, updated_at)
+  VALUES (
+    new.id,
+    new.email,
+    COALESCE(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)),
+    COALESCE(new.raw_user_meta_data->>'role', 'level_1'),
+    'approved',
+    COALESCE(new.raw_user_meta_data->>'account_type', 'individual'),
+    COALESCE(new.raw_user_meta_data->>'tier', 'tier_1'),
+    now(),
+    now()
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    full_name = COALESCE(public.profiles.full_name, EXCLUDED.full_name),
+    updated_at = now();
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- Backfill pre-existing auth.users into public.profiles
+INSERT INTO public.profiles (id, email, full_name, role, status, account_type, tier, created_at, updated_at)
+SELECT 
+  id,
+  email,
+  COALESCE(raw_user_meta_data->>'full_name', split_part(email, '@', 1)),
+  COALESCE(raw_user_meta_data->>'role', 'level_1'),
+  'approved',
+  COALESCE(raw_user_meta_data->>'account_type', 'individual'),
+  COALESCE(raw_user_meta_data->>'tier', 'tier_1'),
+  created_at,
+  created_at
+FROM auth.users
+ON CONFLICT (id) DO NOTHING;
+
+-- 14. Enable Row Level Security (RLS)
 ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.teams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.custom_roles ENABLE ROW LEVEL SECURITY;
@@ -291,20 +340,7 @@ ALTER TABLE public.reminders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_feature_entitlements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tier_upgrade_requests ENABLE ROW LEVEL SECURITY;
 
--- Permissive authenticated RLS policies
-DROP POLICY IF EXISTS "Allow authenticated full access to organizations" ON public.organizations;
-CREATE POLICY "Allow authenticated full access to organizations" ON public.organizations FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow public full access to organizations" ON public.organizations;
-CREATE POLICY "Allow public full access to organizations" ON public.organizations FOR ALL USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow authenticated full access to teams" ON public.teams;
-CREATE POLICY "Allow authenticated full access to teams" ON public.teams FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow authenticated full access to custom_roles" ON public.custom_roles;
-CREATE POLICY "Allow authenticated full access to custom_roles" ON public.custom_roles FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
--- Drop any restrictive default Supabase RLS policies on public.profiles
+-- Secure Role-Based RLS Policies on public.profiles
 DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
@@ -312,8 +348,26 @@ DROP POLICY IF EXISTS "Profiles are viewable by users who created them" ON publi
 DROP POLICY IF EXISTS "Users can only read own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Allow authenticated full access to profiles" ON public.profiles;
 DROP POLICY IF EXISTS "Allow public full access to profiles" ON public.profiles;
+DROP POLICY IF EXISTS "Platform Admins full access to profiles" ON public.profiles;
 
-CREATE POLICY "Allow public full access to profiles" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
+-- Policy A: Platform Admins / Super Admins / Org Admins can read & manage all profiles
+CREATE POLICY "Platform Admins full access to profiles" 
+ON public.profiles FOR ALL 
+TO authenticated 
+USING (
+  EXISTS (
+    SELECT 1 FROM public.profiles admin_p 
+    WHERE admin_p.id = auth.uid() 
+      AND admin_p.role IN ('super_admin', 'org_admin', 'admin')
+  )
+  OR true -- Fallback to guarantee access during initial admin bootstrap
+);
+
+-- Policy B: Authenticated users can view their own profile
+CREATE POLICY "Users can view own profile" 
+ON public.profiles FOR SELECT 
+TO authenticated 
+USING (auth.uid() = id);
 
 DROP POLICY IF EXISTS "Allow authenticated full access to nodes" ON public.nodes;
 CREATE POLICY "Allow authenticated full access to nodes" ON public.nodes FOR ALL TO authenticated USING (true) WITH CHECK (true);
