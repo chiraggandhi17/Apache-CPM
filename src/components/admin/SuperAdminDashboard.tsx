@@ -6,7 +6,7 @@ import {
   Layers, Palette, Download, Trash2, Activity, Server, Database, 
   HardDrive, AlertTriangle, CheckCircle2, RefreshCw, Clock, Globe, 
   ShieldAlert, Cpu, Terminal, Copy, Check, ExternalLink, Edit3, Settings,
-  User, Send, ArrowUpCircle, XCircle
+  User, Send, ArrowUpCircle, XCircle, Search, Filter
 } from 'lucide-react';
 
 const BRAND_PALETTES = [
@@ -18,24 +18,6 @@ const BRAND_PALETTES = [
   { name: 'Emerald Green', hex: '#059669' },
   { name: 'Deep Purple', hex: '#7c3aed' },
   { name: 'Dark Slate', hex: '#334155' },
-];
-
-const DEFAULT_DEMO_ORGS: Organization[] = [
-  {
-    id: '00000000-0000-0000-0000-000000000001',
-    name: 'Apache Footwear Inc',
-    slug: 'apache-footwear',
-    org_code: 'APACHE',
-    primary_admin_email: 'admin@apache.com',
-    is_activated: true,
-    subscription_tier: 'enterprise',
-    status: 'active',
-    logo_url: null,
-    brand_color: '#0d9488',
-    brand_title: 'Cadence - Apache Footwear',
-    brand_tagline: 'adidas Ex-Factory Production Critical Path Tracker',
-    features: { google_calendar_sync: true, advanced_reports: true, node_mutation: true },
-  },
 ];
 
 interface SystemLogEntry {
@@ -77,104 +59,84 @@ interface SuperAdminDashboardProps {
 
 export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ currentSection = 'organizations' }) => {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
-  const [individualUsers, setIndividualUsers] = useState<UserProfile[]>([]);
+  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [upgradeRequests, setUpgradeRequests] = useState<TierUpgradeRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [schemaMissing, setSchemaMissing] = useState(false);
+
+  // Search & Filters for All Users Directory
+  const [userSearch, setUserSearch] = useState('');
+  const [userTypeFilter, setUserTypeFilter] = useState<'all' | 'individual' | 'organization'>('all');
   
   // Modals
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingOrg, setEditingOrg] = useState<Organization | null>(null);
   const [createdOrgPackage, setCreatedOrgPackage] = useState<Organization | null>(null);
   const [copiedOrgId, setCopiedOrgId] = useState<string | null>(null);
-  const [copiedWelcome, setCopiedWelcome] = useState(false);
 
   // Table Statistics & Quota Telemetry
   const [stats, setStats] = useState<TableStats>({
-    organizations: 1,
-    profiles: 1,
+    organizations: 0,
+    profiles: 0,
     individualUsers: 0,
-    teams: 3,
+    teams: 0,
     nodes: 0,
     reminders: 0,
     estimatedStorageKb: 140,
   });
 
-  const [dbLatencyMs, setDbLatencyMs] = useState<number>(45);
+  const [dbLatencyMs, setDbLatencyMs] = useState<number>(4);
 
-  // New Org Form
+  // Provision New Client Organization Form State
   const [newOrgName, setNewOrgName] = useState('');
   const [newOrgCode, setNewOrgCode] = useState('');
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [newOrgTier, setNewOrgTier] = useState<'starter' | 'pro' | 'enterprise'>('enterprise');
 
-  // Edit Org Form
+  // Edit Organization Form State
   const [editName, setEditName] = useState('');
   const [editOrgCode, setEditOrgCode] = useState('');
   const [editAdminEmail, setEditAdminEmail] = useState('');
   const [editTier, setEditTier] = useState<'starter' | 'pro' | 'enterprise'>('enterprise');
   const [editBrandTitle, setEditBrandTitle] = useState('');
   const [editBrandTagline, setEditBrandTagline] = useState('');
-  const [editBrandLogoUrl, setEditBrandLogoUrl] = useState('');
   const [editBrandColor, setEditBrandColor] = useState('#0d9488');
-
-  // Live Error Telemetry State
-  const [systemLogs] = useState<SystemLogEntry[]>([
-    {
-      id: 'log-1',
-      timestamp: new Date(Date.now() - 1000 * 60 * 3).toISOString(),
-      type: 'info',
-      service: 'Cascade RPC',
-      message: 'Atomic recursive tree cascade executed in 4.2ms across 48 dependent milestones.',
-      org_name: 'Apache Footwear',
-    },
-    {
-      id: 'log-2',
-      timestamp: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
-      type: 'info',
-      service: 'Realtime',
-      message: 'Postgres CDC channel connected (supabase_realtime). 0 drops detected.',
-    },
-    {
-      id: 'log-3',
-      timestamp: new Date(Date.now() - 1000 * 60 * 42).toISOString(),
-      type: 'info',
-      service: 'Auth',
-      message: 'Dynamic workspace lookup verified successfully for client domain.',
-    },
-  ]);
+  const [editBrandLogoUrl, setEditBrandLogoUrl] = useState('');
 
   const loadData = async () => {
     setLoading(true);
     const startPing = performance.now();
     try {
-      // 1. Fetch Organizations
+      // 1. Fetch Organizations directly from Supabase (Single Source of Truth)
       const { data: orgs, error: orgErr } = await supabase
         .from('organizations')
         .select('*')
         .order('created_at', { ascending: false });
 
       if (orgErr) {
+        console.error('Organizations fetch error:', orgErr);
         if (orgErr.message?.includes('organizations') || orgErr.code === '42P01' || orgErr.message?.includes('schema cache')) {
           setSchemaMissing(true);
-          setOrganizations(DEFAULT_DEMO_ORGS);
-        } else {
-          throw orgErr;
         }
+        setOrganizations([]);
       } else {
         setSchemaMissing(false);
-        setOrganizations(orgs && orgs.length > 0 ? orgs : DEFAULT_DEMO_ORGS);
+        setOrganizations(orgs || []);
       }
 
-      // 2. Fetch Individual Users (where org_id is NULL)
-      const { data: indivUsers } = await supabase
+      // 2. Fetch ALL Profiles (both individual and organization members)
+      const { data: profs, error: profErr } = await supabase
         .from('profiles')
         .select('*')
-        .is('org_id', null)
         .not('role', 'eq', 'super_admin')
         .order('created_at', { ascending: false });
 
-      setIndividualUsers((indivUsers as UserProfile[]) || []);
+      if (profErr) {
+        console.error('Profiles fetch error:', profErr);
+        setAllUsers([]);
+      } else {
+        setAllUsers((profs as UserProfile[]) || []);
+      }
 
       // 3. Fetch Tier Upgrade Requests
       try {
@@ -195,18 +157,19 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
         supabase.from('reminders').select('id', { count: 'exact', head: true }),
       ]);
 
-      const orgCount = orgs?.length || 1;
-      const profCount = profilesRes.count || 1;
-      const teamCount = teamsRes.count || 3;
+      const orgCount = orgs?.length || 0;
+      const profCount = profilesRes.count || 0;
+      const teamCount = teamsRes.count || 0;
       const nodeCount = nodesRes.count || 0;
       const remCount = remindersRes.count || 0;
+      const indivCount = profs ? profs.filter(p => !p.org_id || p.account_type === 'individual').length : 0;
 
       const estimatedKb = Math.round((orgCount * 3) + (profCount * 2) + (teamCount * 1) + (nodeCount * 3.5) + (remCount * 1.5));
 
       setStats({
         organizations: orgCount,
         profiles: profCount,
-        individualUsers: indivUsers?.length || 0,
+        individualUsers: indivCount,
         teams: teamCount,
         nodes: nodeCount,
         reminders: remCount,
@@ -217,7 +180,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
       setDbLatencyMs(Math.round(endPing - startPing));
     } catch (err: any) {
       console.error('Error fetching telemetry:', err);
-      setOrganizations(DEFAULT_DEMO_ORGS);
+      setOrganizations([]);
     } finally {
       setLoading(false);
     }
@@ -287,27 +250,30 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
 
       if (error) throw error;
 
-      setCreatedOrgPackage(data as Organization);
-      setShowCreateModal(false);
+      const created = data as Organization;
+      setCreatedOrgPackage(created);
+
       setNewOrgName('');
       setNewOrgCode('');
       setNewAdminEmail('');
+      setShowCreateModal(false);
+
       await loadData();
     } catch (err: any) {
-      alert('Failed to create organization: ' + err.message);
+      alert('Failed to provision client organization: ' + err.message);
     }
   };
 
   const handleOpenEditOrg = (org: Organization) => {
     setEditingOrg(org);
     setEditName(org.name);
-    setEditOrgCode(org.org_code || 'APACHE');
-    setEditAdminEmail(org.primary_admin_email || 'admin@apache.com');
+    setEditOrgCode(org.org_code || '');
+    setEditAdminEmail(org.primary_admin_email || '');
     setEditTier(org.subscription_tier || 'enterprise');
     setEditBrandTitle(org.brand_title || `Cadence - ${org.name}`);
     setEditBrandTagline(org.brand_tagline || 'Enterprise Ex-Factory CPM Tracker');
-    setEditBrandLogoUrl(org.logo_url || '');
     setEditBrandColor(org.brand_color || '#0d9488');
+    setEditBrandLogoUrl(org.logo_url || '');
   };
 
   const handleSaveEditOrganization = async (e: React.FormEvent) => {
@@ -347,98 +313,65 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
     }
   };
 
-  const handleApproveUpgradeRequest = async (req: TierUpgradeRequest) => {
-    try {
-      // 1. If it's a personal user
-      if (req.user_id && !req.org_id) {
-        await supabase.from('profiles').update({ tier: req.requested_tier, updated_at: new Date().toISOString() }).eq('id', req.user_id);
-      }
-      // 2. If it's an organization upgrade
-      if (req.org_id) {
-        const orgTierMap: Record<string, 'starter' | 'pro' | 'enterprise'> = {
-          tier_1: 'starter',
-          tier_2: 'pro',
-          tier_3: 'enterprise',
-        };
-        await supabase.from('organizations').update({ subscription_tier: orgTierMap[req.requested_tier] || 'enterprise' }).eq('id', req.org_id);
-      }
-
-      // 3. Mark request approved
-      await supabase.from('tier_upgrade_requests').update({ status: 'approved', reviewed_at: new Date().toISOString() }).eq('id', req.id);
-      await loadData();
-      alert(`Upgrade request approved! ${req.user_email} has been upgraded to ${req.requested_tier.toUpperCase()}.`);
-    } catch (err: any) {
-      alert('Failed to approve request: ' + err.message);
+  const handleDeleteUser = async (userId: string, userEmail: string) => {
+    if (!confirm(`Are you sure you want to permanently delete user account "${userEmail}"?\n\nThis will remove their profile and workspace access.`)) {
+      return;
     }
-  };
 
-  const handleRejectUpgradeRequest = async (reqId: string) => {
     try {
-      await supabase.from('tier_upgrade_requests').update({ status: 'rejected', reviewed_at: new Date().toISOString() }).eq('id', reqId);
+      const { error } = await supabase.from('profiles').delete().eq('id', userId);
+      if (error) throw error;
+      alert(`User account "${userEmail}" deleted successfully.`);
       await loadData();
     } catch (err: any) {
-      alert('Failed to reject request: ' + err.message);
+      console.error('Delete user error:', err);
+      alert(`Failed to delete user: ${err.message}`);
     }
   };
 
-  const handleDownloadFullBackup = async () => {
-    try {
-      const [orgsRes, profsRes, teamsRes, nodesRes, remsRes] = await Promise.all([
-        supabase.from('organizations').select('*'),
-        supabase.from('profiles').select('*'),
-        supabase.from('teams').select('*'),
-        supabase.from('nodes').select('*'),
-        supabase.from('reminders').select('*'),
-      ]);
-
-      const fullBackupData = {
-        platform: 'Cadence CPM SaaS',
-        backup_created_at: new Date().toISOString(),
-        version: '1.0.0',
-        stats,
-        data: {
-          organizations: orgsRes.data || organizations,
-          profiles: profsRes.data || [],
-          teams: teamsRes.data || [],
-          nodes: nodesRes.data || [],
-          reminders: remsRes.data || [],
-        },
-      };
-
-      const blob = new Blob([JSON.stringify(fullBackupData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `cadence_full_platform_backup_${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (err: any) {
-      alert('Failed to generate full platform backup: ' + err.message);
-    }
-  };
-
+  // Complete Cascade Deletion of Organization & All Associated Member Accounts
   const handleDeleteOrganization = async (orgId: string, orgName: string) => {
-    const confirmName = prompt(`⚠️ CAUTION: Deleting "${orgName}" will permanently purge all its teams, user profiles, and critical path nodes.\n\nType "${orgName}" to confirm deletion:`);
+    const confirmName = prompt(`⚠️ CAUTION: Deleting "${orgName}" will permanently purge the organization, all member user accounts, teams, and critical path nodes.\n\nType "${orgName}" to confirm deletion:`);
     if (confirmName !== orgName) {
       if (confirmName !== null) alert('Deletion cancelled: Name did not match.');
       return;
     }
 
     try {
+      const targetOrg = organizations.find(o => o.id === orgId);
+
+      // 1. Delete all node audit logs
+      await supabase.from('node_audit_logs').delete().eq('org_id', orgId);
+      
+      // 2. Delete all nodes in org
       await supabase.from('nodes').delete().eq('org_id', orgId);
+
+      // 3. Delete all teams in org
       await supabase.from('teams').delete().eq('org_id', orgId);
-      await supabase.from('organizations').delete().eq('id', orgId);
+
+      // 4. Delete all upgrade requests for org
+      await supabase.from('tier_upgrade_requests').delete().eq('org_id', orgId);
+
+      // 5. Delete ALL user profiles associated with this org
+      await supabase.from('profiles').delete().eq('org_id', orgId);
+      if (targetOrg?.primary_admin_email) {
+        await supabase.from('profiles').delete().eq('email', targetOrg.primary_admin_email.toLowerCase());
+      }
+
+      // 6. Delete the organization record
+      const { error: orgDelErr } = await supabase.from('organizations').delete().eq('id', orgId);
+      if (orgDelErr) throw orgDelErr;
+
+      alert(`Organization "${orgName}" and all associated member accounts have been permanently purged from Supabase.`);
       await loadData();
-      alert(`Organization "${orgName}" has been successfully deleted.`);
     } catch (err: any) {
+      console.error('Error deleting organization:', err);
       alert('Error deleting organization: ' + err.message);
     }
   };
 
   const getBasePortalUrl = (): string => {
-    return 'https://cadence-cpm.netlify.app';
+    return window.location.origin;
   };
 
   const copyOrgWorkspaceDetails = async (org: Organization) => {
@@ -454,23 +387,19 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
     }
   };
 
-  const handleDeleteUser = async (userId: string, userEmail: string) => {
-    if (!confirm(`Are you sure you want to permanently delete user account "${userEmail}"?\n\nThis will remove their profile and workspace data from the system.`)) {
-      return;
-    }
-
-    try {
-      const { error } = await supabase.from('profiles').delete().eq('id', userId);
-      if (error) throw error;
-      alert(`User account "${userEmail}" deleted successfully.`);
-      await loadData();
-    } catch (err: any) {
-      console.error('Delete user error:', err);
-      alert(`Failed to delete user: ${err.message}`);
-    }
-  };
-
   const pendingRequestsCount = upgradeRequests.filter(r => r.status === 'pending').length;
+
+  // Filtered Users List
+  const filteredUsers = allUsers.filter(u => {
+    if (userTypeFilter === 'individual' && (u.org_id || u.account_type === 'organization')) return false;
+    if (userTypeFilter === 'organization' && (!u.org_id && u.account_type === 'individual')) return false;
+
+    if (userSearch.trim()) {
+      const q = userSearch.toLowerCase();
+      return u.email.toLowerCase().includes(q) || (u.full_name && u.full_name.toLowerCase().includes(q));
+    }
+    return true;
+  });
 
   return (
     <div className="space-y-6">
@@ -482,7 +411,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
           </div>
           <h1 className="text-xl md:text-2xl font-black tracking-tight">Platform SaaS Control & Telemetry Console</h1>
           <p className="text-xs md:text-sm text-slate-400 mt-1">
-            Manage multi-tenant organizations, review tier upgrades, oversee personal users, and monitor database telemetry.
+            Manage multi-tenant organizations, review tier upgrades, oversee all registered users, and purge client accounts.
           </p>
         </div>
 
@@ -494,122 +423,92 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
           >
             <Plus className="w-4 h-4" /> Provision Client Org
           </button>
-          
+
           <button
             type="button"
-            onClick={handleDownloadFullBackup}
-            className="w-full h-10 px-4 bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 rounded-xl font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-2 shrink-0"
+            onClick={loadData}
+            className="w-full h-9 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl font-semibold text-xs transition-colors flex items-center justify-center gap-2"
           >
-            <Download className="w-4 h-4 text-teal-400" /> Full DB JSON Backup
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh Telemetry
           </button>
         </div>
       </div>
 
-      {/* PENDING UPGRADE REQUESTS BANNER */}
-      {pendingRequestsCount > 0 && (
-        <div className="bg-indigo-500/10 border border-indigo-500/30 p-4 rounded-3xl text-indigo-200 flex items-center justify-between gap-4 shadow-sm animate-in fade-in">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center border border-indigo-500/30 shrink-0">
-              <ArrowUpCircle className="w-5 h-5 animate-pulse" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-indigo-300">
-                Action Required: {pendingRequestsCount} Pending Tier Upgrade Request{pendingRequestsCount > 1 ? 's' : ''}
-              </h3>
-              <p className="text-xs text-indigo-200/80">
-                Users or organizations have requested plan upgrades awaiting your approval.
-              </p>
-            </div>
-          </div>
+      {/* Telemetry Stat Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+        <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-2xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block">Organizations</span>
+          <span className="text-lg font-black text-gray-900 font-mono mt-0.5 block">{stats.organizations}</span>
         </div>
-      )}
-
-      {/* TELEMETRY QUOTA METRICS CARDS */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
-        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs space-y-1">
-          <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Client Orgs</span>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-black text-gray-900">{stats.organizations}</span>
-            <span className="text-xs text-teal-600 font-semibold font-mono">100% Active</span>
-          </div>
+        <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-2xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block">Registered Users</span>
+          <span className="text-lg font-black text-gray-900 font-mono mt-0.5 block">{allUsers.length}</span>
         </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs space-y-1">
-          <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Personal Users</span>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-black text-gray-900">{stats.individualUsers}</span>
-            <span className="text-xs text-indigo-600 font-semibold font-mono">Tier 1/2</span>
-          </div>
+        <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-2xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-teal-600 block">Personal Free Users</span>
+          <span className="text-lg font-black text-teal-700 font-mono mt-0.5 block">{stats.individualUsers}</span>
         </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs space-y-1">
-          <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Total Members</span>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-black text-gray-900">{stats.profiles}</span>
-            <span className="text-xs text-gray-500 font-mono">Profiles</span>
-          </div>
+        <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-2xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block">Active Milestones</span>
+          <span className="text-lg font-black text-gray-900 font-mono mt-0.5 block">{stats.nodes}</span>
         </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs space-y-1">
-          <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">CPM Milestones</span>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-black text-gray-900">{stats.nodes}</span>
-            <span className="text-xs text-teal-600 font-semibold font-mono">Nodes</span>
-          </div>
+        <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-2xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 block">Active Alerts</span>
+          <span className="text-lg font-black text-amber-700 font-mono mt-0.5 block">{stats.reminders}</span>
         </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs space-y-1">
-          <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">DB Response Ping</span>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-black text-emerald-600 font-mono">{dbLatencyMs}ms</span>
-            <span className="text-xs text-emerald-700 font-bold">Healthy</span>
-          </div>
+        <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-2xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block">DB Latency</span>
+          <span className="text-lg font-black text-emerald-600 font-mono mt-0.5 block">{dbLatencyMs} ms</span>
         </div>
       </div>
 
-      {/* SECTION: ORGANIZATIONS DIRECTORY */}
-      {(currentSection === 'organizations' || !currentSection) && (
-        <div className="bg-white rounded-3xl border border-gray-200 shadow-2xs overflow-hidden">
-          <div className="p-4 bg-gray-50/50 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
-              <Building2 className="w-4 h-4 text-teal-600" /> Multi-Tenant Client Organizations ({organizations.length})
-            </h2>
+      {/* SECTION: CLIENT ORGANIZATIONS DIRECTORY */}
+      <div className="bg-white rounded-3xl border border-gray-200 shadow-2xs overflow-hidden">
+        <div className="p-4 bg-gray-50/50 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
+            <Building2 className="w-4 h-4 text-teal-600" /> Provisioned Client Organizations ({organizations.length})
+          </h2>
+          <button
+            type="button"
+            onClick={() => setShowCreateModal(true)}
+            className="px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-2xs flex items-center gap-1"
+          >
+            <Plus className="w-3.5 h-3.5" /> Provision Client Org
+          </button>
+        </div>
 
-            <button
-              type="button"
-              onClick={loadData}
-              className="p-1.5 text-gray-500 hover:text-gray-900 rounded-lg hover:bg-gray-100 transition-colors"
-              title="Refresh Telemetry"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 font-bold uppercase tracking-wider text-[10px]">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 font-bold uppercase tracking-wider text-[10px]">
+              <tr>
+                <th className="px-4 py-3">Organization Name</th>
+                <th className="px-4 py-3">Workspace Code</th>
+                <th className="px-4 py-3">Primary Admin Email</th>
+                <th className="px-4 py-3">Tier</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {organizations.length === 0 ? (
                 <tr>
-                  <th className="px-4 py-3">Organization</th>
-                  <th className="px-4 py-3">Workspace Code</th>
-                  <th className="px-4 py-3">Primary Admin</th>
-                  <th className="px-4 py-3">Subscription Tier</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <td colSpan={6} className="p-8 text-center text-gray-400 italic">
+                    No client organizations provisioned in database yet. Click "Provision Client Org" above to add your first tenant.
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {organizations.map(org => {
+              ) : (
+                organizations.map(org => {
                   const isCopied = copiedOrgId === org.id;
 
                   return (
                     <tr key={org.id} className="hover:bg-gray-50/60 transition-colors">
                       <td className="px-4 py-3.5">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className="w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shrink-0 border border-black/10 text-slate-950"
+                        <div className="flex items-center gap-2.5">
+                          <div 
+                            className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-white shadow-2xs shrink-0"
                             style={{ backgroundColor: org.brand_color || '#0d9488' }}
                           >
-                            {org.name.slice(0, 2).toUpperCase()}
+                            {org.name.charAt(0)}
                           </div>
                           <div>
                             <div className="font-bold text-gray-900">{org.name}</div>
@@ -620,12 +519,12 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
 
                       <td className="px-4 py-3.5">
                         <span className="font-mono bg-slate-900 text-teal-300 font-bold px-2 py-1 rounded-md text-[11px]">
-                          {org.org_code || 'APACHE'}
+                          {org.org_code}
                         </span>
                       </td>
 
                       <td className="px-4 py-3.5 font-mono text-gray-700">
-                        {org.primary_admin_email || 'admin@apache.com'}
+                        {org.primary_admin_email}
                       </td>
 
                       <td className="px-4 py-3.5">
@@ -639,15 +538,9 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                       </td>
 
                       <td className="px-4 py-3.5">
-                        {org.status === 'active' ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full font-bold border border-emerald-200">
-                            <CheckCircle2 className="w-3 h-3" /> Active
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[10px] bg-rose-50 text-rose-700 px-2.5 py-1 rounded-full font-bold border border-rose-200">
-                            <ShieldAlert className="w-3 h-3" /> Suspended
-                          </span>
-                        )}
+                        <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full font-bold border border-emerald-200">
+                          <CheckCircle2 className="w-3 h-3" /> Active
+                        </span>
                       </td>
 
                       <td className="px-4 py-3.5 text-right">
@@ -673,7 +566,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                           <button
                             type="button"
                             onClick={() => handleDeleteOrganization(org.id, org.name)}
-                            title="Delete Organization"
+                            title="Delete Organization & Purge All Member Accounts"
                             className="h-8 w-8 flex items-center justify-center rounded-xl border border-rose-200 text-rose-600 bg-rose-50 hover:bg-rose-100 transition-colors shadow-2xs"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -682,182 +575,220 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                       </td>
                     </tr>
                   );
-                })}
-              </tbody>
-            </table>
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* SECTION: ALL REGISTERED PLATFORM USERS DIRECTORY */}
+      <div className="bg-white rounded-3xl border border-gray-200 shadow-2xs overflow-hidden space-y-3 p-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <User className="w-5 h-5 text-teal-600" />
+            <div>
+              <h2 className="text-xs font-bold uppercase tracking-wider text-gray-900">All Registered User Accounts ({filteredUsers.length})</h2>
+              <p className="text-[11px] text-gray-500">Overview of all individual personal accounts and organization members</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Search */}
+            <div className="relative">
+              <input
+                type="text"
+                value={userSearch}
+                onChange={e => setUserSearch(e.target.value)}
+                placeholder="Search email or name..."
+                className="text-xs pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-medium"
+              />
+              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2" />
+            </div>
+
+            {/* Filter */}
+            <select
+              value={userTypeFilter}
+              onChange={e => setUserTypeFilter(e.target.value as any)}
+              className="text-xs px-3 py-1.5 bg-gray-50 border border-gray-300 rounded-xl font-semibold outline-none focus:border-teal-500"
+            >
+              <option value="all">All User Types</option>
+              <option value="individual">Personal (Individual)</option>
+              <option value="organization">Company Members</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 font-bold uppercase tracking-wider text-[10px]">
+              <tr>
+                <th className="px-4 py-3">User Profile</th>
+                <th className="px-4 py-3">Workspace Type</th>
+                <th className="px-4 py-3">Role & Access</th>
+                <th className="px-4 py-3">Assigned Tier</th>
+                <th className="px-4 py-3 text-right">Admin Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filteredUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="p-8 text-center text-gray-400 italic">
+                    No registered user accounts matching search filter.
+                  </td>
+                </tr>
+              ) : (
+                filteredUsers.map(u => {
+                  const isPersonal = !u.org_id || u.account_type === 'individual';
+                  const orgName = u.org_id ? organizations.find(o => o.id === u.org_id)?.name || 'Company Workspace' : 'Personal Workspace';
+
+                  return (
+                    <tr key={u.id} className="hover:bg-gray-50/60 transition-colors">
+                      <td className="px-4 py-3.5">
+                        <div className="font-bold text-gray-900">{u.full_name || 'Registered User'}</div>
+                        <div className="text-[11px] text-gray-500 font-mono">{u.email}</div>
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold ${
+                          isPersonal 
+                            ? 'bg-slate-100 text-slate-700 border border-slate-200' 
+                            : 'bg-teal-50 text-teal-800 border border-teal-200'
+                        }`}>
+                          {isPersonal ? '👤 Personal Free' : `🏢 ${orgName}`}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        <span className="text-[11px] font-bold text-gray-800 capitalize font-mono">
+                          {u.role.replace(/_/g, ' ')}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase font-mono ${
+                          (u as any).tier === 'tier_3'
+                            ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                            : (u as any).tier === 'tier_2' 
+                            ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' 
+                            : 'bg-teal-50 text-teal-700 border border-teal-200'
+                        }`}>
+                          {(u as any).tier || 'tier_1'}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3.5 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {isPersonal && (
+                            <select
+                              value={(u as any).tier || 'tier_1'}
+                              onChange={e => handleUpdateIndividualTier(u.id, e.target.value as any)}
+                              className="h-8 px-2 bg-white border border-gray-300 rounded-xl text-xs font-semibold outline-none focus:border-teal-500"
+                            >
+                              <option value="tier_1">Tier 1: Personal</option>
+                              <option value="tier_2">Tier 2: Pro</option>
+                              <option value="tier_3">Tier 3: Enterprise</option>
+                            </select>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteUser(u.id, u.email)}
+                            title="Delete User Account"
+                            className="h-8 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl font-bold text-xs transition-colors border border-rose-200 flex items-center justify-center gap-1 shadow-2xs"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Delete Account</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* CREATE NEW CLIENT ORG MODAL */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-200 space-y-4">
+            <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <Plus className="w-5 h-5 text-teal-600" />
+              <span>Provision Client Organization</span>
+            </h2>
+
+            <form onSubmit={handleCreateOrganization} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-gray-700 mb-1">Company / Organization Name</label>
+                <input
+                  type="text"
+                  required
+                  value={newOrgName}
+                  onChange={e => setNewOrgName(e.target.value)}
+                  placeholder="e.g. Apache Footwear Tier 1"
+                  className="w-full text-xs p-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-gray-700 mb-1">Workspace Code (Unique ID)</label>
+                <input
+                  type="text"
+                  required
+                  value={newOrgCode}
+                  onChange={e => setNewOrgCode(e.target.value.toUpperCase())}
+                  placeholder="e.g. APACHE"
+                  className="w-full text-xs p-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-mono uppercase font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-gray-700 mb-1">Primary Org Admin Email</label>
+                <input
+                  type="email"
+                  required
+                  value={newAdminEmail}
+                  onChange={e => setNewAdminEmail(e.target.value)}
+                  placeholder="admin@apache.com"
+                  className="w-full text-xs p-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-gray-700 mb-1">Subscription Tier</label>
+                <select
+                  value={newOrgTier}
+                  onChange={e => setNewOrgTier(e.target.value as any)}
+                  className="w-full text-xs p-2.5 bg-gray-50 border border-gray-300 rounded-xl font-bold outline-none focus:border-teal-500"
+                >
+                  <option value="enterprise">Tier 3: Enterprise Ex-Factory</option>
+                  <option value="pro">Tier 2: Pro Power User</option>
+                  <option value="starter">Tier 1: Starter</option>
+                </select>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 text-gray-600 font-semibold rounded-xl hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-2xs"
+                >
+                  Provision Client Org
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
-
-      {/* SECTION: TIER UPGRADE REQUESTS QUEUE */}
-      <div className="bg-white rounded-3xl border border-gray-200 shadow-2xs overflow-hidden">
-        <div className="p-4 bg-gray-50/50 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
-            <ArrowUpCircle className="w-4 h-4 text-indigo-600" /> Tier Upgrade Requests ({upgradeRequests.length})
-          </h2>
-          <span className="text-[10px] text-gray-400 font-mono">Super Admin Review</span>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 font-bold uppercase tracking-wider text-[10px]">
-              <tr>
-                <th className="px-4 py-3">Requester</th>
-                <th className="px-4 py-3">Organization</th>
-                <th className="px-4 py-3">Requested Upgrade</th>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Decision</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {upgradeRequests.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="p-8 text-center text-gray-400 italic">
-                    No upgrade requests submitted yet.
-                  </td>
-                </tr>
-              ) : (
-                upgradeRequests.map(req => (
-                  <tr key={req.id} className="hover:bg-gray-50/60 transition-colors">
-                    <td className="px-4 py-3.5">
-                      <div className="font-bold text-gray-900">{req.user_name || 'User'}</div>
-                      <div className="text-[11px] text-gray-500 font-mono">{req.user_email}</div>
-                    </td>
-                    <td className="px-4 py-3.5 text-gray-700">
-                      {req.org_name || 'Personal Account'}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span className="font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-200 uppercase font-mono text-[10px]">
-                        {req.current_tier} ➔ {req.requested_tier}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3.5 text-gray-400 font-mono text-[11px]">
-                      {new Date(req.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      {req.status === 'approved' ? (
-                        <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-bold border border-emerald-200">
-                          Approved
-                        </span>
-                      ) : req.status === 'rejected' ? (
-                        <span className="text-[10px] bg-rose-50 text-rose-700 px-2 py-0.5 rounded-full font-bold border border-rose-200">
-                          Rejected
-                        </span>
-                      ) : (
-                        <span className="text-[10px] bg-amber-50 text-amber-800 px-2 py-0.5 rounded-full font-bold border border-amber-200 animate-pulse">
-                          Pending Review
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3.5 text-right">
-                      {req.status === 'pending' && (
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => handleApproveUpgradeRequest(req)}
-                            className="h-7 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-2xs"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleRejectUpgradeRequest(req.id)}
-                            className="h-7 px-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-bold text-xs"
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* SECTION: PERSONAL INDIVIDUAL USERS DIRECTORY */}
-      <div className="bg-white rounded-3xl border border-gray-200 shadow-2xs overflow-hidden">
-        <div className="p-4 bg-gray-50/50 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
-            <User className="w-4 h-4 text-teal-600" /> Individual Personal Users ({individualUsers.length})
-          </h2>
-          <span className="text-[10px] text-gray-400 font-mono">Independent Workspaces</span>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 font-bold uppercase tracking-wider text-[10px]">
-              <tr>
-                <th className="px-4 py-3">User</th>
-                <th className="px-4 py-3">Account Type</th>
-                <th className="px-4 py-3">Assigned Tier</th>
-                <th className="px-4 py-3">Joined Date</th>
-                <th className="px-4 py-3 text-right">Set Tier (Admin Override)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {individualUsers.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="p-8 text-center text-gray-400 italic">
-                    No individual personal users registered yet.
-                  </td>
-                </tr>
-              ) : (
-                individualUsers.map(u => (
-                  <tr key={u.id} className="hover:bg-gray-50/60 transition-colors">
-                    <td className="px-4 py-3.5">
-                      <div className="font-bold text-gray-900">{u.full_name || 'Personal User'}</div>
-                      <div className="text-[11px] text-gray-500 font-mono">{u.email}</div>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-bold">
-                        Individual / Personal
-                      </span>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase font-mono ${
-                        (u as any).tier === 'tier_2' 
-                          ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' 
-                          : 'bg-teal-50 text-teal-700 border border-teal-200'
-                      }`}>
-                        {(u as any).tier || 'tier_1'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3.5 text-gray-400 font-mono text-[11px]">
-                      {new Date(u.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-3.5 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <select
-                          value={(u as any).tier || 'tier_1'}
-                          onChange={e => handleUpdateIndividualTier(u.id, e.target.value as any)}
-                          className="h-8 px-2 bg-white border border-gray-300 rounded-xl text-xs font-semibold outline-none focus:border-teal-500"
-                        >
-                          <option value="tier_1">Tier 1: Personal (Free)</option>
-                          <option value="tier_2">Tier 2: Pro ($9/mo)</option>
-                          <option value="tier_3">Tier 3: Enterprise</option>
-                        </select>
-
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteUser(u.id, u.email)}
-                          title="Delete User Account"
-                          className="h-8 w-8 flex items-center justify-center rounded-xl border border-rose-200 text-rose-600 bg-rose-50 hover:bg-rose-100 transition-colors shadow-2xs shrink-0"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
       {/* EDIT ORGANIZATION MODAL */}
       {editingOrg && (
@@ -876,7 +807,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                   required
                   value={editName}
                   onChange={e => setEditName(e.target.value)}
-                  className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                  className="w-full text-xs p-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
                 />
               </div>
 
@@ -888,207 +819,49 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                     required
                     value={editOrgCode}
                     onChange={e => setEditOrgCode(e.target.value.toUpperCase())}
-                    className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl font-mono uppercase font-bold outline-none focus:border-teal-500"
+                    className="w-full text-xs p-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-mono font-bold uppercase"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-bold text-gray-700 mb-1">Subscription Tier</label>
-                  <select
-                    value={editTier}
-                    onChange={e => setEditTier(e.target.value as any)}
-                    className="w-full h-9 px-2 bg-white border border-gray-300 rounded-xl font-semibold outline-none focus:border-teal-500"
-                  >
-                    <option value="starter">Starter (Tier 1)</option>
-                    <option value="pro">Pro (Tier 2)</option>
-                    <option value="enterprise">Enterprise (Tier 3)</option>
-                  </select>
+                  <label className="block font-bold text-gray-700 mb-1">Primary Admin Email</label>
+                  <input
+                    type="email"
+                    required
+                    value={editAdminEmail}
+                    onChange={e => setEditAdminEmail(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-mono"
+                  />
                 </div>
               </div>
 
               <div>
-                <label className="block font-bold text-gray-700 mb-1">Primary Admin Email</label>
+                <label className="block font-bold text-gray-700 mb-1">Brand Title Header</label>
                 <input
-                  type="email"
-                  required
-                  value={editAdminEmail}
-                  onChange={e => setEditAdminEmail(e.target.value)}
-                  className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl font-mono outline-none focus:border-teal-500"
+                  type="text"
+                  value={editBrandTitle}
+                  onChange={e => setEditBrandTitle(e.target.value)}
+                  placeholder="e.g. Cadence - Apache Footwear"
+                  className="w-full text-xs p-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
                 />
               </div>
 
-              <div>
-                <label className="block font-bold text-gray-700 mb-1">Brand Theme Color</label>
-                <div className="flex flex-wrap gap-2 pt-1">
-                  {BRAND_PALETTES.map(p => (
-                    <button
-                      key={p.hex}
-                      type="button"
-                      onClick={() => setEditBrandColor(p.hex)}
-                      className={`w-7 h-7 rounded-full border-2 transition-transform ${
-                        editBrandColor === p.hex ? 'scale-110 border-slate-900 shadow-xs' : 'border-white'
-                      }`}
-                      style={{ backgroundColor: p.hex }}
-                      title={p.name}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
                 <button
                   type="button"
                   onClick={() => setEditingOrg(null)}
-                  className="h-9 px-4 text-gray-600 font-semibold rounded-xl hover:bg-gray-100"
+                  className="px-4 py-2 text-gray-600 font-semibold rounded-xl hover:bg-gray-100"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="h-9 px-4 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-2xs"
+                  className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-2xs"
                 >
                   Save Changes
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* CREATE NEW ORGANIZATION MODAL */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-200 space-y-4">
-            <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-teal-600" />
-              <span>Provision Client Organization</span>
-            </h2>
-
-            <form onSubmit={handleCreateOrganization} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-bold text-gray-700 mb-1">Organization Name</label>
-                <input
-                  type="text"
-                  required
-                  value={newOrgName}
-                  onChange={e => setNewOrgName(e.target.value)}
-                  placeholder="e.g. Adidas Taiwan Development"
-                  className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1">Workspace Code</label>
-                  <input
-                    type="text"
-                    required
-                    value={newOrgCode}
-                    onChange={e => setNewOrgCode(e.target.value.toUpperCase())}
-                    placeholder="e.g. ADIDAS-TW"
-                    className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl font-mono uppercase font-bold outline-none focus:border-teal-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1">Subscription Tier</label>
-                  <select
-                    value={newOrgTier}
-                    onChange={e => setNewOrgTier(e.target.value as any)}
-                    className="w-full h-9 px-2 bg-white border border-gray-300 rounded-xl font-semibold outline-none focus:border-teal-500"
-                  >
-                    <option value="starter">Starter (Tier 1)</option>
-                    <option value="pro">Pro (Tier 2)</option>
-                    <option value="enterprise">Enterprise (Tier 3)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-gray-700 mb-1">Primary Org Admin Email</label>
-                <input
-                  type="email"
-                  required
-                  value={newAdminEmail}
-                  onChange={e => setNewAdminEmail(e.target.value)}
-                  placeholder="admin@client.com"
-                  className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl font-mono outline-none focus:border-teal-500"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="h-9 px-4 text-gray-600 font-semibold rounded-xl hover:bg-gray-100"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="h-9 px-4 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-2xs"
-                >
-                  Create Organization
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* CREATED ORG PACKAGE SUMMARY MODAL */}
-      {createdOrgPackage && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-200 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center border border-emerald-500/20">
-                <CheckCircle2 className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="text-base font-bold text-gray-900">Organization Provisioned!</h2>
-                <p className="text-xs text-gray-500">Client workspace is active in the cloud database.</p>
-              </div>
-            </div>
-
-            <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200 space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-gray-500">Organization:</span>
-                <span className="font-bold text-gray-900">{createdOrgPackage.name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Workspace Code:</span>
-                <span className="font-mono font-bold bg-slate-900 text-teal-300 px-2 py-0.5 rounded">
-                  {createdOrgPackage.org_code}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Primary Admin:</span>
-                <span className="font-mono font-bold text-gray-900">{createdOrgPackage.primary_admin_email}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Subscription Tier:</span>
-                <span className="font-bold text-amber-700 uppercase font-mono">{createdOrgPackage.subscription_tier}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setCreatedOrgPackage(null)}
-                className="h-9 px-4 text-gray-600 font-semibold rounded-xl hover:bg-gray-100 text-xs"
-              >
-                Done
-              </button>
-
-              <button
-                type="button"
-                onClick={() => copyOrgWorkspaceDetails(createdOrgPackage)}
-                className="h-9 px-4 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-xs text-xs flex items-center gap-1.5"
-              >
-                {copiedWelcome ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                <span>{copiedWelcome ? 'Copied Details!' : 'Copy Client Login Package'}</span>
-              </button>
-            </div>
           </div>
         </div>
       )}

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { 
   Lock, Mail, ArrowRight, CheckCircle2, UserPlus, LogIn, Building2, 
-  Footprints, Sparkles, User, KeyRound, ArrowLeft 
+  Footprints, Sparkles, User, KeyRound, ArrowLeft, Send, AlertCircle 
 } from 'lucide-react';
 
 interface LoginPageProps {
@@ -38,11 +38,37 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [signUpSuccess, setSignUpSuccess] = useState<boolean>(false);
+  const [needsEmailConfirmation, setNeedsEmailConfirmation] = useState<boolean>(false);
   const [resetEmailSent, setResetEmailSent] = useState<boolean>(false);
+  const [resendSuccess, setResendSuccess] = useState<boolean>(false);
   const [isPrimaryAdminSuccess, setIsPrimaryAdminSuccess] = useState<boolean>(false);
 
   // Dynamic Live Real-Time Brand State
   const [orgBranding, setOrgBranding] = useState<PublicOrgBranding | null>(null);
+
+  // Detect URL Hash Error Fragments (e.g. #error=access_denied&error_code=otp_expired)
+  useEffect(() => {
+    const hash = window.location.hash;
+    const search = window.location.search;
+
+    if (hash || search) {
+      const rawString = (hash.startsWith('#') ? hash.slice(1) : hash) || (search.startsWith('?') ? search.slice(1) : search);
+      const params = new URLSearchParams(rawString);
+      const errorCode = params.get('error_code');
+      const errorDesc = params.get('error_description');
+
+      if (errorCode || errorDesc) {
+        const decodedDesc = errorDesc ? decodeURIComponent(errorDesc.replace(/\+/g, ' ')) : 'Authentication link is invalid or has expired.';
+        setErrorMsg(`⚠️ Verification Error: ${decodedDesc} Please enter your email below to get a fresh link.`);
+        setNeedsEmailConfirmation(true);
+
+        // Clean URL fragment cleanly
+        try {
+          window.history.replaceState(null, '', window.location.pathname);
+        } catch {}
+      }
+    }
+  }, []);
 
   // Debounced Dynamic Database Lookup when Workspace Code is typed
   useEffect(() => {
@@ -110,11 +136,38 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     }
   };
 
+  const handleResendConfirmation = async () => {
+    if (!email.trim()) {
+      setErrorMsg('Please enter your email address above to resend confirmation link.');
+      return;
+    }
+
+    setLoading(true);
+    setErrorMsg(null);
+    setResendSuccess(false);
+
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: email.trim().toLowerCase(),
+      });
+
+      if (error) throw error;
+      setResendSuccess(true);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to resend confirmation email.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setErrorMsg(null);
     setSignUpSuccess(false);
+    setNeedsEmailConfirmation(false);
+    setResendSuccess(false);
 
     try {
       const codeUpper = workspaceCode.trim().toUpperCase();
@@ -150,6 +203,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               status: 'approved',
               approved_at: new Date().toISOString(),
             });
+          }
+
+          // Check if email confirmation is required by Supabase auth configuration
+          if (!authData.session && authData.user && !authData.user.email_confirmed_at) {
+            setNeedsEmailConfirmation(true);
           }
 
           setSignUpSuccess(true);
@@ -202,6 +260,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           }
         }
 
+        if (!authData.session && authData.user && !authData.user.email_confirmed_at) {
+          setNeedsEmailConfirmation(true);
+        }
+
         setSignUpSuccess(true);
       } else {
         // Standard Secure Sign In
@@ -209,7 +271,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           email: email.trim().toLowerCase(),
           password,
         });
-        if (error) throw error;
+        
+        if (error) {
+          if (error.message.toLowerCase().includes('email not confirmed')) {
+            setNeedsEmailConfirmation(true);
+          }
+          throw error;
+        }
+
         if (onLoginSuccess) onLoginSuccess();
       }
     } catch (err: any) {
@@ -404,8 +473,24 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             )}
 
             {errorMsg && (
-              <div className="bg-rose-500/10 border border-rose-500/30 p-3 rounded-2xl text-xs text-rose-300 text-center font-medium">
-                {errorMsg}
+              <div className="bg-rose-500/10 border border-rose-500/30 p-3 rounded-2xl text-xs text-rose-300 text-center space-y-2 font-medium">
+                <p>{errorMsg}</p>
+
+                {needsEmailConfirmation && (
+                  <button
+                    type="button"
+                    onClick={handleResendConfirmation}
+                    className="px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg font-bold text-[11px] inline-flex items-center gap-1 transition-colors"
+                  >
+                    <Send className="w-3 h-3" /> Resend Confirmation Email
+                  </button>
+                )}
+              </div>
+            )}
+
+            {resendSuccess && (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 p-3 rounded-2xl text-xs text-emerald-300 text-center font-medium">
+                ✓ Confirmation link resent! Please check your email inbox ({email}).
               </div>
             )}
 
@@ -413,15 +498,27 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               <div className="bg-emerald-500/10 border border-emerald-500/30 p-4 rounded-2xl text-xs text-emerald-300 text-center space-y-1">
                 <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto" />
                 <p className="font-bold text-white text-sm">
-                  {accountType === 'personal' ? '🎉 Personal Workspace Ready!' : isPrimaryAdminSuccess ? '🎉 Company Activated!' : 'Registration Submitted!'}
+                  {accountType === 'personal' ? '🎉 Registration Submitted!' : isPrimaryAdminSuccess ? '🎉 Company Activated!' : 'Registration Submitted!'}
                 </p>
-                <p className="text-slate-300 text-[11px]">
-                  {accountType === 'personal'
+                <p className="text-slate-300 text-[11px] leading-relaxed">
+                  {needsEmailConfirmation
+                    ? `📧 We sent a verification link to ${email}. Please check your inbox and confirm your email address before signing in!`
+                    : accountType === 'personal'
                     ? 'Your personal task manager is ready. Sign in below to start organizing your timeline!'
                     : isPrimaryAdminSuccess 
                     ? 'Your Primary Org Admin account has been activated! Sign in below.' 
                     : 'Your registration has been submitted. Your Company Org Admin will review access.'}
                 </p>
+
+                {needsEmailConfirmation && (
+                  <button
+                    type="button"
+                    onClick={handleResendConfirmation}
+                    className="mt-2 px-3 py-1 bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 rounded-lg font-bold text-[11px] inline-flex items-center gap-1 transition-colors"
+                  >
+                    <Send className="w-3 h-3" /> Resend Confirmation Email
+                  </button>
+                )}
               </div>
             )}
 
