@@ -244,14 +244,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setTeam(null);
   };
 
-  const isSuperAdmin = Boolean(
-    profile?.role === 'super_admin' || 
-    profile?.role === 'admin' || 
-    profile?.role === 'org_admin' ||
-    (profile?.email && profile.email.toLowerCase().includes('admin')) ||
-    (user?.email && user.email.toLowerCase().includes('admin'))
-  );
-  
+  const isSuperAdmin = Boolean(profile?.role === 'super_admin');
   const isOrgAdmin = profile?.role === 'org_admin' || isSuperAdmin;
   const isApproved = profile?.status === 'approved' || isOrgAdmin;
   const isIndividual = (!profile?.org_id || profile?.account_type === 'individual') && !isSuperAdmin;

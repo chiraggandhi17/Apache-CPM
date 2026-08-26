@@ -207,24 +207,26 @@ export const AppShellContent: React.FC = () => {
             </div>
           </div>
 
-          {/* Persistent Platform Admin Console Switcher */}
-          <button
-            type="button"
-            onClick={() => setActiveTab('super_admin')}
-            className={`w-full mb-3 px-3 py-2.5 rounded-xl border text-xs font-extrabold flex items-center justify-between transition-all shadow-sm ${
-              activeTab.startsWith('super')
-                ? 'bg-teal-500 text-slate-950 border-teal-400'
-                : 'bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border-teal-500/40'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-teal-300" />
-              <span>Platform Admin Console</span>
-            </div>
-            <span className="text-[10px] bg-slate-950 text-teal-300 px-1.5 py-0.5 rounded font-mono font-black border border-teal-500/30">
-              SaaS Admin
-            </span>
-          </button>
+          {/* Persistent Platform Admin Console Switcher for Super Admins Only */}
+          {isSuperAdmin && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('super_admin')}
+              className={`w-full mb-3 px-3 py-2.5 rounded-xl border text-xs font-extrabold flex items-center justify-between transition-all shadow-sm ${
+                activeTab.startsWith('super')
+                  ? 'bg-teal-500 text-slate-950 border-teal-400'
+                  : 'bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border-teal-500/40'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-teal-300" />
+                <span>Platform Admin Console</span>
+              </div>
+              <span className="text-[10px] bg-slate-950 text-teal-300 px-1.5 py-0.5 rounded font-mono font-black border border-teal-500/30">
+                SaaS Admin
+              </span>
+            </button>
+          )}
 
           {/* Active Workspace Tier Selector Button */}
           {!isSuperAdmin && (
