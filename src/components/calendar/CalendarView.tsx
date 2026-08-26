@@ -6,7 +6,7 @@ import interactionPlugin from '@fullcalendar/interaction';
 import { useNodes } from '../../context/NodeContext';
 import { NodeItem, ReminderItem } from '../../types/domain';
 import { resolveColor } from '../../lib/color-resolver';
-import { Filter, Calendar as CalendarIcon, Bell, CheckCircle2, Zap, Layers } from 'lucide-react';
+import { Filter, Calendar as CalendarIcon, Bell, CheckCircle2, Zap, Layers, FolderTree, XCircle } from 'lucide-react';
 
 interface CalendarViewProps {
   onSelectNode: (node: NodeItem) => void;
@@ -17,6 +17,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
   const [selectedSeasons, setSelectedSeasons] = useState<string[]>([]);
+  const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(true);
   const [showAlertsOnCal, setShowAlertsOnCal] = useState(true);
 
@@ -28,14 +29,47 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
     return Array.from(new Set(nodes.map(n => n.season).filter(Boolean))) as string[];
   }, [nodes]);
 
+  // List candidate Parent Nodes (nodes that have children or act as containers)
+  const parentOptions = useMemo(() => {
+    const parentIdsWithChildren = new Set(nodes.map(n => n.parent_id).filter(Boolean));
+    return nodes.filter(n => parentIdsWithChildren.has(n.id) || ['project', 'department', 'season', 'task'].includes(n.type));
+  }, [nodes]);
+
+  // Calculate recursive descendant sub-task IDs for the selected parent task
+  const allowedSubtreeNodeIds = useMemo(() => {
+    if (!selectedParentId) return null; // Null means show all nodes
+
+    const result = new Set<string>([selectedParentId]);
+    const queue = [selectedParentId];
+
+    while (queue.length > 0) {
+      const pId = queue.shift()!;
+      const children = nodes.filter(n => n.parent_id === pId);
+      for (const child of children) {
+        if (!result.has(child.id)) {
+          result.add(child.id);
+          queue.push(child.id);
+        }
+      }
+    }
+
+    return result;
+  }, [selectedParentId, nodes]);
+
+  const selectedParentNode = useMemo(() => {
+    return selectedParentId ? nodes.find(n => n.id === selectedParentId) : null;
+  }, [selectedParentId, nodes]);
+
   const events = useMemo(() => {
-    // 1. Task & Milestone Events
+    // 1. Task & Milestone Events (Subtree Filtered)
     const nodeEvents = nodes
       .filter(n => {
         if (!n.planned_date) return false;
         if (!showCompleted && n.status === 'done') return false;
         if (selectedDepts.length > 0 && n.department && !selectedDepts.includes(n.department)) return false;
         if (selectedSeasons.length > 0 && n.season && !selectedSeasons.includes(n.season)) return false;
+        // Parent Task Subtree Filter
+        if (allowedSubtreeNodeIds && !allowedSubtreeNodeIds.has(n.id)) return false;
         return true;
       })
       .map(n => {
@@ -70,10 +104,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
         };
       });
 
-    // 2. Active Alerts & Reminders Events (Strictly bound to user's authorized nodes)
+    // 2. Active Alerts & Reminders Events (Strictly bound to user's authorized nodes & parent subtree)
     const reminderEvents = showAlertsOnCal
       ? reminders
-          .filter(r => !r.dismissed_at && r.remind_at && nodes.some(n => n.id === r.node_id))
+          .filter(r => {
+            if (r.dismissed_at || !r.remind_at) return false;
+            if (!nodes.some(n => n.id === r.node_id)) return false;
+            if (allowedSubtreeNodeIds && !allowedSubtreeNodeIds.has(r.node_id)) return false;
+            return true;
+          })
           .map(r => {
             const parentNode = nodes.find(n => n.id === r.node_id)!;
             let color = '#f59e0b'; // Default fallback amber
@@ -99,17 +138,18 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
               textColor: '#ffffff',
               extendedProps: { 
                 reminder: r, 
-                node: parentNode, 
-                isReminder: true,
+                isReminder: true, 
+                isDone: false, 
+                isCritical: false, 
                 color,
-                parentTitle: parentNode?.title || 'Milestone'
+                department: parentNode?.department || null 
               },
             };
           })
       : [];
 
     return [...nodeEvents, ...reminderEvents];
-  }, [nodes, reminders, selectedDepts, selectedSeasons, showCompleted, showAlertsOnCal]);
+  }, [nodes, reminders, selectedDepts, selectedSeasons, showCompleted, showAlertsOnCal, allowedSubtreeNodeIds]);
 
   const toggleDept = (dept: string) => {
     setSelectedDepts(prev =>
@@ -125,19 +165,47 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
 
   return (
     <div className="space-y-4">
-      {/* Calendar Header & Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs">
+      {/* Calendar Top Control Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-3xl border border-gray-200 shadow-2xs">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-teal-500/10 text-teal-600 flex items-center justify-center border border-teal-500/20">
+          <div className="w-10 h-10 rounded-2xl bg-teal-500/10 text-teal-700 flex items-center justify-center border border-teal-500/20 shrink-0">
             <CalendarIcon className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-gray-900">Master CPM & Alerts Calendar</h2>
-            <p className="text-xs text-gray-500">Sleek color-coded schedule view with automatic multi-event popover handling</p>
+            <h2 className="text-base font-extrabold text-gray-900 tracking-tight">Master Execution Calendar</h2>
+            <p className="text-xs text-gray-500">Color-coded milestone schedule view with Subtree filtering and alert sync</p>
           </div>
         </div>
 
-        <div className="flex items-center flex-wrap gap-2">
+        <div className="flex items-center flex-wrap gap-2.5">
+          {/* PARENT TASK / MODEL SUBTREE SELECTOR */}
+          <div className="flex items-center gap-1.5 bg-indigo-50/90 p-1 rounded-xl border border-indigo-200/80 shadow-2xs">
+            <FolderTree className="w-4 h-4 text-indigo-600 ml-1.5 shrink-0" />
+            <select
+              value={selectedParentId || ''}
+              onChange={e => setSelectedParentId(e.target.value || null)}
+              className="text-xs font-bold text-indigo-950 bg-transparent outline-none pr-2 py-1 cursor-pointer max-w-[210px] truncate"
+            >
+              <option value="">✨ All Parent Tasks & Subtrees</option>
+              {parentOptions.map(p => (
+                <option key={p.id} value={p.id}>
+                  [{p.type.toUpperCase()}] {p.title}
+                </option>
+              ))}
+            </select>
+
+            {selectedParentId && (
+              <button
+                type="button"
+                onClick={() => setSelectedParentId(null)}
+                className="p-1 text-indigo-600 hover:text-indigo-950 rounded-md transition-colors"
+                title="Clear Parent Task Filter"
+              >
+                <XCircle className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
           {/* Toggle Alerts */}
           <button
             type="button"
@@ -180,6 +248,25 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
           </button>
         </div>
       </div>
+
+      {/* ACTIVE SUBTREE FILTER BANNER */}
+      {selectedParentNode && (
+        <div className="bg-indigo-50/90 border border-indigo-200 px-4 py-2.5 rounded-2xl flex items-center justify-between text-xs text-indigo-950 font-medium shadow-2xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <FolderTree className="w-4 h-4 text-indigo-600 shrink-0" />
+            <span>
+              Isolated View: Showing subtasks & alerts for <strong>"[{selectedParentNode.type.toUpperCase()}] {selectedParentNode.title}"</strong> ({allowedSubtreeNodeIds?.size || 0} sub-items)
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedParentId(null)}
+            className="text-xs text-indigo-700 hover:text-indigo-950 font-bold underline ml-2"
+          >
+            Clear Subtree Filter
+          </button>
+        </div>
+      )}
 
       {showFilters && (
         <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs space-y-3 animate-in fade-in duration-150">
