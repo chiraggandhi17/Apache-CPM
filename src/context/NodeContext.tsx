@@ -82,9 +82,17 @@ interface NodeContextType {
 const NodeContext = createContext<NodeContextType | undefined>(undefined);
 
 export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { profile, isSuperAdmin, isOrgAdmin, isIndividual, accessLevel } = useAuth();
+  const { user, profile, isSuperAdmin, isOrgAdmin, isIndividual, accessLevel } = useAuth();
   
-  const [nodes, setNodes] = useState<NodeItem[]>([]);
+  const [nodes, setNodes] = useState<NodeItem[]>(() => {
+    try {
+      const cached = localStorage.getItem('cadence_cached_nodes');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+
   const [reminders, setReminders] = useState<ReminderItem[]>([]);
   const [selectedNode, setSelectedNode] = useState<NodeItem | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -97,16 +105,32 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .select('*')
         .order('sort_order', { ascending: true });
 
-      if (nodesErr) console.error('Supabase nodes fetch error:', nodesErr);
+      if (nodesErr) {
+        console.error('Supabase nodes fetch error:', nodesErr);
+      } else if (nodesData && nodesData.length > 0) {
+        setNodes(nodesData);
+        try {
+          localStorage.setItem('cadence_cached_nodes', JSON.stringify(nodesData));
+        } catch {
+          // Ignore quota errors
+        }
+      } else if (nodesData && nodesData.length === 0) {
+        // If DB returned empty, check if we had cached nodes
+        setNodes([]);
+        try {
+          localStorage.removeItem('cadence_cached_nodes');
+        } catch {}
+      }
 
       const { data: remindersData, error: remErr } = await supabase
         .from('reminders')
         .select('*');
 
-      if (remErr) console.error('Supabase reminders fetch error:', remErr);
-
-      setNodes(nodesData || []);
-      setReminders(remindersData || []);
+      if (remErr) {
+        console.error('Supabase reminders fetch error:', remErr);
+      } else if (remindersData) {
+        setReminders(remindersData);
+      }
     } catch (err) {
       console.error('Supabase fetch error:', err);
     } finally {
@@ -114,7 +138,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  // Initial fetch + Supabase Realtime Subscription Setup
+  // Initial fetch & re-fetch when user authentication loads + Supabase Realtime Subscription Setup
   useEffect(() => {
     fetchNodesAndReminders();
 
@@ -134,7 +158,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchNodesAndReminders]);
+  }, [user?.id, fetchNodesAndReminders]);
 
   useEffect(() => {
     if (selectedNode) {
