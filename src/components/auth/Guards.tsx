@@ -16,8 +16,12 @@ export const ProtectedAppGuard: React.FC<{ children: React.ReactNode; fallbackLo
     );
   }
 
-  // IF NO USER SESSION EXISTS, ALWAYS SHOW LOGIN / SIGN UP PAGE
-  if (!user) {
+  // IF NO USER SESSION EXISTS OR IF IN PASSWORD RECOVERY MODE, ALWAYS SHOW LOGIN PAGE
+  const isRecoveryMode = window.location.hash.includes('type=recovery') || 
+                         window.location.hash.includes('reset-password') || 
+                         window.location.search.includes('type=recovery');
+
+  if (!user || isRecoveryMode) {
     return <>{fallbackLogin}</>;
   }
 

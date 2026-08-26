@@ -9,7 +9,7 @@ import { formatLocalDate } from '../../utils/date-format';
 import { addDays, isValid, formatISO } from 'date-fns';
 import { 
   X, Calendar, User, Tag, FileText, Bell, Layers, Check, 
-  ChevronRight, ArrowLeft, ArrowRight, Trash2, Plus, Sparkles 
+  ChevronRight, ArrowLeft, ArrowRight, Trash2, Plus, Sparkles, AlertCircle 
 } from 'lucide-react';
 
 interface NodeFormProps {
@@ -117,6 +117,44 @@ export const NodeForm: React.FC<NodeFormProps> = ({
     return plannedDate ? new Date(plannedDate).toISOString() : null;
   })();
 
+  // Date Hierarchy & Lineage Validation Rules
+  const dateValidationError: string | null = (() => {
+    if (!calculatedTargetDate) return null;
+    const targetDateObj = new Date(calculatedTargetDate);
+    if (!isValid(targetDateObj)) return null;
+
+    // Rule A: Target date cannot be before year 2020
+    const minAllowedDate = new Date('2020-01-01');
+    if (targetDateObj < minAllowedDate) {
+      return '⚠️ Invalid Target Date: Milestone target date cannot be set before year 2020.';
+    }
+
+    // Rule B: Target date CANNOT be later than parent node target date
+    if (parentNode && parentEffectiveDate) {
+      const parentDateObj = new Date(parentEffectiveDate);
+      if (isValid(parentDateObj) && targetDateObj > parentDateObj) {
+        const childFormatted = formatLocalDate(calculatedTargetDate, 'MMM d, yyyy');
+        const parentFormatted = formatLocalDate(parentEffectiveDate, 'MMM d, yyyy');
+        return `⚠️ Date Exceeds Parent Limit: Selected date (${childFormatted}) is later than parent milestone "${parentNode.title}" target date (${parentFormatted}). Please choose a date on or before ${parentFormatted}, or update the parent node's target date first.`;
+      }
+    }
+
+    return null;
+  })();
+
+  const parentResolvedColor = parentNode?.color || (parentNode as any)?.effective_color || '#0D9488';
+
+  // Hierarchy level depth labels
+  const hierarchyDepth = ancestorPath.length + (parentNode ? 1 : 0);
+  const hierarchyLabels: Record<number, string> = {
+    1: 'Level 1: Department / Brand Space',
+    2: 'Level 2: Season / Collection',
+    3: 'Level 3: Product Model / Project',
+    4: 'Level 4: Milestone Task',
+    5: 'Level 5: Subtask / Action Item',
+  };
+  const currentHierarchyText = hierarchyLabels[hierarchyDepth] || `Level ${hierarchyDepth} Node`;
+
   // Calculate live reminder trigger date (with safe fallback to today if no date set)
   const calculatedReminderDate: string = (() => {
     const baseDateStr = calculatedTargetDate || (isEditing && initialNode?.planned_date);
@@ -134,7 +172,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || isSubmitting) return;
+    if (!title.trim() || isSubmitting || dateValidationError) return;
 
     setIsSubmitting(true);
     let finalPlannedDate: string | null = null;
@@ -214,16 +252,32 @@ export const NodeForm: React.FC<NodeFormProps> = ({
     <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden border border-gray-200 max-h-[90vh] flex flex-col">
         
-        {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-slate-50/80 shrink-0">
+        {/* Modal Header with Dynamic Parent Color Theme Accent */}
+        <div 
+          className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-slate-50/80 shrink-0"
+          style={{ borderTop: `6px solid ${parentResolvedColor}` }}
+        >
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-teal-600/10 text-teal-700 flex items-center justify-center border border-teal-200 shrink-0">
+            <div 
+              className="w-8 h-8 rounded-xl flex items-center justify-center text-white font-bold shrink-0 shadow-2xs"
+              style={{ backgroundColor: parentResolvedColor }}
+            >
               <Layers className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-gray-900 leading-tight">
-                {isEditing ? 'Edit Milestone' : `Add ${type.charAt(0).toUpperCase() + type.slice(1)}`}
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold text-gray-900 leading-tight">
+                  {isEditing ? 'Edit Milestone' : `Add ${type.charAt(0).toUpperCase() + type.slice(1)}`}
+                </h2>
+                {parentNode && (
+                  <span 
+                    className="text-[10px] font-mono px-2 py-0.5 rounded-md font-bold text-white shadow-2xs"
+                    style={{ backgroundColor: parentResolvedColor }}
+                  >
+                    Parent Theme
+                  </span>
+                )}
+              </div>
               
               {/* Ancestor Breadcrumb Path */}
               {ancestorPath.length > 0 && (
@@ -256,6 +310,24 @@ export const NodeForm: React.FC<NodeFormProps> = ({
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
           
+          {/* Hierarchy Level Explanatory Card */}
+          <div className="bg-teal-50/70 p-3 rounded-2xl border border-teal-200 text-xs text-teal-900 space-y-1">
+            <div className="flex items-center justify-between font-bold">
+              <span className="flex items-center gap-1.5 text-teal-950">
+                <Layers className="w-4 h-4 text-teal-700" />
+                <span>{currentHierarchyText}</span>
+              </span>
+              {parentNode && (
+                <span className="text-[11px] text-teal-800 font-medium">
+                  Parent Target: <strong>{parentEffectiveDate ? formatLocalDate(parentEffectiveDate, 'MMM d, yyyy') : 'No Limit'}</strong>
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-teal-800 leading-relaxed">
+              💡 <strong>Hierarchy Rules:</strong> Hierarchy levels structure tasks into sub-tasks (e.g. Model → Stage → Task → Subtask). Target dates of sub-tasks cannot exceed the parent milestone's target date.
+            </p>
+          </div>
+
           {/* Milestone Title */}
           <div>
             <label className="block font-bold text-gray-800 mb-1.5">
@@ -272,27 +344,29 @@ export const NodeForm: React.FC<NodeFormProps> = ({
             />
           </div>
 
-          {/* Type & Color Customization */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Hierarchy Type & Color Customization */}
+          <div className="space-y-3">
             <div>
-              <label className="block font-bold text-gray-700 mb-1.5">Hierarchy Level</label>
+              <label className="block font-bold text-gray-700 mb-1.5">Node Type / Category</label>
               <select
                 value={type}
                 onChange={e => setType(e.target.value as NodeType)}
                 className="w-full text-xs px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl font-semibold outline-none focus:border-teal-500 focus:bg-white"
               >
-                <option value="department">Department / Stream</option>
-                <option value="season">Season / Group</option>
-                <option value="project">Project / Model</option>
-                <option value="task">Major Task</option>
-                <option value="subtask">Sub-Task Milestone</option>
+                <option value="department">Department / Stream (Level 1)</option>
+                <option value="season">Season / Group (Level 2)</option>
+                <option value="project">Project / Model (Level 3)</option>
+                <option value="task">Major Task (Level 4)</option>
+                <option value="subtask">Sub-Task Milestone (Level 5)</option>
               </select>
             </div>
 
-            <div>
-              <label className="block font-bold text-gray-700 mb-1.5">Color Theme</label>
-              <ColorPicker value={color} onChange={setColor} />
-            </div>
+            <ColorPicker
+              value={color}
+              onChange={setColor}
+              inheritedColor={parentResolvedColor}
+              inheritedFromTitle={parentNode?.title}
+            />
           </div>
 
           {/* TARGET DATE & RELATIVE TIMING BUILDER */}
@@ -614,6 +688,17 @@ export const NodeForm: React.FC<NodeFormProps> = ({
             />
           </div>
 
+          {/* Date Hierarchy Validation Banner */}
+          {dateValidationError && (
+            <div className="bg-rose-50 border border-rose-200 p-3 rounded-2xl text-xs text-rose-900 font-medium space-y-1 shadow-2xs animate-in fade-in">
+              <div className="flex items-start gap-1.5 font-bold text-rose-950">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <span>Date Validation Error</span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-rose-800">{dateValidationError}</p>
+            </div>
+          )}
+
           {/* Form Actions */}
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
             <button
@@ -625,8 +710,12 @@ export const NodeForm: React.FC<NodeFormProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="h-9 px-5 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5"
+              disabled={isSubmitting || Boolean(dateValidationError)}
+              className={`h-9 px-5 font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 ${
+                dateValidationError
+                  ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed'
+                  : 'bg-teal-600 hover:bg-teal-700 text-white'
+              }`}
             >
               <Check className="w-4 h-4" />
               <span>{isSubmitting ? 'Saving...' : isEditing ? 'Save Changes' : 'Create Milestone'}</span>

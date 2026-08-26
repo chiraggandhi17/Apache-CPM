@@ -52,16 +52,16 @@ export const TodayView: React.FC<TodayViewProps> = ({ onSelectNode }) => {
       <div
         key={item.id}
         onClick={() => fullNode && onSelectNode(fullNode)}
-        className="group relative flex items-center justify-between p-3.5 bg-white rounded-xl border border-gray-200/80 shadow-2xs hover:shadow-xs hover:border-gray-300 transition-all cursor-pointer"
+        className="group relative flex flex-col sm:flex-row items-start sm:items-center justify-between p-3.5 bg-white rounded-xl border border-gray-200/80 shadow-2xs hover:shadow-xs hover:border-gray-300 transition-all cursor-pointer gap-2.5"
       >
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-3 min-w-0 w-full sm:w-auto">
           <span
             className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs"
             style={{ backgroundColor: item.effective_color }}
           />
 
-          <div className="min-w-0 space-y-0.5">
-            <div className="flex items-center gap-2">
+          <div className="min-w-0 space-y-0.5 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold text-xs md:text-sm text-gray-900 group-hover:text-teal-700 transition-colors truncate">
                 {item.title}
               </span>
@@ -76,7 +76,7 @@ export const TodayView: React.FC<TodayViewProps> = ({ onSelectNode }) => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center justify-between sm:justify-end gap-2.5 shrink-0 w-full sm:w-auto pt-1 sm:pt-0 border-t sm:border-t-0 border-gray-100">
           <span
             className={`text-[11px] font-mono font-semibold px-2.5 py-0.5 rounded-md border ${
               item.is_overdue
@@ -89,7 +89,7 @@ export const TodayView: React.FC<TodayViewProps> = ({ onSelectNode }) => {
 
           <StatusBadge status={item.status} onChange={s => updateStatus(item.id, s)} size="sm" />
 
-          <ArrowUpRight className="w-4 h-4 text-gray-300 group-hover:text-teal-600 transition-colors" />
+          <ArrowUpRight className="w-4 h-4 text-gray-300 group-hover:text-teal-600 transition-colors hidden sm:block" />
         </div>
       </div>
     );

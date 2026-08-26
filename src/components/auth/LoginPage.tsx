@@ -44,13 +44,29 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [resendSuccess, setResendSuccess] = useState<boolean>(false);
   const [isPrimaryAdminSuccess, setIsPrimaryAdminSuccess] = useState<boolean>(false);
 
+  // Password Recovery Flow State
+  const [isRecoveryMode, setIsRecoveryMode] = useState<boolean>(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordUpdateSuccess, setPasswordUpdateSuccess] = useState<boolean>(false);
+
   // Dynamic Live Real-Time Brand State
   const [orgBranding, setOrgBranding] = useState<PublicOrgBranding | null>(null);
 
-  // Detect URL Hash Error Fragments (e.g. #error=access_denied&error_code=otp_expired)
+  // Detect URL Hash Error Fragments & Recovery Tokens
   useEffect(() => {
     const hash = window.location.hash;
     const search = window.location.search;
+
+    if (hash.includes('type=recovery') || hash.includes('reset-password') || search.includes('type=recovery')) {
+      setIsRecoveryMode(true);
+    }
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecoveryMode(true);
+      }
+    });
 
     if (hash || search) {
       const rawString = (hash.startsWith('#') ? hash.slice(1) : hash) || (search.startsWith('?') ? search.slice(1) : search);
@@ -63,13 +79,54 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         setErrorMsg(`⚠️ Verification Error: ${decodedDesc} Please enter your email below to get a fresh link.`);
         setNeedsEmailConfirmation(true);
 
-        // Clean URL fragment cleanly
         try {
           window.history.replaceState(null, '', window.location.pathname);
         } catch {}
       }
     }
+
+    return () => subscription.unsubscribe();
   }, []);
+
+  const handleSaveNewPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPassword || newPassword.length < 6) {
+      setErrorMsg('Password must be at least 6 characters long.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setErrorMsg('Passwords do not match.');
+      return;
+    }
+
+    setLoading(true);
+    setErrorMsg(null);
+
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+
+      // Safely sign out of temporary recovery session
+      await supabase.auth.signOut();
+
+      setPasswordUpdateSuccess(true);
+      setIsRecoveryMode(false);
+      setIsForgotPassword(false);
+      setIsSignUp(false);
+      setPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+
+      try {
+        window.history.replaceState(null, '', window.location.pathname);
+      } catch {}
+    } catch (err: any) {
+      console.error('Password update error:', err);
+      setErrorMsg(err.message || 'Failed to update password. Please request a new password reset link.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Debounced Dynamic Database Lookup when Workspace Code is typed
   useEffect(() => {
@@ -347,8 +404,75 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           </p>
         </div>
 
-        {/* FORGOT PASSWORD FORM MODE */}
-        {isForgotPassword ? (
+        {/* PASSWORD UPDATE SUCCESS NOTIFICATION */}
+        {passwordUpdateSuccess && (
+          <div className="bg-emerald-500/10 border border-emerald-500/30 p-3 rounded-2xl text-xs text-emerald-300 text-center font-semibold flex items-center justify-center gap-1.5 mb-3">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>✓ Password updated successfully! Please sign in with your new password.</span>
+          </div>
+        )}
+
+        {/* ISOLATED PASSWORD RECOVERY MODE */}
+        {isRecoveryMode ? (
+          <form onSubmit={handleSaveNewPassword} className="space-y-4">
+            <div className="bg-teal-500/10 border border-teal-500/30 p-3 rounded-2xl text-xs text-teal-300 text-center font-medium">
+              🔒 <strong>Password Recovery Mode:</strong> Enter your new password below. Private dashboard access is locked until password update is completed.
+            </div>
+
+            {errorMsg && (
+              <div className="bg-rose-500/10 border border-rose-500/30 p-3 rounded-2xl text-xs text-rose-300 text-center font-medium">
+                {errorMsg}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">New Password</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  minLength={6}
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full text-xs pl-9 pr-10 py-2.5 bg-slate-850 border border-slate-700 rounded-xl text-white outline-none focus:border-teal-500 font-mono"
+                />
+                <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-3 text-slate-500 hover:text-slate-300 transition-colors"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Confirm New Password</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  minLength={6}
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full text-xs pl-9 pr-10 py-2.5 bg-slate-850 border border-slate-700 rounded-xl text-white outline-none focus:border-teal-500 font-mono"
+                />
+                <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2.5 text-slate-950 font-bold text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-1.5 bg-teal-500 hover:bg-teal-400"
+            >
+              <span>{loading ? 'Saving New Password...' : 'Save New Password & Return to Sign In'}</span>
+            </button>
+          </form>
+        ) : isForgotPassword ? (
           <form onSubmit={handleResetPassword} className="space-y-4">
             {errorMsg && (
               <div className="bg-rose-500/10 border border-rose-500/30 p-3 rounded-2xl text-xs text-rose-300 text-center font-medium">

@@ -31,7 +31,7 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
     getNodeAccessInfo, getDescendantNodes, completeNodeAndSubtree 
   } = useNodes();
   
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
   const [showAddChild, setShowAddChild] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);

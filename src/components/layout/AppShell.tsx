@@ -17,7 +17,7 @@ import { LoginPage } from '../auth/LoginPage';
 import { 
   Bell, Calendar, Home, Layers, LogOut, Footprints, ChevronRight, 
   ShieldCheck, Sparkles, User, Building2, FolderTree, Activity, 
-  AlertTriangle, Download, HardDrive, Users, CheckCircle2, Zap, Settings, KeyRound
+  AlertTriangle, Download, HardDrive, Users, CheckCircle2, Zap, Settings, KeyRound, Menu, X
 } from 'lucide-react';
 
 type NavTab = 'today' | 'browse' | 'calendar' | 'super_admin' | 'super_observability' | 'super_errors' | 'super_backups' | 'org_admin' | 'org_teams' | 'org_backup';
@@ -25,6 +25,8 @@ type NavTab = 'today' | 'browse' | 'calendar' | 'super_admin' | 'super_observabi
 export const AppShellContent: React.FC = () => {
   const { selectedNode, setSelectedNode, totalScheduledAlertsCount, triggeredAlertsCount } = useNodes();
   const { user, profile, organization, team, isSuperAdmin, isOrgAdmin, isIndividual, tier, signOut } = useAuth();
+  
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
   // Set default landing tab based on role
   const isCompanyOrgAdmin = Boolean(profile && profile.role === 'org_admin');
@@ -50,65 +52,6 @@ export const AppShellContent: React.FC = () => {
   const [showTierPricingModal, setShowTierPricingModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
-
-  // Password Recovery Mode State
-  const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [resetLoading, setResetLoading] = useState(false);
-  const [resetSuccess, setResetSuccess] = useState(false);
-  const [resetError, setResetError] = useState<string | null>(null);
-
-  // Password Recovery Link & Auth Event Listener
-  useEffect(() => {
-    const hash = window.location.hash;
-    const search = window.location.search;
-    if (hash.includes('type=recovery') || hash.includes('reset-password') || search.includes('type=recovery')) {
-      setShowResetPasswordModal(true);
-    }
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        setShowResetPasswordModal(true);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const handleUpdatePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newPassword || newPassword.length < 6) {
-      setResetError('Password must be at least 6 characters.');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setResetError('Passwords do not match.');
-      return;
-    }
-
-    setResetLoading(true);
-    setResetError(null);
-
-    try {
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) throw error;
-      setResetSuccess(true);
-      setTimeout(() => {
-        setShowResetPasswordModal(false);
-        setResetSuccess(false);
-        setNewPassword('');
-        setConfirmPassword('');
-        try {
-          window.history.replaceState(null, '', window.location.pathname);
-        } catch {}
-      }, 2000);
-    } catch (err: any) {
-      setResetError(err.message || 'Failed to update password.');
-    } finally {
-      setResetLoading(false);
-    }
-  };
 
   // Determine Dynamic Branding
   const brandTitle = isSuperAdmin 
@@ -181,9 +124,141 @@ export const AppShellContent: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row text-gray-900 antialiased">
-      {/* Sidebar Navigation */}
-      <aside className="w-full md:w-64 bg-slate-900 text-slate-100 flex md:flex-col justify-between shrink-0 p-4 border-r border-slate-800">
+    <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row text-gray-900 antialiased relative">
+      {/* STICKY TOP MOBILE BAR (Only shown on small screens md:hidden) */}
+      <header className="md:hidden sticky top-0 z-40 bg-slate-900 text-white border-b border-slate-800 px-4 py-3 flex items-center justify-between shadow-md">
+        <div className="flex items-center gap-2.5 min-w-0">
+          {logoUrl && !isSuperAdmin ? (
+            <img src={logoUrl} alt="Logo" className="w-7 h-7 object-contain rounded-lg bg-white p-0.5 shrink-0" />
+          ) : (
+            <div
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-950 font-black text-sm shrink-0"
+              style={{ backgroundColor: brandColor }}
+            >
+              <Footprints className="w-4 h-4 text-slate-950" />
+            </div>
+          )}
+          <span className="font-extrabold text-sm tracking-tight truncate" title={brandTitle}>
+            {brandTitle}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {triggeredAlertsCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowManageAlerts(true)}
+              className="px-2 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-[10px] font-bold flex items-center gap-1 animate-pulse"
+            >
+              <Bell className="w-3 h-3 text-amber-400" />
+              <span>{triggeredAlertsCount}</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="p-2 text-slate-300 hover:text-white bg-slate-800 rounded-xl transition-colors"
+            aria-label="Toggle Navigation Menu"
+          >
+            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+        </div>
+      </header>
+
+      {/* MOBILE DRAWER OVERLAY (Shown when mobileMenuOpen is true on mobile) */}
+      {mobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex flex-col justify-between p-4 animate-in fade-in">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-2">
+            <div className="flex items-center gap-2">
+              <Footprints className="w-5 h-5 text-teal-400" />
+              <span className="font-bold text-white text-sm">{brandTitle} Navigation</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(false)}
+              className="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-xl"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="overflow-y-auto space-y-3 flex-1 pr-1">
+            {isSuperAdmin && (
+              <button
+                type="button"
+                onClick={() => { setActiveTab('super_admin'); setMobileMenuOpen(false); }}
+                className="w-full p-3 bg-teal-500 text-slate-950 rounded-xl font-extrabold text-xs flex items-center justify-between shadow-md"
+              >
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Platform Admin Console</span>
+                </div>
+                <span className="text-[10px] bg-slate-950 text-teal-300 px-2 py-0.5 rounded font-mono font-bold">Admin</span>
+              </button>
+            )}
+
+            <div className="space-y-1">
+              <div className="text-[10px] uppercase font-bold text-slate-500 px-2">Main Navigation</div>
+              <button
+                type="button"
+                onClick={() => { setActiveTab('today'); setMobileMenuOpen(false); }}
+                className={`w-full p-3 rounded-xl text-xs font-bold flex items-center justify-between ${
+                  activeTab === 'today' ? 'bg-slate-800 text-white' : 'text-slate-300'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Home className="w-4 h-4 text-teal-400" />
+                  <span>Today / Action Feed</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setActiveTab('browse'); setMobileMenuOpen(false); }}
+                className={`w-full p-3 rounded-xl text-xs font-bold flex items-center justify-between ${
+                  activeTab === 'browse' ? 'bg-slate-800 text-white' : 'text-slate-300'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-indigo-400" />
+                  <span>Browse Hierarchy Tree</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setActiveTab('calendar'); setMobileMenuOpen(false); }}
+                className={`w-full p-3 rounded-xl text-xs font-bold flex items-center justify-between ${
+                  activeTab === 'calendar' ? 'bg-slate-800 text-white' : 'text-slate-300'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-amber-400" />
+                  <span>Master Calendar</span>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-xs">
+            <div className="truncate">
+              <span className="text-white block font-bold text-xs truncate">{displayEmail}</span>
+              <span className="text-slate-400 text-[10px] block truncate">{displayRole}</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="px-3 py-2 bg-rose-500/20 text-rose-300 rounded-xl text-xs font-bold flex items-center gap-1"
+            >
+              <LogOut className="w-3.5 h-3.5" /> Sign Out
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Sidebar Navigation (Hidden on small mobile screens md:flex) */}
+      <aside className="hidden md:flex w-64 bg-slate-900 text-slate-100 flex-col justify-between shrink-0 p-4 border-r border-slate-800">
         <div>
           {/* Logo Brand Header (Co-Branded) */}
           <div className="flex items-center gap-3 px-2 py-3 mb-4 border-b border-slate-800 pb-4">
@@ -552,7 +627,7 @@ export const AppShellContent: React.FC = () => {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full overflow-y-auto">
+      <main className="flex-1 p-3 sm:p-6 md:p-8 pb-24 md:pb-8 max-w-7xl mx-auto w-full overflow-y-auto">
         {/* Super Admin Sections */}
         {activeTab === 'super_admin' && <SuperAdminDashboard currentSection="organizations" />}
         {activeTab === 'super_observability' && <SuperAdminDashboard currentSection="observability" />}
@@ -569,6 +644,55 @@ export const AppShellContent: React.FC = () => {
         {activeTab === 'browse' && <NodeTree onSelectNode={setSelectedNode} />}
         {activeTab === 'calendar' && <CalendarView onSelectNode={setSelectedNode} />}
       </main>
+
+      {/* FIXED MOBILE BOTTOM QUICK TAB BAR (Only shown on small screens md:hidden) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 flex items-center justify-around z-40 px-2 shadow-xl">
+        <button
+          type="button"
+          onClick={() => setActiveTab('today')}
+          className={`flex flex-col items-center justify-center w-16 py-1 rounded-xl transition-colors ${
+            activeTab === 'today' ? 'text-teal-400 font-bold' : 'text-slate-400'
+          }`}
+        >
+          <Home className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px]">Today</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('browse')}
+          className={`flex flex-col items-center justify-center w-16 py-1 rounded-xl transition-colors ${
+            activeTab === 'browse' ? 'text-teal-400 font-bold' : 'text-slate-400'
+          }`}
+        >
+          <Layers className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px]">Tree</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('calendar')}
+          className={`flex flex-col items-center justify-center w-16 py-1 rounded-xl transition-colors ${
+            activeTab === 'calendar' ? 'text-teal-400 font-bold' : 'text-slate-400'
+          }`}
+        >
+          <Calendar className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px]">Grid</span>
+        </button>
+
+        {isSuperAdmin && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('super_admin')}
+            className={`flex flex-col items-center justify-center w-16 py-1 rounded-xl transition-colors ${
+              activeTab.startsWith('super') ? 'text-teal-400 font-bold' : 'text-slate-400'
+            }`}
+          >
+            <ShieldCheck className="w-5 h-5 mb-0.5" />
+            <span className="text-[10px]">Admin</span>
+          </button>
+        )}
+      </nav>
 
       {/* Center Focus Inspector Modal */}
       {selectedNode && (
@@ -606,79 +730,6 @@ export const AppShellContent: React.FC = () => {
         />
       )}
 
-      {/* Password Reset / Recovery Modal */}
-      {showResetPasswordModal && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl text-white space-y-4">
-            <div className="text-center space-y-1">
-              <div className="w-10 h-10 rounded-2xl bg-teal-500/20 border border-teal-500/30 flex items-center justify-center mx-auto text-teal-400">
-                <KeyRound className="w-5 h-5" />
-              </div>
-              <h2 className="text-lg font-bold">Set New Account Password</h2>
-              <p className="text-xs text-slate-400">Enter your new password below to complete password recovery.</p>
-            </div>
-
-            {resetError && (
-              <div className="bg-rose-500/10 border border-rose-500/30 p-3 rounded-2xl text-xs text-rose-300 text-center font-medium">
-                {resetError}
-              </div>
-            )}
-
-            {resetSuccess ? (
-              <div className="bg-emerald-500/10 border border-emerald-500/30 p-4 rounded-2xl text-xs text-emerald-300 text-center space-y-1">
-                <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
-                <p className="font-bold text-white text-sm">✓ Password Updated!</p>
-                <p className="text-slate-300 text-[11px]">Your new password has been saved. Closing dialog...</p>
-              </div>
-            ) : (
-              <form onSubmit={handleUpdatePassword} className="space-y-3 text-xs">
-                <div>
-                  <label className="block font-semibold text-slate-300 mb-1">New Password</label>
-                  <input
-                    type="password"
-                    required
-                    minLength={6}
-                    value={newPassword}
-                    onChange={e => setNewPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full text-xs px-3 py-2.5 bg-slate-850 border border-slate-700 rounded-xl text-white outline-none focus:border-teal-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-300 mb-1">Confirm New Password</label>
-                  <input
-                    type="password"
-                    required
-                    minLength={6}
-                    value={confirmPassword}
-                    onChange={e => setConfirmPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full text-xs px-3 py-2.5 bg-slate-850 border border-slate-700 rounded-xl text-white outline-none focus:border-teal-500"
-                  />
-                </div>
-
-                <div className="pt-2 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowResetPasswordModal(false)}
-                    className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={resetLoading}
-                    className="flex-1 py-2.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold rounded-xl shadow-lg transition-all"
-                  >
-                    <span>{resetLoading ? 'Saving...' : 'Save New Password'}</span>
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 };
