@@ -295,8 +295,8 @@ ALTER TABLE public.tier_upgrade_requests ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow authenticated full access to organizations" ON public.organizations;
 CREATE POLICY "Allow authenticated full access to organizations" ON public.organizations FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
-DROP POLICY IF EXISTS "Allow anon public lookup of active organizations" ON public.organizations;
-CREATE POLICY "Allow anon public lookup of active organizations" ON public.organizations FOR SELECT TO anon USING (status = 'active');
+DROP POLICY IF EXISTS "Allow public full access to organizations" ON public.organizations;
+CREATE POLICY "Allow public full access to organizations" ON public.organizations FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow authenticated full access to teams" ON public.teams;
 CREATE POLICY "Allow authenticated full access to teams" ON public.teams FOR ALL TO authenticated USING (true) WITH CHECK (true);
@@ -306,6 +306,9 @@ CREATE POLICY "Allow authenticated full access to custom_roles" ON public.custom
 
 DROP POLICY IF EXISTS "Allow authenticated full access to profiles" ON public.profiles;
 CREATE POLICY "Allow authenticated full access to profiles" ON public.profiles FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public full access to profiles" ON public.profiles;
+CREATE POLICY "Allow public full access to profiles" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow authenticated full access to nodes" ON public.nodes;
 CREATE POLICY "Allow authenticated full access to nodes" ON public.nodes FOR ALL TO authenticated USING (true) WITH CHECK (true);

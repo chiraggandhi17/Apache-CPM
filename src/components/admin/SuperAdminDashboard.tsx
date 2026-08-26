@@ -128,11 +128,11 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
       const { data: profs, error: profErr } = await supabase
         .from('profiles')
         .select('*')
-        .not('role', 'eq', 'super_admin')
         .order('created_at', { ascending: false });
 
       if (profErr) {
         console.error('Profiles fetch error:', profErr);
+        alert(`Profiles Fetch Error: ${profErr.message}`);
         setAllUsers([]);
       } else {
         setAllUsers((profs as UserProfile[]) || []);
