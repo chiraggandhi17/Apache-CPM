@@ -4,19 +4,21 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { useNodes } from '../../context/NodeContext';
-import { NodeItem } from '../../types/domain';
+import { NodeItem, ReminderItem } from '../../types/domain';
 import { resolveColor } from '../../lib/color-resolver';
-import { Filter, Calendar as CalendarIcon } from 'lucide-react';
+import { Filter, Calendar as CalendarIcon, Bell, CheckCircle2, Zap } from 'lucide-react';
 
 interface CalendarViewProps {
   onSelectNode: (node: NodeItem) => void;
 }
 
 export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
-  const { nodes } = useNodes();
+  const { nodes, reminders } = useNodes();
   const [showFilters, setShowFilters] = useState(false);
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
   const [selectedSeasons, setSelectedSeasons] = useState<string[]>([]);
+  const [showCompleted, setShowCompleted] = useState(true);
+  const [showAlertsOnCal, setShowAlertsOnCal] = useState(true);
 
   const departments = useMemo(() => {
     return Array.from(new Set(nodes.map(n => n.department).filter(Boolean))) as string[];
@@ -27,9 +29,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
   }, [nodes]);
 
   const events = useMemo(() => {
-    return nodes
+    // 1. Task & Milestone Events
+    const nodeEvents = nodes
       .filter(n => {
         if (!n.planned_date) return false;
+        if (!showCompleted && n.status === 'done') return false;
         if (selectedDepts.length > 0 && n.department && !selectedDepts.includes(n.department)) return false;
         if (selectedSeasons.length > 0 && n.season && !selectedSeasons.includes(n.season)) return false;
         return true;
@@ -44,18 +48,41 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
         }
 
         const color = resolveColor(n.color, ancestorColors);
+        const isDone = n.status === 'done';
 
         return {
           id: n.id,
-          title: `${n.is_critical ? '⚡ ' : ''}${n.title}`,
+          title: `${isDone ? '✓ ' : n.is_critical ? '⚡ ' : ''}${n.title}`,
           start: n.planned_date!,
-          backgroundColor: color,
-          borderColor: color,
-          textColor: '#ffffff',
-          extendedProps: { node: n },
+          backgroundColor: isDone ? '#64748b' : color,
+          borderColor: isDone ? '#475569' : color,
+          textColor: isDone ? '#e2e8f0' : '#ffffff',
+          classNames: isDone ? ['fc-event-done', 'line-through', 'opacity-65'] : [],
+          extendedProps: { node: n, isReminder: false, isDone },
         };
       });
-  }, [nodes, selectedDepts, selectedSeasons]);
+
+    // 2. Active Alerts & Reminders Events
+    const reminderEvents = showAlertsOnCal
+      ? reminders
+          .filter(r => !r.dismissed_at && r.remind_at)
+          .map(r => {
+            const parentNode = nodes.find(n => n.id === r.node_id);
+            return {
+              id: `reminder-${r.id}`,
+              title: `🔔 [Alert] ${r.message}`,
+              start: r.remind_at,
+              backgroundColor: '#d97706', // Amber 600
+              borderColor: '#b45309',
+              textColor: '#ffffff',
+              classNames: ['fc-event-reminder', 'font-bold'],
+              extendedProps: { reminder: r, node: parentNode, isReminder: true },
+            };
+          })
+      : [];
+
+    return [...nodeEvents, ...reminderEvents];
+  }, [nodes, reminders, selectedDepts, selectedSeasons, showCompleted, showAlertsOnCal]);
 
   const toggleDept = (dept: string) => {
     setSelectedDepts(prev =>
@@ -71,24 +98,60 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs">
-        <div className="flex items-center gap-2">
-          <CalendarIcon className="w-5 h-5 text-teal-600" />
-          <h2 className="text-base font-bold text-gray-900">Master T&A Calendar</h2>
+      {/* Calendar Header & Controls */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-teal-500/10 text-teal-600 flex items-center justify-center border border-teal-500/20">
+            <CalendarIcon className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-gray-900">Master CPM & Alerts Calendar</h2>
+            <p className="text-xs text-gray-500">Cross-functional milestone schedule and scheduled alert triggers</p>
+          </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowFilters(!showFilters)}
-          className={`px-3 py-1.5 text-xs font-semibold rounded-xl border flex items-center gap-1.5 transition-colors ${
-            showFilters || selectedDepts.length > 0 || selectedSeasons.length > 0
-              ? 'bg-teal-50 text-teal-800 border-teal-300'
-              : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-          }`}
-        >
-          <Filter className="w-3.5 h-3.5" />
-          <span>Filters {selectedDepts.length + selectedSeasons.length > 0 && `(${selectedDepts.length + selectedSeasons.length})`}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Toggle Alerts */}
+          <button
+            type="button"
+            onClick={() => setShowAlertsOnCal(!showAlertsOnCal)}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-xl border flex items-center gap-1.5 transition-colors ${
+              showAlertsOnCal
+                ? 'bg-amber-50 text-amber-800 border-amber-300'
+                : 'bg-white text-gray-500 border-gray-200'
+            }`}
+          >
+            <Bell className="w-3.5 h-3.5" />
+            <span>Alerts {showAlertsOnCal ? 'On' : 'Off'}</span>
+          </button>
+
+          {/* Toggle Completed Strikethrough Tasks */}
+          <button
+            type="button"
+            onClick={() => setShowCompleted(!showCompleted)}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-xl border flex items-center gap-1.5 transition-colors ${
+              showCompleted
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                : 'bg-white text-gray-500 border-gray-200'
+            }`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>Completed ({showCompleted ? 'Shown' : 'Hidden'})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowFilters(!showFilters)}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-xl border flex items-center gap-1.5 transition-colors ${
+              showFilters || selectedDepts.length > 0 || selectedSeasons.length > 0
+                ? 'bg-teal-50 text-teal-800 border-teal-300'
+                : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+            }`}
+          >
+            <Filter className="w-3.5 h-3.5" />
+            <span>Filter {selectedDepts.length + selectedSeasons.length > 0 && `(${selectedDepts.length + selectedSeasons.length})`}</span>
+          </button>
+        </div>
       </div>
 
       {showFilters && (
@@ -151,6 +214,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
         </div>
       )}
 
+      {/* Calendar Grid Container */}
       <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs font-sans text-xs">
         <FullCalendar
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
@@ -164,6 +228,18 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
           eventClick={info => {
             const node = info.event.extendedProps.node as NodeItem;
             if (node) onSelectNode(node);
+          }}
+          eventContent={eventInfo => {
+            const isDone = eventInfo.event.extendedProps.isDone;
+            const isReminder = eventInfo.event.extendedProps.isReminder;
+
+            return (
+              <div className={`px-1.5 py-0.5 rounded text-[11px] truncate flex items-center gap-1 ${
+                isDone ? 'line-through opacity-70 italic' : ''
+              } ${isReminder ? 'font-bold bg-amber-600 text-white shadow-2xs' : ''}`}>
+                <span>{eventInfo.event.title}</span>
+              </div>
+            );
           }}
           height="auto"
           aspectRatio={1.6}

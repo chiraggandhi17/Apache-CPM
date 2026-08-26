@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { TreeNode, NodeType } from '../../types/domain';
+import { TreeNode, NodeType, NodeItem } from '../../types/domain';
 import { useNodes } from '../../context/NodeContext';
 import { StatusBadge } from '../shared/StatusBadge';
 import { CriticalFlag } from '../shared/CriticalFlag';
 import { formatLocalDate, getRelativeDateBadge } from '../../utils/date-format';
 import { NodeForm } from './NodeForm';
+import { SubtreeCompletionModal } from './SubtreeCompletionModal';
 import { ChevronRight, ChevronDown, Plus, Folder, Calendar, CheckSquare, Layers, Clock, Check, Lock } from 'lucide-react';
 
 interface NodeRowProps {
@@ -22,9 +23,10 @@ const TYPE_ICONS: Record<NodeType, React.ReactNode> = {
 };
 
 export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
-  const { toggleCritical, updateStatus, toggleDone, getNodeAccessInfo } = useNodes();
+  const { toggleCritical, updateStatus, toggleDone, getNodeAccessInfo, getDescendantNodes, completeNodeAndSubtree } = useNodes();
   const [isExpanded, setIsExpanded] = useState(false);
   const [showAddChild, setShowAddChild] = useState(false);
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
 
   const hasChildren = node.children && node.children.length > 0;
   const accessInfo = getNodeAccessInfo(node.id);
@@ -50,6 +52,22 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
   const dateBadge = getRelativeDateBadge(node.planned_date);
 
   const isCompleted = node.status === 'done';
+  const descendants = getDescendantNodes(node.id);
+  const pendingDescendants = descendants.filter(d => d.status !== 'done');
+
+  const handleCheckboxClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isCompleted && pendingDescendants.length > 0) {
+      setShowCompletionModal(true);
+    } else {
+      toggleDone(node.id);
+    }
+  };
+
+  const handleConfirmCascadeCompletion = () => {
+    completeNodeAndSubtree(node.id);
+    setShowCompletionModal(false);
+  };
 
   return (
     <div className="space-y-1">
@@ -82,15 +100,12 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
             <span className="w-6" />
           )}
 
-          {/* Quick 1-click Completion Checkbox (Locked if view-only) */}
+          {/* Quick 1-click Completion Checkbox (With Subtree Cascade) */}
           {isEditable ? (
             <button
               type="button"
-              onClick={e => {
-                e.stopPropagation();
-                toggleDone(node.id);
-              }}
-              title={isCompleted ? 'Mark incomplete' : 'Mark complete'}
+              onClick={handleCheckboxClick}
+              title={isCompleted ? 'Mark incomplete' : 'Mark complete (and cascade to subtasks)'}
               className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0 ${
                 isCompleted
                   ? 'bg-emerald-600 border-emerald-600 text-white'
@@ -155,7 +170,13 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
 
           <StatusBadge 
             status={node.status} 
-            onChange={isEditable ? s => updateStatus(node.id, s) : undefined} 
+            onChange={isEditable ? s => {
+              if (s === 'done' && pendingDescendants.length > 0) {
+                setShowCompletionModal(true);
+              } else {
+                updateStatus(node.id, s);
+              }
+            } : undefined} 
             size="sm" 
           />
 
@@ -190,6 +211,16 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
           parentType={node.type}
           parentDate={node.planned_date}
           onClose={() => setShowAddChild(false)}
+        />
+      )}
+
+      {/* SUBTREE COMPLETION CONFIRMATION MODAL */}
+      {showCompletionModal && (
+        <SubtreeCompletionModal
+          parentTitle={node.title}
+          descendantNodes={descendants}
+          onConfirm={handleConfirmCascadeCompletion}
+          onCancel={() => setShowCompletionModal(false)}
         />
       )}
     </div>

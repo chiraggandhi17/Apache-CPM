@@ -7,6 +7,7 @@ import { formatLocalDate } from '../../utils/date-format';
 import { getAncestorPath, getSiblingNodes } from '../../utils/hierarchy';
 import { GoogleCalendarSyncModal } from '../calendar/GoogleCalendarSyncModal';
 import { NodeForm } from './NodeForm';
+import { SubtreeCompletionModal } from './SubtreeCompletionModal';
 import { 
   X, Calendar, Edit3, Trash2, Plus, Bell, User, Tag, ChevronRight, 
   ChevronLeft, ArrowLeft, ArrowRight, FileText, Sparkles, History, 
@@ -22,7 +23,8 @@ interface NodeInspectorModalProps {
 export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialNode, onClose }) => {
   const { 
     nodes, reminders, deleteNode, toggleCritical, updateStatus, 
-    addReminder, dismissReminder, getNodeAccessInfo, fetchNodeAuditLogs 
+    addReminder, dismissReminder, getNodeAccessInfo, fetchNodeAuditLogs,
+    getDescendantNodes, completeNodeAndSubtree
   } = useNodes();
   
   const [currentNodeId, setCurrentNodeId] = useState<string>(initialNode.id);
@@ -31,6 +33,7 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
   const [showAddReminder, setShowAddReminder] = useState(false);
   const [showCalModal, setShowCalModal] = useState(false);
   const [showLogsModal, setShowLogsModal] = useState(false);
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [auditLogs, setAuditLogs] = useState<NodeAuditLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
 
@@ -46,6 +49,9 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
   const isEditable = accessInfo.isEditable;
   const children = nodes.filter(n => n.parent_id === currentNode.id);
   const nodeReminders = reminders.filter(r => r.node_id === currentNode.id && !r.dismissed_at);
+
+  const descendants = getDescendantNodes(currentNode.id);
+  const pendingDescendants = descendants.filter(d => d.status !== 'done');
 
   const loadLogs = async (nodeId: string) => {
     setLoadingLogs(true);
@@ -73,6 +79,19 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
       message: reminderMessage || `Follow up on: ${currentNode.title}`,
     });
     setShowAddReminder(false);
+  };
+
+  const handleStatusChange = (newStatus: any) => {
+    if (newStatus === 'done' && pendingDescendants.length > 0) {
+      setShowCompletionModal(true);
+    } else {
+      updateStatus(currentNode.id, newStatus);
+    }
+  };
+
+  const handleConfirmCascadeCompletion = () => {
+    completeNodeAndSubtree(currentNode.id);
+    setShowCompletionModal(false);
   };
 
   return (
@@ -235,7 +254,7 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
           <div className="flex items-center gap-3">
             <StatusBadge 
               status={currentNode.status} 
-              onChange={isEditable ? s => updateStatus(currentNode.id, s) : undefined} 
+              onChange={isEditable ? handleStatusChange : undefined} 
               size="md" 
             />
             <CriticalFlag 
@@ -396,7 +415,9 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
                   >
                     <div className="flex items-center gap-2.5">
                       <StatusBadge status={child.status} size="sm" />
-                      <span className="font-bold text-gray-900 group-hover:text-teal-800">{child.title}</span>
+                      <span className={`font-bold ${child.status === 'done' ? 'line-through text-gray-400' : 'text-gray-900 group-hover:text-teal-800'}`}>
+                        {child.title}
+                      </span>
                     </div>
 
                     <div className="flex items-center gap-3">
@@ -414,6 +435,16 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
           </div>
         </div>
       </div>
+
+      {/* SUBTREE COMPLETION CONFIRMATION MODAL */}
+      {showCompletionModal && (
+        <SubtreeCompletionModal
+          parentTitle={currentNode.title}
+          descendantNodes={descendants}
+          onConfirm={handleConfirmCascadeCompletion}
+          onCancel={() => setShowCompletionModal(false)}
+        />
+      )}
 
       {/* EDIT MODAL */}
       {isEditing && (

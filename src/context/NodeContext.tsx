@@ -39,6 +39,8 @@ interface NodeContextType {
   canUserEditNode: (nodeId: string) => boolean;
   getNodeAccessInfo: (nodeId: string) => NodeAccessInfo;
   isNodeAncestorOfAssigned: (nodeId: string) => boolean;
+  getDescendantNodes: (nodeId: string) => NodeItem[];
+  completeNodeAndSubtree: (nodeId: string) => Promise<void>;
   getTree: () => TreeNode[];
   getTodayUpcomingFeed: () => {
     overdue: TodayItem[];
@@ -80,7 +82,7 @@ interface NodeContextType {
 const NodeContext = createContext<NodeContextType | undefined>(undefined);
 
 export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { profile, isOrgAdmin, accessLevel } = useAuth();
+  const { profile, isOrgAdmin, isIndividual, accessLevel } = useAuth();
   
   const [nodes, setNodes] = useState<NodeItem[]>([]);
   const [reminders, setReminders] = useState<ReminderItem[]>([]);
@@ -208,7 +210,8 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Helper: check if a node is an ancestor of any node assigned to the user
   const isNodeAncestorOfAssigned = useCallback((nodeId: string): boolean => {
-    if (!profile || isOrgAdmin || accessLevel === 1) return false;
+    // Personal users or Org Admins or Level 1 are never blocked by ancestor locks
+    if (!profile || isIndividual || !profile.org_id || isOrgAdmin || accessLevel === 1) return false;
 
     const userEmail = profile.email.toLowerCase();
     const userFullName = (profile.full_name || '').toLowerCase();
@@ -231,12 +234,17 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     return false;
-  }, [nodes, profile, isOrgAdmin, accessLevel]);
+  }, [nodes, profile, isOrgAdmin, isIndividual, accessLevel]);
 
-  // Scoped Edit Permission Check (Level 1 vs Level 2 vs Level 3 + Cross-Department)
+  // Scoped Edit Permission Check
   const canUserEditNode = useCallback((nodeId: string): boolean => {
     if (!profile) return false;
     
+    // 0. Individual personal users have 100% full creator and edit access over their entire workspace!
+    if (isIndividual || !profile.org_id) {
+      return true;
+    }
+
     // 1. Super Admin & Org Admin have universal edit access
     if (isOrgAdmin || profile.role === 'super_admin' || profile.role === 'org_admin') {
       return true;
@@ -287,16 +295,15 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
-    // If user has no specific assignments on the tree, allow task creation/editing within their team
     return true;
-  }, [nodes, profile, isOrgAdmin, accessLevel, isNodeAncestorOfAssigned]);
+  }, [nodes, profile, isOrgAdmin, isIndividual, accessLevel, isNodeAncestorOfAssigned]);
 
   // Clean compact access info helper for UI tooltips
   const getNodeAccessInfo = useCallback((nodeId: string): NodeAccessInfo => {
     const node = nodes.find(n => n.id === nodeId);
     const owningDept = node?.department || 'Production';
     const isAncestor = isNodeAncestorOfAssigned(nodeId);
-    const isCrossDept = Boolean(profile?.department && node?.department && profile.department.toLowerCase() !== node.department.toLowerCase());
+    const isCrossDept = Boolean(!isIndividual && profile?.department && node?.department && profile.department.toLowerCase() !== node.department.toLowerCase());
     const isEditable = canUserEditNode(nodeId);
 
     let tooltipText = 'Full Edit Access';
@@ -319,11 +326,44 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       owningDepartment: owningDept,
       tooltipText,
     };
-  }, [nodes, profile, isNodeAncestorOfAssigned, canUserEditNode, accessLevel]);
+  }, [nodes, profile, isIndividual, isNodeAncestorOfAssigned, canUserEditNode, accessLevel]);
 
-  // Unified Open Visibility (Every department sees full CPM lineage for cross-functional awareness)
+  // Get all descendant nodes of a specific parent
+  const getDescendantNodes = useCallback((nodeId: string): NodeItem[] => {
+    const results: NodeItem[] = [];
+    const collectChildren = (pid: string) => {
+      const children = nodes.filter(n => n.parent_id === pid);
+      for (const child of children) {
+        results.push(child);
+        collectChildren(child.id);
+      }
+    };
+    collectChildren(nodeId);
+    return results;
+  }, [nodes]);
+
+  // Complete parent and all its descendant subtasks atomically
+  const completeNodeAndSubtree = async (nodeId: string) => {
+    const descendants = getDescendantNodes(nodeId);
+    const allIdsToComplete = [nodeId, ...descendants.map(d => d.id)];
+    const nowISO = new Date().toISOString();
+
+    await supabase
+      .from('nodes')
+      .update({ status: 'done', actual_date: nowISO, updated_at: nowISO })
+      .in('id', allIdsToComplete);
+
+    for (const id of allIdsToComplete) {
+      const n = nodes.find(item => item.id === id);
+      if (n) {
+        await logNodeActivity(id, 'status_changed', `Marked as DONE (Subtree completion cascade)`);
+      }
+    }
+
+    await fetchNodesAndReminders();
+  };
+
   const getScopedNodes = useCallback((): NodeItem[] => {
-    // In footwear CPM, open transparency allows all teams to see cross-department schedules
     return nodes;
   }, [nodes]);
 
@@ -470,7 +510,6 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         p_new_planned_date: newPlannedDateStr,
       });
 
-      // Log date shift
       await logNodeActivity(
         nodeId,
         'date_shifted',
@@ -561,7 +600,6 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { error } = await supabase.from('nodes').insert(newNode);
     if (error) console.error('addNode error:', error);
 
-    // Log creation
     await logNodeActivity(
       newNodeId,
       'created',
@@ -589,7 +627,6 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { error } = await supabase.from('nodes').update({ ...data, updated_at: new Date().toISOString() }).eq('id', nodeId);
     if (error) console.error('updateNode error:', error);
 
-    // Log update
     const changes = Object.keys(data).map(k => `${k}: ${data[k as keyof NodeItem]}`).join(', ');
     await logNodeActivity(
       nodeId,
@@ -747,6 +784,8 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         canUserEditNode,
         getNodeAccessInfo,
         isNodeAncestorOfAssigned,
+        getDescendantNodes,
+        completeNodeAndSubtree,
         getTree,
         getTodayUpcomingFeed,
         fetchNodeAuditLogs,
