@@ -356,7 +356,24 @@ USING (true)
 WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow authenticated full access to nodes" ON public.nodes;
-CREATE POLICY "Allow authenticated full access to nodes" ON public.nodes FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Strict Multi-Tenant Scoped Access to nodes" ON public.nodes;
+CREATE POLICY "Strict Multi-Tenant Scoped Access to nodes" 
+ON public.nodes FOR ALL 
+TO authenticated 
+USING (
+  (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'super_admin'))
+  OR
+  (org_id IS NOT NULL AND org_id = (SELECT org_id FROM public.profiles WHERE id = auth.uid()))
+  OR
+  (created_by = auth.uid() OR user_id = auth.uid() OR (created_by IS NULL AND org_id IS NULL))
+) 
+WITH CHECK (
+  (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'super_admin'))
+  OR
+  (org_id IS NOT NULL AND org_id = (SELECT org_id FROM public.profiles WHERE id = auth.uid()))
+  OR
+  (created_by = auth.uid() OR user_id = auth.uid() OR (created_by IS NULL AND org_id IS NULL))
+);
 
 DROP POLICY IF EXISTS "Allow authenticated full access to node_audit_logs" ON public.node_audit_logs;
 CREATE POLICY "Allow authenticated full access to node_audit_logs" ON public.node_audit_logs FOR ALL TO authenticated USING (true) WITH CHECK (true);

@@ -4,8 +4,10 @@ export type NodeStatus = 'not_started' | 'in_progress' | 'done' | 'blocked';
 
 export interface NodeItem {
   id: string;
-  parent_id: string | null;
+  org_id?: string | null;
   user_id?: string | null;
+  created_by?: string | null;
+  parent_id: string | null;
   type: NodeType;
   title: string;
   description: string | null;

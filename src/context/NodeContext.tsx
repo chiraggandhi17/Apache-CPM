@@ -97,29 +97,47 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [selectedNode, setSelectedNode] = useState<NodeItem | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Single Source of Truth: Fetch nodes & reminders directly from Supabase Cloud DB
+  // Single Source of Truth: Fetch nodes & reminders directly from Supabase Cloud DB with Strict Multi-Tenant Scoping
   const fetchNodesAndReminders = useCallback(async () => {
+    if (!user) {
+      setNodes([]);
+      setReminders([]);
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      const { data: nodesData, error: nodesErr } = await supabase
-        .from('nodes')
-        .select('*')
-        .order('sort_order', { ascending: true });
+      let query = supabase.from('nodes').select('*').order('sort_order', { ascending: true });
+
+      // Multi-Tenant Security & User Privacy Scoping:
+      if (!isSuperAdmin) {
+        if (profile?.org_id) {
+          // Organization Member: Only fetch nodes belonging to this organization
+          query = query.eq('org_id', profile.org_id);
+        } else {
+          // Individual Account: Only fetch nodes created by or assigned to this user
+          query = query.or(`created_by.eq.${user.id},user_id.eq.${user.id}`);
+        }
+      }
+
+      const { data: nodesData, error: nodesErr } = await query;
 
       if (nodesErr) {
         console.error('Supabase nodes fetch error:', nodesErr);
-      } else if (nodesData && nodesData.length > 0) {
-        setNodes(nodesData);
+      } else if (nodesData) {
+        // Double-check in-memory filtering for maximum isolation safety
+        const scopedNodes = nodesData.filter(n => {
+          if (isSuperAdmin) return true;
+          if (profile?.org_id) return n.org_id === profile.org_id;
+          return n.created_by === user.id || n.user_id === user.id || !n.created_by;
+        });
+
+        setNodes(scopedNodes);
         try {
-          localStorage.setItem('cadence_cached_nodes', JSON.stringify(nodesData));
+          localStorage.setItem(`cadence_cached_nodes_${user.id}`, JSON.stringify(scopedNodes));
         } catch {
           // Ignore quota errors
         }
-      } else if (nodesData && nodesData.length === 0) {
-        // If DB returned empty, check if we had cached nodes
-        setNodes([]);
-        try {
-          localStorage.removeItem('cadence_cached_nodes');
-        } catch {}
       }
 
       const { data: remindersData, error: remErr } = await supabase
@@ -136,7 +154,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [user, profile?.org_id, isSuperAdmin]);
 
   // Initial fetch & re-fetch when user authentication loads + Supabase Realtime Subscription Setup
   useEffect(() => {
@@ -598,6 +616,8 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const newNode = {
       id: newNodeId,
       org_id: profile?.org_id || null,
+      user_id: user?.id || null,
+      created_by: user?.id || null,
       parent_id: data.parent_id || null,
       type: data.type || 'task',
       title: data.title || 'Untitled Task',
