@@ -131,7 +131,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       if (error) throw error;
       setResetEmailSent(true);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to send password reset email.');
+      console.error('Password reset error:', err);
+      if (err.message?.toLowerCase().includes('rate limit')) {
+        setErrorMsg('⚠️ Email Rate Limit Exceeded (Supabase free default is 3 emails/hour). Please wait or increase rate limit in Supabase Dashboard -> Authentication -> Rate Limits.');
+      } else if (err.message?.toLowerCase().includes('redirect')) {
+        setErrorMsg(`⚠️ Redirect URL error: Please add "${window.location.origin}" under Supabase Dashboard -> Authentication -> Redirect URLs.`);
+      } else {
+        setErrorMsg(err.message || 'Failed to send password reset email.');
+      }
     } finally {
       setLoading(false);
     }
@@ -156,7 +163,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       if (error) throw error;
       setResendSuccess(true);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to resend confirmation email.');
+      if (err.message?.toLowerCase().includes('rate limit')) {
+        setErrorMsg('⚠️ Email Rate Limit Exceeded (Supabase free default is 3 emails/hour). Please wait or adjust limits in Supabase Dashboard.');
+      } else {
+        setErrorMsg(err.message || 'Failed to resend confirmation email.');
+      }
     } finally {
       setLoading(false);
     }
@@ -192,6 +203,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           });
 
           if (authError) throw authError;
+
+          // Check if user already exists in Supabase Auth (empty identities array)
+          if (authData.user && authData.user.identities && authData.user.identities.length === 0) {
+            throw new Error(`An account with email "${email}" is already registered. Please click "Sign In" above or use "Forgot password?".`);
+          }
 
           const userId = authData.user?.id;
           if (userId) {
@@ -238,6 +254,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         });
 
         if (authError) throw authError;
+
+        // Check if user already exists in Supabase Auth (empty identities array)
+        if (authData.user && authData.user.identities && authData.user.identities.length === 0) {
+          throw new Error(`An account with email "${email}" is already registered with your organization. Please click "Sign In" above.`);
+        }
 
         const userId = authData.user?.id;
         if (userId && orgBranding) {
