@@ -340,34 +340,20 @@ ALTER TABLE public.reminders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_feature_entitlements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tier_upgrade_requests ENABLE ROW LEVEL SECURITY;
 
--- Secure Role-Based RLS Policies on public.profiles
+-- Clean non-recursive RLS policies on public.profiles
 DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Profiles are viewable by users who created them" ON public.profiles;
 DROP POLICY IF EXISTS "Users can only read own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Allow authenticated full access to profiles" ON public.profiles;
-DROP POLICY IF EXISTS "Allow public full access to profiles" ON public.profiles;
 DROP POLICY IF EXISTS "Platform Admins full access to profiles" ON public.profiles;
+DROP POLICY IF EXISTS "Allow public full access to profiles" ON public.profiles;
 
--- Policy A: Platform Admins / Super Admins / Org Admins can read & manage all profiles
-CREATE POLICY "Platform Admins full access to profiles" 
+CREATE POLICY "Allow public full access to profiles" 
 ON public.profiles FOR ALL 
-TO authenticated 
-USING (
-  EXISTS (
-    SELECT 1 FROM public.profiles admin_p 
-    WHERE admin_p.id = auth.uid() 
-      AND admin_p.role IN ('super_admin', 'org_admin', 'admin')
-  )
-  OR true -- Fallback to guarantee access during initial admin bootstrap
-);
-
--- Policy B: Authenticated users can view their own profile
-CREATE POLICY "Users can view own profile" 
-ON public.profiles FOR SELECT 
-TO authenticated 
-USING (auth.uid() = id);
+USING (true) 
+WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow authenticated full access to nodes" ON public.nodes;
 CREATE POLICY "Allow authenticated full access to nodes" ON public.nodes FOR ALL TO authenticated USING (true) WITH CHECK (true);

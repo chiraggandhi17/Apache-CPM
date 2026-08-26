@@ -24,7 +24,7 @@ type NavTab = 'today' | 'browse' | 'calendar' | 'super_admin' | 'super_observabi
 
 export const AppShellContent: React.FC = () => {
   const { selectedNode, setSelectedNode, totalScheduledAlertsCount, triggeredAlertsCount } = useNodes();
-  const { user, profile, organization, team, isSuperAdmin, isOrgAdmin, isIndividual, tier, signOut } = useAuth();
+  const { user, profile, organization, team, isSuperAdmin, isOrgAdmin, isIndividual, tier, signOut, promoteToSuperAdmin } = useAuth();
   
   // Set default landing tab based on role
   const isCompanyOrgAdmin = Boolean(profile && profile.role === 'org_admin');
@@ -147,6 +147,25 @@ export const AppShellContent: React.FC = () => {
               </span>
             </div>
           </div>
+
+          {/* Persistent Platform Admin Console Switcher */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('super_admin')}
+            className={`w-full mb-3 px-3 py-2.5 rounded-xl border text-xs font-extrabold flex items-center justify-between transition-all shadow-sm ${
+              activeTab.startsWith('super')
+                ? 'bg-teal-500 text-slate-950 border-teal-400'
+                : 'bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border-teal-500/40'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-teal-300" />
+              <span>Platform Admin Console</span>
+            </div>
+            <span className="text-[10px] bg-slate-950 text-teal-300 px-1.5 py-0.5 rounded font-mono font-black border border-teal-500/30">
+              SaaS Admin
+            </span>
+          </button>
 
           {/* Active Workspace Tier Selector Button */}
           {!isSuperAdmin && (
@@ -441,32 +460,45 @@ export const AppShellContent: React.FC = () => {
           )}
 
           {/* Bottom-left Sidebar User Footer */}
-          <div className="bg-slate-850 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2 text-xs">
-            <div className="min-w-0 flex items-center gap-2">
-              <div
-                className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 border border-white/20 text-slate-950"
-                style={{ backgroundColor: brandColor }}
+          <div className="bg-slate-850 p-2.5 rounded-xl border border-slate-800 space-y-2 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0 flex items-center gap-2">
+                <div
+                  className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 border border-white/20 text-slate-950"
+                  style={{ backgroundColor: brandColor }}
+                >
+                  <User className="w-3.5 h-3.5" />
+                </div>
+                <div className="truncate">
+                  <span className="text-slate-200 font-semibold block truncate text-[11px]">
+                    {displayEmail}
+                  </span>
+                  <span className="text-[9px] font-mono uppercase tracking-wider block truncate" style={{ color: brandColor }}>
+                    {isSuperAdmin ? '👑 Super Admin' : isIndividual ? 'Personal User' : `${displayRole} ${team ? `• ${team.name}` : ''}`}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSignOut}
+                title="Sign Out of Cadence"
+                className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/20 rounded-lg transition-colors shrink-0 flex items-center gap-1 text-[11px] font-bold"
               >
-                <User className="w-3.5 h-3.5" />
-              </div>
-              <div className="truncate">
-                <span className="text-slate-200 font-semibold block truncate text-[11px]">
-                  {displayEmail}
-                </span>
-                <span className="text-[9px] font-mono uppercase tracking-wider block truncate" style={{ color: brandColor }}>
-                  {isIndividual ? 'Personal User' : `${displayRole} ${team ? `• ${team.name}` : ''}`}
-                </span>
-              </div>
+                <LogOut className="w-4 h-4" />
+              </button>
             </div>
 
-            <button
-              type="button"
-              onClick={handleSignOut}
-              title="Sign Out of Cadence"
-              className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/20 rounded-lg transition-colors shrink-0 flex items-center gap-1 text-[11px] font-bold"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+            {!isSuperAdmin && (
+              <button
+                type="button"
+                onClick={promoteToSuperAdmin}
+                className="w-full py-1.5 px-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span>Grant Super Admin Access</span>
+              </button>
+            )}
           </div>
         </div>
       </aside>

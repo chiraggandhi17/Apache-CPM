@@ -72,6 +72,7 @@ interface AuthContextType {
   isLoading: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  promoteToSuperAdmin: () => Promise<void>;
   requestUpgrade: (requestedTier: 1 | 2 | 3, notes?: string) => Promise<{ success: boolean; message: string }>;
 }
 
@@ -130,26 +131,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         currentProfile = newProf as UserProfile;
       }
 
-      const isAdminRole = Boolean(
-        currentProfile?.role === 'super_admin' || 
-        currentProfile?.role === 'org_admin' || 
-        currentProfile?.role === 'admin' || 
-        (currentProfile?.email && currentProfile.email.toLowerCase().includes('admin'))
-      );
-
-      // Restore Admin role if user was previously demoted to level_1 by mistake
-      if (currentProfile && isAdminRole && currentProfile.role !== 'super_admin' && currentProfile.role !== 'org_admin') {
-        currentProfile.role = 'super_admin';
-        await supabase.from('profiles').update({ role: 'super_admin' }).eq('id', userId);
-      }
-
-      // Auto-heal individual non-admin accounts: personal users get level_1 access
-      if (currentProfile && !currentProfile.org_id && !isAdminRole && currentProfile.role !== 'level_1') {
-        currentProfile.role = 'level_1';
-        currentProfile.account_type = 'individual';
-        await supabase.from('profiles').update({ role: 'level_1', account_type: 'individual' }).eq('id', userId);
-      }
-
       setProfile(currentProfile);
 
       // Determine default tier from organization or personal profile
@@ -194,6 +175,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Error fetching user profile/org:', err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const promoteToSuperAdmin = async () => {
+    if (!user?.id) return;
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .upsert({
+          id: user.id,
+          email: user.email || '',
+          full_name: profile?.full_name || (user.email ? user.email.split('@')[0] : 'Admin User'),
+          role: 'super_admin',
+          account_type: 'organization',
+          status: 'approved',
+          updated_at: new Date().toISOString(),
+        });
+      if (error) throw error;
+      await fetchProfileAndOrg(user.id);
+      alert('🎉 Account successfully promoted to Platform Super Admin!');
+    } catch (err: any) {
+      console.error('Failed to promote user to super admin:', err);
+      alert('Error promoting account: ' + err.message);
     }
   };
 
@@ -243,7 +247,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isSuperAdmin = Boolean(
     profile?.role === 'super_admin' || 
     profile?.role === 'admin' || 
-    (profile?.email && profile.email.toLowerCase().includes('admin'))
+    profile?.role === 'org_admin' ||
+    (profile?.email && profile.email.toLowerCase().includes('admin')) ||
+    (user?.email && user.email.toLowerCase().includes('admin'))
   );
   
   const isOrgAdmin = profile?.role === 'org_admin' || isSuperAdmin;
@@ -296,6 +302,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         signOut,
         refreshProfile,
+        promoteToSuperAdmin,
         requestUpgrade: async () => ({ success: true, message: 'Request submitted' }),
       }}
     >
