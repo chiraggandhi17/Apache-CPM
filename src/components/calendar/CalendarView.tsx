@@ -70,12 +70,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
         };
       });
 
-    // 2. Active Alerts & Reminders Events
+    // 2. Active Alerts & Reminders Events (Strictly bound to user's authorized nodes)
     const reminderEvents = showAlertsOnCal
       ? reminders
-          .filter(r => !r.dismissed_at && r.remind_at)
+          .filter(r => !r.dismissed_at && r.remind_at && nodes.some(n => n.id === r.node_id))
           .map(r => {
-            const parentNode = nodes.find(n => n.id === r.node_id);
+            const parentNode = nodes.find(n => n.id === r.node_id)!;
             let color = '#f59e0b'; // Default fallback amber
             if (parentNode) {
               const ancestorColors: string[] = [];

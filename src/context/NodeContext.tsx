@@ -121,15 +121,16 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const { data: nodesData, error: nodesErr } = await query;
+      let scopedNodes: NodeItem[] = [];
 
       if (nodesErr) {
         console.error('Supabase nodes fetch error:', nodesErr);
       } else if (nodesData) {
         // Double-check in-memory filtering for maximum isolation safety
-        const scopedNodes = nodesData.filter(n => {
+        scopedNodes = nodesData.filter(n => {
           if (isSuperAdmin) return true;
           if (profile?.org_id) return n.org_id === profile.org_id;
-          return n.created_by === user.id || n.user_id === user.id || !n.created_by;
+          return n.created_by === user.id || n.user_id === user.id || (!n.org_id && (!n.created_by || n.created_by === user.id));
         });
 
         setNodes(scopedNodes);
@@ -147,7 +148,10 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (remErr) {
         console.error('Supabase reminders fetch error:', remErr);
       } else if (remindersData) {
-        setReminders(remindersData);
+        // Strict Alert Privacy: Only include reminders belonging to user's authorized nodes
+        const allowedNodeIds = new Set(scopedNodes.map(n => n.id));
+        const scopedReminders = remindersData.filter(r => allowedNodeIds.has(r.node_id));
+        setReminders(scopedReminders);
       }
     } catch (err) {
       console.error('Supabase fetch error:', err);
