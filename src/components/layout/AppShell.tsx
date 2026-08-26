@@ -17,14 +17,14 @@ import { LoginPage } from '../auth/LoginPage';
 import { 
   Bell, Calendar, Home, Layers, LogOut, Footprints, ChevronRight, 
   ShieldCheck, Sparkles, User, Building2, FolderTree, Activity, 
-  AlertTriangle, Download, HardDrive, Users, CheckCircle2, Zap, Settings
+  AlertTriangle, Download, HardDrive, Users, CheckCircle2, Zap, Settings, KeyRound
 } from 'lucide-react';
 
 type NavTab = 'today' | 'browse' | 'calendar' | 'super_admin' | 'super_observability' | 'super_errors' | 'super_backups' | 'org_admin' | 'org_teams' | 'org_backup';
 
 export const AppShellContent: React.FC = () => {
   const { selectedNode, setSelectedNode, totalScheduledAlertsCount, triggeredAlertsCount } = useNodes();
-  const { user, profile, organization, team, isSuperAdmin, isOrgAdmin, isIndividual, tier, signOut, promoteToSuperAdmin } = useAuth();
+  const { user, profile, organization, team, isSuperAdmin, isOrgAdmin, isIndividual, tier, signOut } = useAuth();
   
   // Set default landing tab based on role
   const isCompanyOrgAdmin = Boolean(profile && profile.role === 'org_admin');
@@ -50,6 +50,65 @@ export const AppShellContent: React.FC = () => {
   const [showTierPricingModal, setShowTierPricingModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
+
+  // Password Recovery Mode State
+  const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+
+  // Password Recovery Link & Auth Event Listener
+  useEffect(() => {
+    const hash = window.location.hash;
+    const search = window.location.search;
+    if (hash.includes('type=recovery') || hash.includes('reset-password') || search.includes('type=recovery')) {
+      setShowResetPasswordModal(true);
+    }
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setShowResetPasswordModal(true);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPassword || newPassword.length < 6) {
+      setResetError('Password must be at least 6 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setResetError('Passwords do not match.');
+      return;
+    }
+
+    setResetLoading(true);
+    setResetError(null);
+
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      setResetSuccess(true);
+      setTimeout(() => {
+        setShowResetPasswordModal(false);
+        setResetSuccess(false);
+        setNewPassword('');
+        setConfirmPassword('');
+        try {
+          window.history.replaceState(null, '', window.location.pathname);
+        } catch {}
+      }, 2000);
+    } catch (err: any) {
+      setResetError(err.message || 'Failed to update password.');
+    } finally {
+      setResetLoading(false);
+    }
+  };
 
   // Determine Dynamic Branding
   const brandTitle = isSuperAdmin 
@@ -460,45 +519,32 @@ export const AppShellContent: React.FC = () => {
           )}
 
           {/* Bottom-left Sidebar User Footer */}
-          <div className="bg-slate-850 p-2.5 rounded-xl border border-slate-800 space-y-2 text-xs">
-            <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0 flex items-center gap-2">
-                <div
-                  className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 border border-white/20 text-slate-950"
-                  style={{ backgroundColor: brandColor }}
-                >
-                  <User className="w-3.5 h-3.5" />
-                </div>
-                <div className="truncate">
-                  <span className="text-slate-200 font-semibold block truncate text-[11px]">
-                    {displayEmail}
-                  </span>
-                  <span className="text-[9px] font-mono uppercase tracking-wider block truncate" style={{ color: brandColor }}>
-                    {isSuperAdmin ? '👑 Super Admin' : isIndividual ? 'Personal User' : `${displayRole} ${team ? `• ${team.name}` : ''}`}
-                  </span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleSignOut}
-                title="Sign Out of Cadence"
-                className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/20 rounded-lg transition-colors shrink-0 flex items-center gap-1 text-[11px] font-bold"
+          <div className="bg-slate-850 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2 text-xs">
+            <div className="min-w-0 flex items-center gap-2">
+              <div
+                className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 border border-white/20 text-slate-950"
+                style={{ backgroundColor: brandColor }}
               >
-                <LogOut className="w-4 h-4" />
-              </button>
+                <User className="w-3.5 h-3.5" />
+              </div>
+              <div className="truncate">
+                <span className="text-slate-200 font-semibold block truncate text-[11px]">
+                  {displayEmail}
+                </span>
+                <span className="text-[9px] font-mono uppercase tracking-wider block truncate" style={{ color: brandColor }}>
+                  {isSuperAdmin ? '👑 Super Admin' : isIndividual ? 'Personal User' : `${displayRole} ${team ? `• ${team.name}` : ''}`}
+                </span>
+              </div>
             </div>
 
-            {!isSuperAdmin && (
-              <button
-                type="button"
-                onClick={promoteToSuperAdmin}
-                className="w-full py-1.5 px-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5 transition-colors"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                <span>Grant Super Admin Access</span>
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={handleSignOut}
+              title="Sign Out of Cadence"
+              className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/20 rounded-lg transition-colors shrink-0 flex items-center gap-1 text-[11px] font-bold"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </aside>
@@ -556,6 +602,80 @@ export const AppShellContent: React.FC = () => {
         <PersonalUserSettingsModal
           onClose={() => setShowSettingsModal(false)}
         />
+      )}
+
+      {/* Password Reset / Recovery Modal */}
+      {showResetPasswordModal && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl text-white space-y-4">
+            <div className="text-center space-y-1">
+              <div className="w-10 h-10 rounded-2xl bg-teal-500/20 border border-teal-500/30 flex items-center justify-center mx-auto text-teal-400">
+                <KeyRound className="w-5 h-5" />
+              </div>
+              <h2 className="text-lg font-bold">Set New Account Password</h2>
+              <p className="text-xs text-slate-400">Enter your new password below to complete password recovery.</p>
+            </div>
+
+            {resetError && (
+              <div className="bg-rose-500/10 border border-rose-500/30 p-3 rounded-2xl text-xs text-rose-300 text-center font-medium">
+                {resetError}
+              </div>
+            )}
+
+            {resetSuccess ? (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 p-4 rounded-2xl text-xs text-emerald-300 text-center space-y-1">
+                <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+                <p className="font-bold text-white text-sm">✓ Password Updated!</p>
+                <p className="text-slate-300 text-[11px]">Your new password has been saved. Closing dialog...</p>
+              </div>
+            ) : (
+              <form onSubmit={handleUpdatePassword} className="space-y-3 text-xs">
+                <div>
+                  <label className="block font-semibold text-slate-300 mb-1">New Password</label>
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full text-xs px-3 py-2.5 bg-slate-850 border border-slate-700 rounded-xl text-white outline-none focus:border-teal-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-300 mb-1">Confirm New Password</label>
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full text-xs px-3 py-2.5 bg-slate-850 border border-slate-700 rounded-xl text-white outline-none focus:border-teal-500"
+                  />
+                </div>
+
+                <div className="pt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowResetPasswordModal(false)}
+                    className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={resetLoading}
+                    className="flex-1 py-2.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold rounded-xl shadow-lg transition-all"
+                  >
+                    <span>{resetLoading ? 'Saving...' : 'Save New Password'}</span>
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
