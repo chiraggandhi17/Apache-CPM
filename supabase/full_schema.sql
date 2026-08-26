@@ -304,10 +304,15 @@ CREATE POLICY "Allow authenticated full access to teams" ON public.teams FOR ALL
 DROP POLICY IF EXISTS "Allow authenticated full access to custom_roles" ON public.custom_roles;
 CREATE POLICY "Allow authenticated full access to custom_roles" ON public.custom_roles FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
+-- Drop any restrictive default Supabase RLS policies on public.profiles
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Profiles are viewable by users who created them" ON public.profiles;
+DROP POLICY IF EXISTS "Users can only read own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Allow authenticated full access to profiles" ON public.profiles;
-CREATE POLICY "Allow authenticated full access to profiles" ON public.profiles FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
 DROP POLICY IF EXISTS "Allow public full access to profiles" ON public.profiles;
+
 CREATE POLICY "Allow public full access to profiles" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow authenticated full access to nodes" ON public.nodes;
