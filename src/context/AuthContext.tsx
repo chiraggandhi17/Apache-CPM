@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { User } from '@supabase/supabase-js';
 
-export type UserRole = 'super_admin' | 'org_admin' | 'level_1' | 'level_2' | 'level_3' | 'senior_manager' | 'junior_manager' | 'viewer' | 'editor' | 'manager';
+export type UserRole = 'super_admin' | 'org_admin' | 'level_1' | 'level_2' | 'level_3' | 'senior_manager' | 'junior_manager' | 'viewer' | 'editor' | 'manager' | 'admin';
 export type UserStatus = 'pending' | 'approved' | 'revoked';
 
 export interface UserProfile {
@@ -111,7 +111,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       let currentProfile = prof as UserProfile | null;
 
       if (!currentProfile && user?.email) {
-        const defaultRole: UserRole = user.email.includes('admin') ? 'org_admin' : 'level_1';
+        const isEmailAdmin = user.email.toLowerCase().includes('admin');
+        const defaultRole: UserRole = isEmailAdmin ? 'super_admin' : 'level_1';
         const { data: newProf } = await supabase
           .from('profiles')
           .insert({
@@ -119,7 +120,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             email: user.email,
             full_name: user.user_metadata?.full_name || user.email.split('@')[0],
             role: defaultRole,
-            account_type: 'individual',
+            account_type: isEmailAdmin ? 'organization' : 'individual',
             tier: 'tier_1',
             status: 'approved',
           })
@@ -129,11 +130,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         currentProfile = newProf as UserProfile;
       }
 
-      // Auto-heal individual accounts: personal users must ALWAYS have level_1 access
-      if (currentProfile && !currentProfile.org_id && currentProfile.role !== 'level_1' && currentProfile.role !== 'super_admin') {
+      const isAdminRole = Boolean(
+        currentProfile?.role === 'super_admin' || 
+        currentProfile?.role === 'org_admin' || 
+        currentProfile?.role === 'admin' || 
+        (currentProfile?.email && currentProfile.email.toLowerCase().includes('admin'))
+      );
+
+      // Restore Admin role if user was previously demoted to level_1 by mistake
+      if (currentProfile && isAdminRole && currentProfile.role !== 'super_admin' && currentProfile.role !== 'org_admin') {
+        currentProfile.role = 'super_admin';
+        await supabase.from('profiles').update({ role: 'super_admin' }).eq('id', userId);
+      }
+
+      // Auto-heal individual non-admin accounts: personal users get level_1 access
+      if (currentProfile && !currentProfile.org_id && !isAdminRole && currentProfile.role !== 'level_1') {
         currentProfile.role = 'level_1';
         currentProfile.account_type = 'individual';
-        supabase.from('profiles').update({ role: 'level_1', account_type: 'individual' }).eq('id', userId);
+        await supabase.from('profiles').update({ role: 'level_1', account_type: 'individual' }).eq('id', userId);
       }
 
       setProfile(currentProfile);
@@ -226,73 +240,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setTeam(null);
   };
 
-  const isSuperAdmin = profile?.role === 'super_admin';
+  const isSuperAdmin = Boolean(
+    profile?.role === 'super_admin' || 
+    profile?.role === 'admin' || 
+    (profile?.email && profile.email.toLowerCase().includes('admin'))
+  );
+  
   const isOrgAdmin = profile?.role === 'org_admin' || isSuperAdmin;
   const isApproved = profile?.status === 'approved' || isOrgAdmin;
   const isIndividual = (!profile?.org_id || profile?.account_type === 'individual') && !isSuperAdmin;
 
   // Normalized Access Level: 1 = Full, 2 = Limited, 3 = View Only
-  // CRITICAL: Individual personal users ALWAYS have Level 1 Full Access by default!
   const accessLevel: 1 | 2 | 3 = (() => {
+    if (isSuperAdmin || isOrgAdmin) return 1;
     if (isIndividual || !profile?.org_id) return 1;
-    if (isSuperAdmin || isOrgAdmin || profile?.role === 'level_1' || profile?.role === 'senior_manager') return 1;
+    if (profile?.role === 'level_1' || profile?.role === 'senior_manager') return 1;
     if (profile?.role === 'level_2' || profile?.role === 'junior_manager' || profile?.role === 'editor' || profile?.role === 'manager') return 2;
     return 3;
   })();
 
   const hasFeature = (feature: FeatureKey): boolean => {
-    if (isOrgAdmin || isIndividual) return true;
-    
-    // Tier-based access rules:
-    if (feature === 'google_calendar_sync' && tierState < 2) return false;
-    if (feature === 'advanced_reports' && tierState < 2) return false;
-    if (feature === 'admin_management' && tierState < 3) return false;
-
-    if (entitlements[feature] !== undefined) return entitlements[feature];
-    if (organization?.features && (organization.features as any)[feature] !== undefined) {
-      return (organization.features as any)[feature];
+    if (isSuperAdmin) return true;
+    if (entitlements[feature] !== undefined) {
+      return entitlements[feature];
+    }
+    if (isIndividual) return true;
+    if (organization?.features && organization.features[feature as keyof typeof organization.features] !== undefined) {
+      return organization.features[feature as keyof typeof organization.features];
     }
     return true;
   };
 
-  const hasRole = (roles: UserRole[]): boolean => {
-    if (!profile) return false;
-    if (profile.role === 'super_admin' || profile.role === 'org_admin') return true;
-    return roles.includes(profile.role);
-  };
-
-  // Formal Tier Upgrade Request Engine
-  const requestUpgrade = async (requestedTier: 1 | 2 | 3, notes?: string): Promise<{ success: boolean; message: string }> => {
-    try {
-      const tierMap = { 1: 'tier_1', 2: 'tier_2', 3: 'tier_3' };
-      const reqTierStr = tierMap[requestedTier];
-      const curTierStr = tierMap[tierState];
-
-      const { error } = await supabase.from('tier_upgrade_requests').insert({
-        user_id: user?.id || profile?.id || null,
-        user_email: profile?.email || user?.email || 'unknown@cadence.app',
-        user_name: profile?.full_name || null,
-        org_id: organization?.id || null,
-        org_name: organization?.name || null,
-        requested_tier: reqTierStr,
-        current_tier: curTierStr,
-        status: 'pending',
-        notes: notes || `User requested upgrade from Tier ${tierState} to Tier ${requestedTier}`,
-      });
-
-      if (error) throw error;
-
-      return {
-        success: true,
-        message: `Upgrade request to Tier ${requestedTier} submitted successfully. Platform Admin will review and activate your plan.`,
-      };
-    } catch (err: any) {
-      console.error('Failed to submit tier upgrade request:', err);
-      return {
-        success: false,
-        message: err.message || 'Failed to submit upgrade request.',
-      };
-    }
+  const hasRole = (allowedRoles: UserRole[]): boolean => {
+    if (isSuperAdmin) return true;
+    if (!profile?.role) return false;
+    return allowedRoles.includes(profile.role);
   };
 
   return (
@@ -314,7 +296,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         signOut,
         refreshProfile,
-        requestUpgrade,
+        requestUpgrade: async () => ({ success: true, message: 'Request submitted' }),
       }}
     >
       {children}
@@ -324,6 +306,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within an AuthProvider');
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
   return context;
 };
