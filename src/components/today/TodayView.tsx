@@ -5,9 +5,8 @@ import { StatusBadge } from '../shared/StatusBadge';
 import { CriticalFlag } from '../shared/CriticalFlag';
 import { formatLocalDate, getRelativeDateBadge } from '../../utils/date-format';
 import { SnoozeNoteModal } from '../reminders/SnoozeNoteModal';
-import { ExportModal } from '../shared/ExportModal';
 import { matchesSearchQuery } from '../../utils/search';
-import { AlertCircle, Calendar, CheckCircle2, Clock, Bell, ArrowUpRight, Sparkles, CornerDownRight, Search, FileSpreadsheet, Download } from 'lucide-react';
+import { AlertCircle, Calendar, CheckCircle2, Clock, Bell, ArrowUpRight, Sparkles, CornerDownRight, Search } from 'lucide-react';
 
 interface TodayViewProps {
   onSelectNode: (node: NodeItem) => void;
@@ -19,7 +18,6 @@ export const TodayView: React.FC<TodayViewProps> = ({ onSelectNode }) => {
 
   const [activeSnoozeReminder, setActiveSnoozeReminder] = useState<{ id: string; msg: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showExportModal, setShowExportModal] = useState(false);
 
   // Filter items by multi-field search query using full node lookup
   const overdue = useMemo(() => rawOverdue.filter(i => {
@@ -138,18 +136,7 @@ export const TodayView: React.FC<TodayViewProps> = ({ onSelectNode }) => {
             Clear Search
           </button>
         )}
-
-        <button
-          type="button"
-          onClick={() => setShowExportModal(true)}
-          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-extrabold text-xs flex items-center gap-1.5 transition-all shadow-sm shrink-0"
-        >
-          <FileSpreadsheet className="w-4 h-4 text-emerald-100" />
-          <span className="hidden sm:inline">Export Excel</span>
-        </button>
       </div>
-
-      {showExportModal && <ExportModal onClose={() => setShowExportModal(false)} />}
 
       {totalActionItems === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center border border-gray-200 shadow-2xs">

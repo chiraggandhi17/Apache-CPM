@@ -4,9 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import { TreeNode } from '../../types/domain';
 import { NodeRow } from './NodeRow';
 import { NodeForm } from './NodeForm';
-import { ExportModal } from '../shared/ExportModal';
 import { matchesSearchQuery } from '../../utils/search';
-import { Plus, FolderPlus, Layers, Search, Filter, AlertCircle, Sparkles, FileSpreadsheet, Download } from 'lucide-react';
+import { Plus, FolderPlus, Layers, Search, Filter, AlertCircle, Sparkles } from 'lucide-react';
 
 interface NodeTreeProps {
   onSelectNode: (node: TreeNode) => void;
@@ -18,7 +17,6 @@ export const NodeTree: React.FC<NodeTreeProps> = ({ onSelectNode }) => {
   const rawTree = getTree();
 
   const [showAddRoot, setShowAddRoot] = useState(false);
-  const [showExportModal, setShowExportModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [criticalOnly, setCriticalOnly] = useState(false);
@@ -75,25 +73,14 @@ export const NodeTree: React.FC<NodeTreeProps> = ({ onSelectNode }) => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => setShowExportModal(true)}
-            className="px-3 py-2 text-xs font-extrabold text-emerald-950 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-xl transition-colors flex items-center gap-1.5"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
-            <span>Export Excel</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setShowAddRoot(true)}
-            className="px-3.5 py-2 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl shadow-xs transition-colors flex items-center gap-1.5"
-          >
-            <Plus className="w-4 h-4" />
-            <span>{isIndividual ? 'Add New Task / Project' : 'Add Project / Department'}</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setShowAddRoot(true)}
+          className="px-3.5 py-2 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl shadow-xs transition-colors flex items-center gap-1.5 shrink-0"
+        >
+          <Plus className="w-4 h-4" />
+          <span>{isIndividual ? 'Add New Task / Project' : 'Add Project / Department'}</span>
+        </button>
       </div>
 
       {/* Deep Search & Filter Bar */}
@@ -181,12 +168,6 @@ export const NodeTree: React.FC<NodeTreeProps> = ({ onSelectNode }) => {
         <NodeForm
           parentId={null}
           onClose={() => setShowAddRoot(false)}
-        />
-      )}
-
-      {showExportModal && (
-        <ExportModal
-          onClose={() => setShowExportModal(false)}
         />
       )}
     </div>
