@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth, UserProfile, UserRole, UserStatus, FeatureKey } from '../../context/AuthContext';
-import { ShieldCheck, UserCheck, UserX, ToggleLeft, ToggleRight, CheckCircle2, Clock, ShieldAlert, Sparkles, Filter, Search, Layers, Check, X, Bell } from 'lucide-react';
+import { ShieldCheck, UserCheck, UserX, ToggleLeft, ToggleRight, CheckCircle2, Clock, ShieldAlert, Sparkles, Filter, Search, Layers, Check, X, Bell, Trash2 } from 'lucide-react';
 
 interface FeatureDef {
   key: FeatureKey;
@@ -70,6 +70,20 @@ export const AdminDashboard: React.FC = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleDeleteUser = async (targetId: string, email: string) => {
+    if (!confirm(`Are you sure you want to permanently delete user account "${email}"?`)) return;
+
+    try {
+      const { error } = await supabase.from('profiles').delete().eq('id', targetId);
+      if (error) throw error;
+      alert(`User "${email}" deleted successfully.`);
+      await loadData();
+    } catch (err: any) {
+      console.error('Delete user error:', err);
+      alert(`Failed to delete user: ${err.message}`);
+    }
+  };
 
   const handleUpdateStatus = async (targetId: string, status: UserStatus, role?: UserRole) => {
     try {
@@ -331,12 +345,12 @@ export const AdminDashboard: React.FC = () => {
 
                       {/* Vertically Aligned Action Buttons */}
                       <td className="px-4 py-3.5 text-right">
-                        <div className="flex flex-col items-end gap-1.5">
+                        <div className="flex items-center justify-end gap-1.5">
                           {prof.status !== 'approved' && (
                             <button
                               type="button"
                               onClick={() => handleUpdateStatus(prof.id, 'approved')}
-                              className="w-24 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs transition-colors shadow-2xs flex items-center justify-center gap-1"
+                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs transition-colors shadow-2xs flex items-center justify-center gap-1"
                             >
                               <Check className="w-3.5 h-3.5" /> Approve
                             </button>
@@ -345,11 +359,19 @@ export const AdminDashboard: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => handleUpdateStatus(prof.id, 'revoked')}
-                              className="w-24 px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl font-bold text-xs transition-colors border border-rose-200 flex items-center justify-center gap-1"
+                              className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-xl font-bold text-xs transition-colors border border-amber-200 flex items-center justify-center gap-1"
                             >
                               <X className="w-3.5 h-3.5" /> Revoke
                             </button>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteUser(prof.id, prof.email)}
+                            title="Delete User Account"
+                            className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl font-bold text-xs transition-colors border border-rose-200 flex items-center justify-center gap-1"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Delete
+                          </button>
                         </div>
                       </td>
                     </tr>

@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Lock, Mail, ArrowRight, CheckCircle2, UserPlus, LogIn, Building2, Footprints, Sparkles, User, ShieldCheck } from 'lucide-react';
+import { 
+  Lock, Mail, ArrowRight, CheckCircle2, UserPlus, LogIn, Building2, 
+  Footprints, Sparkles, User, KeyRound, ArrowLeft 
+} from 'lucide-react';
 
 interface LoginPageProps {
   onLoginSuccess?: () => void;
@@ -19,7 +22,6 @@ interface PublicOrgBranding {
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
-  // Clean URL: Zero sensitive parameter leakage (No ?org= or ?email= in URL to prevent phishing)
   const [workspaceCode, setWorkspaceCode] = useState(() => {
     return localStorage.getItem('cadence_last_workspace_code') || '';
   });
@@ -28,6 +30,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
   
   // Registration Account Type Selection: Personal vs Company
   const [accountType, setAccountType] = useState<'personal' | 'company'>('personal');
@@ -35,6 +38,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [signUpSuccess, setSignUpSuccess] = useState<boolean>(false);
+  const [resetEmailSent, setResetEmailSent] = useState<boolean>(false);
   const [isPrimaryAdminSuccess, setIsPrimaryAdminSuccess] = useState<boolean>(false);
 
   // Dynamic Live Real-Time Brand State
@@ -84,6 +88,27 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
     return () => clearTimeout(timer);
   }, [workspaceCode, accountType]);
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) return;
+
+    setLoading(true);
+    setErrorMsg(null);
+    setResetEmailSent(false);
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+        redirectTo: `${window.location.origin}/#reset-password`,
+      });
+      if (error) throw error;
+      setResetEmailSent(true);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to send password reset email.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -218,10 +243,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           )}
 
           <h1 className="text-2xl font-extrabold text-white tracking-tight animate-in fade-in duration-200">
-            {activeTitle}
+            {isForgotPassword ? 'Reset Password' : activeTitle}
           </h1>
           <p className="text-xs text-slate-400">
-            {isSignUp 
+            {isForgotPassword 
+              ? 'Enter your email to receive password recovery instructions' 
+              : isSignUp 
               ? accountType === 'personal' 
                 ? 'Create free personal task & calendar workspace' 
                 : 'Join enterprise company workspace'
@@ -229,192 +256,284 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           </p>
         </div>
 
-        {/* Auth Mode Toggle Tabs (Sign In vs Register) */}
-        <div className="flex items-center bg-slate-850 p-1 rounded-2xl border border-slate-800 text-xs font-semibold">
-          <button
-            type="button"
-            onClick={() => {
-              setIsSignUp(false);
-              setErrorMsg(null);
-              setSignUpSuccess(false);
-            }}
-            className={`flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-              !isSignUp ? 'text-slate-950 font-bold shadow-md' : 'text-slate-400 hover:text-white'
-            }`}
-            style={!isSignUp ? { backgroundColor: activeBrandColor } : {}}
-          >
-            <LogIn className="w-3.5 h-3.5" /> Sign In
-          </button>
+        {/* FORGOT PASSWORD FORM MODE */}
+        {isForgotPassword ? (
+          <form onSubmit={handleResetPassword} className="space-y-4">
+            {errorMsg && (
+              <div className="bg-rose-500/10 border border-rose-500/30 p-3 rounded-2xl text-xs text-rose-300 text-center font-medium">
+                {errorMsg}
+              </div>
+            )}
 
-          <button
-            type="button"
-            onClick={() => {
-              setIsSignUp(true);
-              setErrorMsg(null);
-              setSignUpSuccess(false);
-            }}
-            className={`flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-              isSignUp ? 'text-slate-950 font-bold shadow-md' : 'text-slate-400 hover:text-white'
-            }`}
-            style={isSignUp ? { backgroundColor: activeBrandColor } : {}}
-          >
-            <UserPlus className="w-3.5 h-3.5" /> Register Account
-          </button>
-        </div>
+            {resetEmailSent ? (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 p-4 rounded-2xl text-xs text-emerald-300 text-center space-y-2">
+                <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+                <p className="font-bold text-white text-sm">Password Reset Link Sent!</p>
+                <p className="text-slate-300 text-[11px] leading-relaxed">
+                  We have sent password reset instructions to <strong>{email}</strong>. Please check your inbox.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsForgotPassword(false);
+                    setResetEmailSent(false);
+                    setErrorMsg(null);
+                  }}
+                  className="mt-2 text-xs font-bold text-teal-400 hover:underline inline-flex items-center gap-1"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" /> Return to Sign In
+                </button>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Registered Email Address</label>
+                  <div className="relative">
+                    <input
+                      type="email"
+                      required
+                      autoFocus
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      placeholder="name@company.com"
+                      className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-850 border border-slate-700 rounded-xl text-white outline-none focus:border-teal-500 font-mono"
+                    />
+                    <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+                  </div>
+                </div>
 
-        {/* If Registering: Clean Personal vs Company Workspace Selector */}
-        {isSignUp && (
-          <div className="bg-slate-850 p-2 rounded-2xl border border-slate-800 space-y-2">
-            <div className="text-[11px] font-bold text-slate-400 px-1 uppercase tracking-wider">Account Type:</div>
-            <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-2.5 text-slate-950 font-bold text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-1.5"
+                  style={{ backgroundColor: activeBrandColor }}
+                >
+                  <KeyRound className="w-4 h-4" />
+                  <span>{loading ? 'Sending Instructions...' : 'Send Password Reset Email'}</span>
+                </button>
+
+                <div className="text-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsForgotPassword(false);
+                      setErrorMsg(null);
+                    }}
+                    className="text-xs font-semibold text-slate-400 hover:text-white transition-colors flex items-center justify-center gap-1 mx-auto"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" /> Back to Sign In
+                  </button>
+                </div>
+              </>
+            )}
+          </form>
+        ) : (
+          /* STANDARD SIGN IN / REGISTER FORM */
+          <>
+            {/* Auth Mode Toggle Tabs (Sign In vs Register) */}
+            <div className="flex items-center bg-slate-850 p-1 rounded-2xl border border-slate-800 text-xs font-semibold">
               <button
                 type="button"
                 onClick={() => {
-                  setAccountType('personal');
-                  setWorkspaceCode('');
-                  setOrgBranding(null);
+                  setIsSignUp(false);
+                  setErrorMsg(null);
+                  setSignUpSuccess(false);
                 }}
-                className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all ${
-                  accountType === 'personal'
-                    ? 'border-teal-500 bg-teal-500/10 text-teal-300'
-                    : 'border-slate-750 bg-slate-900 text-slate-400 hover:text-slate-200'
+                className={`flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                  !isSignUp ? 'text-slate-950 font-bold shadow-md' : 'text-slate-400 hover:text-white'
                 }`}
+                style={!isSignUp ? { backgroundColor: activeBrandColor } : {}}
               >
-                <User className="w-4 h-4" />
-                <span>Personal (Free)</span>
-                <span className="text-[9px] font-normal text-slate-400">No workspace code needed</span>
+                <LogIn className="w-3.5 h-3.5" /> Sign In
               </button>
 
               <button
                 type="button"
-                onClick={() => setAccountType('company')}
-                className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all ${
-                  accountType === 'company'
-                    ? 'border-teal-500 bg-teal-500/10 text-teal-300'
-                    : 'border-slate-750 bg-slate-900 text-slate-400 hover:text-slate-200'
+                onClick={() => {
+                  setIsSignUp(true);
+                  setErrorMsg(null);
+                  setSignUpSuccess(false);
+                }}
+                className={`flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                  isSignUp ? 'text-slate-950 font-bold shadow-md' : 'text-slate-400 hover:text-white'
                 }`}
+                style={isSignUp ? { backgroundColor: activeBrandColor } : {}}
               >
-                <Building2 className="w-4 h-4" />
-                <span>Company / Org</span>
-                <span className="text-[9px] font-normal text-slate-400">Enter company code</span>
+                <UserPlus className="w-3.5 h-3.5" /> Register Account
               </button>
             </div>
-          </div>
-        )}
 
-        {errorMsg && (
-          <div className="bg-rose-500/10 border border-rose-500/30 p-3 rounded-2xl text-xs text-rose-300 text-center font-medium">
-            {errorMsg}
-          </div>
-        )}
+            {/* If Registering: Clean Personal vs Company Workspace Selector */}
+            {isSignUp && (
+              <div className="bg-slate-850 p-2 rounded-2xl border border-slate-800 space-y-2">
+                <div className="text-[11px] font-bold text-slate-400 px-1 uppercase tracking-wider">Account Type:</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAccountType('personal');
+                      setWorkspaceCode('');
+                      setOrgBranding(null);
+                    }}
+                    className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all ${
+                      accountType === 'personal'
+                        ? 'border-teal-500 bg-teal-500/10 text-teal-300'
+                        : 'border-slate-750 bg-slate-900 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <User className="w-4 h-4" />
+                    <span>Personal (Free)</span>
+                    <span className="text-[9px] font-normal text-slate-400">No workspace code needed</span>
+                  </button>
 
-        {signUpSuccess && (
-          <div className="bg-emerald-500/10 border border-emerald-500/30 p-4 rounded-2xl text-xs text-emerald-300 text-center space-y-1">
-            <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto" />
-            <p className="font-bold text-white text-sm">
-              {accountType === 'personal' ? '🎉 Personal Workspace Ready!' : isPrimaryAdminSuccess ? '🎉 Company Activated!' : 'Registration Submitted!'}
-            </p>
-            <p className="text-slate-300 text-[11px]">
-              {accountType === 'personal'
-                ? 'Your personal task manager is ready. Sign in below to start organizing your timeline!'
-                : isPrimaryAdminSuccess 
-                ? 'Your Primary Org Admin account has been activated! Sign in below.' 
-                : 'Your registration has been submitted. Your Company Org Admin will review access.'}
-            </p>
-          </div>
-        )}
-
-        {/* Auth Form */}
-        <form onSubmit={handleEmailAuth} className="space-y-4">
-          
-          {/* Workspace ID (Only shown if Company Workspace Mode) */}
-          {isSignUp && accountType === 'company' && (
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-semibold text-slate-300">
-                  Company Workspace Code <span className="text-rose-400">*</span>
-                </label>
-                {orgBranding && (
-                  <span className="text-[10px] text-teal-400 font-mono font-bold flex items-center gap-1">
-                    <Sparkles className="w-3 h-3" /> {orgBranding.org_name}
-                  </span>
-                )}
+                  <button
+                    type="button"
+                    onClick={() => setAccountType('company')}
+                    className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all ${
+                      accountType === 'company'
+                        ? 'border-teal-500 bg-teal-500/10 text-teal-300'
+                        : 'border-slate-750 bg-slate-900 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <Building2 className="w-4 h-4" />
+                    <span>Company / Org</span>
+                    <span className="text-[9px] font-normal text-slate-400">Enter company code</span>
+                  </button>
+                </div>
               </div>
+            )}
+
+            {errorMsg && (
+              <div className="bg-rose-500/10 border border-rose-500/30 p-3 rounded-2xl text-xs text-rose-300 text-center font-medium">
+                {errorMsg}
+              </div>
+            )}
+
+            {signUpSuccess && (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 p-4 rounded-2xl text-xs text-emerald-300 text-center space-y-1">
+                <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto" />
+                <p className="font-bold text-white text-sm">
+                  {accountType === 'personal' ? '🎉 Personal Workspace Ready!' : isPrimaryAdminSuccess ? '🎉 Company Activated!' : 'Registration Submitted!'}
+                </p>
+                <p className="text-slate-300 text-[11px]">
+                  {accountType === 'personal'
+                    ? 'Your personal task manager is ready. Sign in below to start organizing your timeline!'
+                    : isPrimaryAdminSuccess 
+                    ? 'Your Primary Org Admin account has been activated! Sign in below.' 
+                    : 'Your registration has been submitted. Your Company Org Admin will review access.'}
+                </p>
+              </div>
+            )}
+
+            {/* Auth Form */}
+            <form onSubmit={handleEmailAuth} className="space-y-4">
               
-              <div className="relative">
-                <input
-                  type="text"
-                  required
-                  value={workspaceCode}
-                  onChange={e => setWorkspaceCode(e.target.value.toUpperCase())}
-                  placeholder="e.g. APACHE"
-                  className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-850 border border-slate-700 rounded-xl text-white font-mono uppercase font-bold outline-none focus:border-teal-500 placeholder:text-slate-500 placeholder:normal-case placeholder:font-normal"
-                />
-                <Building2 className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+              {/* Workspace ID (Only shown if Company Workspace Mode) */}
+              {isSignUp && accountType === 'company' && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-300">
+                      Company Workspace Code <span className="text-rose-400">*</span>
+                    </label>
+                    {orgBranding && (
+                      <span className="text-[10px] text-teal-400 font-mono font-bold flex items-center gap-1">
+                        <Sparkles className="w-3 h-3" /> {orgBranding.org_name}
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="relative">
+                    <input
+                      type="text"
+                      required
+                      value={workspaceCode}
+                      onChange={e => setWorkspaceCode(e.target.value.toUpperCase())}
+                      placeholder="e.g. APACHE"
+                      className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-850 border border-slate-700 rounded-xl text-white font-mono uppercase font-bold outline-none focus:border-teal-500 placeholder:text-slate-500 placeholder:normal-case placeholder:font-normal"
+                    />
+                    <Building2 className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+                  </div>
+                </div>
+              )}
+
+              {isSignUp && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Your Full Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={fullName}
+                    onChange={e => setFullName(e.target.value)}
+                    placeholder="e.g. Alex Johnson"
+                    className="w-full text-xs px-3 py-2.5 bg-slate-850 border border-slate-700 rounded-xl text-white outline-none focus:border-teal-500"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Email Address</label>
+                <div className="relative">
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="name@email.com"
+                    className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-850 border border-slate-700 rounded-xl text-white outline-none focus:border-teal-500 font-mono"
+                  />
+                  <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+                </div>
               </div>
-            </div>
-          )}
 
-          {isSignUp && (
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">Your Full Name</label>
-              <input
-                type="text"
-                required
-                value={fullName}
-                onChange={e => setFullName(e.target.value)}
-                placeholder="e.g. Alex Johnson"
-                className="w-full text-xs px-3 py-2.5 bg-slate-850 border border-slate-700 rounded-xl text-white outline-none focus:border-teal-500"
-              />
-            </div>
-          )}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-300">Password</label>
+                  {!isSignUp && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsForgotPassword(true);
+                        setErrorMsg(null);
+                        setResetEmailSent(false);
+                      }}
+                      className="text-[11px] font-semibold text-teal-400 hover:text-teal-300 hover:underline"
+                    >
+                      Forgot password?
+                    </button>
+                  )}
+                </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Email Address</label>
-            <div className="relative">
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="name@email.com"
-                className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-850 border border-slate-700 rounded-xl text-white outline-none focus:border-teal-500 font-mono"
-              />
-              <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
-            </div>
-          </div>
+                <div className="relative">
+                  <input
+                    type="password"
+                    required
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-850 border border-slate-700 rounded-xl text-white outline-none focus:border-teal-500"
+                  />
+                  <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+                </div>
+              </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Password</label>
-            <div className="relative">
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-850 border border-slate-700 rounded-xl text-white outline-none focus:border-teal-500"
-              />
-              <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2.5 text-slate-950 font-bold text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-1.5"
-            style={{ backgroundColor: activeBrandColor }}
-          >
-            <span>
-              {loading 
-                ? 'Authenticating...' 
-                : isSignUp 
-                ? accountType === 'personal' ? 'Create Free Personal Account' : 'Register with Company' 
-                : 'Sign In'}
-            </span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </form>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-2.5 text-slate-950 font-bold text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-1.5"
+                style={{ backgroundColor: activeBrandColor }}
+              >
+                <span>
+                  {loading 
+                    ? 'Authenticating...' 
+                    : isSignUp 
+                    ? accountType === 'personal' ? 'Create Free Personal Account' : 'Register with Company' 
+                    : 'Sign In'}
+                </span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </form>
+          </>
+        )}
       </div>
     </div>
   );
