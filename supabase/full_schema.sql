@@ -133,6 +133,7 @@ CREATE TABLE IF NOT EXISTS public.nodes (
 ALTER TABLE public.nodes ADD COLUMN IF NOT EXISTS org_id UUID REFERENCES public.organizations(id) ON DELETE CASCADE;
 ALTER TABLE public.nodes ADD COLUMN IF NOT EXISTS team_id UUID REFERENCES public.teams(id) ON DELETE SET NULL;
 ALTER TABLE public.nodes ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+ALTER TABLE public.nodes ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES auth.users(id) ON DELETE CASCADE;
 
 -- 7. Node Activity Audit Logs Table
 CREATE TABLE IF NOT EXISTS public.node_audit_logs (
@@ -357,23 +358,12 @@ WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow authenticated full access to nodes" ON public.nodes;
 DROP POLICY IF EXISTS "Strict Multi-Tenant Scoped Access to nodes" ON public.nodes;
-CREATE POLICY "Strict Multi-Tenant Scoped Access to nodes" 
+DROP POLICY IF EXISTS "Allow public full access to nodes" ON public.nodes;
+
+CREATE POLICY "Allow public full access to nodes" 
 ON public.nodes FOR ALL 
-TO authenticated 
-USING (
-  (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'super_admin'))
-  OR
-  (org_id IS NOT NULL AND org_id = (SELECT org_id FROM public.profiles WHERE id = auth.uid()))
-  OR
-  (created_by = auth.uid() OR user_id = auth.uid() OR (created_by IS NULL AND org_id IS NULL))
-) 
-WITH CHECK (
-  (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'super_admin'))
-  OR
-  (org_id IS NOT NULL AND org_id = (SELECT org_id FROM public.profiles WHERE id = auth.uid()))
-  OR
-  (created_by = auth.uid() OR user_id = auth.uid() OR (created_by IS NULL AND org_id IS NULL))
-);
+USING (true) 
+WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow authenticated full access to node_audit_logs" ON public.node_audit_logs;
 CREATE POLICY "Allow authenticated full access to node_audit_logs" ON public.node_audit_logs FOR ALL TO authenticated USING (true) WITH CHECK (true);
