@@ -192,10 +192,15 @@ export const TodayView: React.FC<TodayViewProps> = ({ onSelectNode }) => {
                 {triggeredReminders.map(rem => (
                   <div
                     key={rem.id}
-                    className="p-3.5 bg-amber-50/90 rounded-xl border border-amber-200/90 shadow-2xs space-y-2 text-xs"
+                    style={{ borderLeftColor: (rem as any).effective_color || '#f59e0b' }}
+                    className="p-3.5 bg-amber-50/90 rounded-xl border border-amber-200/90 border-l-4 shadow-2xs space-y-2 text-xs"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
+                        <span 
+                          className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs" 
+                          style={{ backgroundColor: (rem as any).effective_color || '#f59e0b' }} 
+                        />
                         <Bell className="w-4 h-4 text-amber-600 shrink-0" />
                         <div>
                           <p className="font-bold text-amber-950">{rem.message}</p>

@@ -167,6 +167,14 @@ CREATE TABLE IF NOT EXISTS public.reminders (
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Ensure all columns exist if reminders table pre-existed in DB
+ALTER TABLE public.reminders ADD COLUMN IF NOT EXISTS note TEXT;
+ALTER TABLE public.reminders ADD COLUMN IF NOT EXISTS offset_mode TEXT DEFAULT 'relative';
+ALTER TABLE public.reminders ADD COLUMN IF NOT EXISTS offset_days INT;
+ALTER TABLE public.reminders ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.reminders ADD COLUMN IF NOT EXISTS snoozed_until TIMESTAMPTZ;
+ALTER TABLE public.reminders ADD COLUMN IF NOT EXISTS dismissed_at TIMESTAMPTZ;
+
 -- 9. Modular Feature Entitlements Table
 CREATE TABLE IF NOT EXISTS public.user_feature_entitlements (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -305,6 +313,9 @@ CREATE POLICY "Allow authenticated full access to node_audit_logs" ON public.nod
 
 DROP POLICY IF EXISTS "Allow authenticated full access to reminders" ON public.reminders;
 CREATE POLICY "Allow authenticated full access to reminders" ON public.reminders FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public full access to reminders" ON public.reminders;
+CREATE POLICY "Allow public full access to reminders" ON public.reminders FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow authenticated full access to user_feature_entitlements" ON public.user_feature_entitlements;
 CREATE POLICY "Allow authenticated full access to user_feature_entitlements" ON public.user_feature_entitlements FOR ALL TO authenticated USING (true) WITH CHECK (true);

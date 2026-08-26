@@ -8,7 +8,7 @@ import { NodeForm } from './NodeForm';
 import { SubtreeCompletionModal } from './SubtreeCompletionModal';
 import { 
   ChevronRight, ChevronDown, Plus, Folder, Calendar, CheckSquare, 
-  Layers, Clock, Check, Lock, Edit3, Trash2 
+  Layers, Clock, Check, Lock, Edit3, Trash2, Bell 
 } from 'lucide-react';
 
 interface NodeRowProps {
@@ -26,7 +26,11 @@ const TYPE_ICONS: Record<NodeType, React.ReactNode> = {
 };
 
 export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
-  const { toggleCritical, updateStatus, toggleDone, deleteNode, getNodeAccessInfo, getDescendantNodes, completeNodeAndSubtree } = useNodes();
+  const { 
+    reminders, toggleCritical, updateStatus, toggleDone, deleteNode, 
+    getNodeAccessInfo, getDescendantNodes, completeNodeAndSubtree 
+  } = useNodes();
+  
   const [isExpanded, setIsExpanded] = useState(false);
   const [showAddChild, setShowAddChild] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -58,6 +62,7 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
   const isCompleted = node.status === 'done';
   const descendants = getDescendantNodes(node.id);
   const pendingDescendants = descendants.filter(d => d.status !== 'done');
+  const activeNodeReminders = reminders.filter(r => r.node_id === node.id && !r.dismissed_at);
 
   const handleCheckboxClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -141,6 +146,22 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
             interactive={isEditable}
             size="sm"
           />
+
+          {/* Active Alert Badge inheriting node color */}
+          {activeNodeReminders.length > 0 && (
+            <span 
+              title={`Alert Scheduled: ${activeNodeReminders.map(r => r.message).join(' | ')}`}
+              style={{
+                backgroundColor: `${node.effective_color}18`,
+                borderColor: `${node.effective_color}60`,
+                color: node.effective_color,
+              }}
+              className="px-1.5 py-0.5 rounded-md border text-[10px] font-bold flex items-center gap-0.5 shadow-2xs shrink-0"
+            >
+              <Bell className="w-3 h-3" />
+              <span>{activeNodeReminders.length}</span>
+            </span>
+          )}
 
           {/* Progress bar pill */}
           {percentDone !== null && (

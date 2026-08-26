@@ -5,3 +5,60 @@
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   }
 }
+
+/* FullCalendar Clean Sleek Modern Event Styles */
+.fc-theme-standard td, .fc-theme-standard th {
+  border-color: #f1f5f9 !important;
+}
+
+.fc .fc-daygrid-day-number {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: #64748b !important;
+  padding: 4px 6px !important;
+}
+
+.fc .fc-daygrid-day.fc-day-today {
+  background-color: #f0fdfa !important;
+}
+
+.fc .fc-daygrid-event-harness {
+  margin-bottom: 2px !important;
+}
+
+.fc .fc-daygrid-event {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.fc .fc-event-main {
+  padding: 0 !important;
+}
+
+.fc .fc-more-link {
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  color: #0d9488 !important;
+  background: #f0fdfa !important;
+  border: 1px solid #ccfbf1 !important;
+  border-radius: 6px !important;
+  padding: 1px 6px !important;
+}
+
+.fc-popover {
+  border-radius: 16px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+  border: 1px solid #e2e8f0 !important;
+  overflow: hidden !important;
+}
+
+.fc-popover-header {
+  background: #0f172a !important;
+  color: #ffffff !important;
+  padding: 6px 12px !important;
+  font-weight: 700 !important;
+  font-size: 11px !important;
+}

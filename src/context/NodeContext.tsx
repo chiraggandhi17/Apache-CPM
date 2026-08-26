@@ -61,14 +61,14 @@ interface NodeContextType {
 
   // Actions
   cascadeDateChange: (nodeId: string, newPlannedDate: string | null) => Promise<void>;
-  addNode: (data: Partial<NodeItem>) => Promise<void>;
+  addNode: (data: Partial<NodeItem>) => Promise<string>;
   updateNode: (nodeId: string, data: Partial<NodeItem>) => Promise<void>;
   deleteNode: (nodeId: string) => Promise<void>;
   toggleCritical: (nodeId: string) => Promise<void>;
   updateStatus: (nodeId: string, status: NodeStatus) => Promise<void>;
   toggleDone: (nodeId: string) => Promise<void>;
 
-  // Reminders
+  // Reminders (Single Source of Truth: Supabase)
   addReminder: (data: Partial<ReminderItem>) => Promise<void>;
   updateReminder: (reminderId: string, data: Partial<ReminderItem>) => Promise<void>;
   dismissReminder: (reminderId: string) => Promise<void>;
@@ -89,7 +89,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [selectedNode, setSelectedNode] = useState<NodeItem | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Fetch nodes & reminders directly from Supabase Cloud DB
+  // Single Source of Truth: Fetch nodes & reminders directly from Supabase Cloud DB
   const fetchNodesAndReminders = useCallback(async () => {
     try {
       const { data: nodesData, error: nodesErr } = await supabase
@@ -97,13 +97,13 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .select('*')
         .order('sort_order', { ascending: true });
 
-      if (nodesErr) throw nodesErr;
+      if (nodesErr) console.error('Supabase nodes fetch error:', nodesErr);
 
       const { data: remindersData, error: remErr } = await supabase
         .from('reminders')
         .select('*');
 
-      if (remErr) throw remErr;
+      if (remErr) console.error('Supabase reminders fetch error:', remErr);
 
       setNodes(nodesData || []);
       setReminders(remindersData || []);
@@ -213,20 +213,17 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Helper: check if a node is an ancestor of any node assigned to the user
   const isNodeAncestorOfAssigned = useCallback((nodeId: string): boolean => {
-    // Personal users, Org Admins, and Level 1 are NEVER blocked by ancestor locks
     if (!profile || isIndividual || !profile.org_id || isOrgAdmin || accessLevel === 1 || profile.role === 'level_1') return false;
 
     const userEmail = profile.email.toLowerCase();
     const userFullName = (profile.full_name || '').toLowerCase();
 
-    // Directly assigned nodes
     const assignedNodes = nodes.filter(n => {
       if (!n.assignee) return false;
       const a = n.assignee.toLowerCase();
       return a.includes(userEmail) || (userFullName && a.includes(userFullName));
     });
 
-    // Check if nodeId is in the ancestor chain of any assigned node
     for (const assigned of assignedNodes) {
       let curr = nodes.find(n => n.id === assigned.parent_id);
       while (curr) {
@@ -241,32 +238,26 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Scoped Edit Permission Check
   const canUserEditNode = useCallback((nodeId: string): boolean => {
-    // If no profile or individual personal user (no org_id) -> ALWAYS Full Creator/Edit access!
     if (!profile || isIndividual || !profile.org_id || profile.role === 'level_1') {
       return true;
     }
     
-    // 1. Super Admin & Org Admin have universal edit access
     if (isSuperAdmin || isOrgAdmin || profile.role === 'super_admin' || profile.role === 'org_admin') {
       return true;
     }
 
-    // 2. Level 1 (Full Access): Can edit all nodes within their organization
     if (accessLevel === 1 || profile.role === 'senior_manager') {
       return true;
     }
 
-    // 3. Level 3 (View Only) has zero edit access
     if (accessLevel === 3 || profile.role === 'level_3' || profile.role === 'viewer') {
       return false;
     }
 
-    // 4. Level 2 (Limited Access):
     if (isNodeAncestorOfAssigned(nodeId)) {
       return false;
     }
 
-    // If target node is their assigned task OR a child/descendant of their assigned task -> Editable!
     const userEmail = profile.email.toLowerCase();
     const userFullName = (profile.full_name || '').toLowerCase();
 
@@ -298,7 +289,6 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return true;
   }, [nodes, profile, isSuperAdmin, isOrgAdmin, isIndividual, accessLevel, isNodeAncestorOfAssigned]);
 
-  // Clean compact access info helper for UI tooltips
   const getNodeAccessInfo = useCallback((nodeId: string): NodeAccessInfo => {
     const node = nodes.find(n => n.id === nodeId);
     const owningDept = node?.department || 'Personal';
@@ -328,7 +318,6 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [nodes, profile, isIndividual, isNodeAncestorOfAssigned, canUserEditNode, accessLevel]);
 
-  // Get all descendant nodes of a specific parent
   const getDescendantNodes = useCallback((nodeId: string): NodeItem[] => {
     const results: NodeItem[] = [];
     const collectChildren = (pid: string) => {
@@ -342,7 +331,6 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return results;
   }, [nodes]);
 
-  // Complete parent and all its descendant subtasks atomically
   const completeNodeAndSubtree = async (nodeId: string) => {
     const descendants = getDescendantNodes(nodeId);
     const allIdsToComplete = [nodeId, ...descendants.map(d => d.id)];
@@ -490,10 +478,16 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       })
       .map(r => {
         const node = nodes.find(n => n.id === r.node_id);
+        let effective_color = '#f59e0b';
+        if (node) {
+          const ancestorColors = getAncestorColors(node.id, nodes);
+          effective_color = resolveColor(node.color, ancestorColors);
+        }
         return {
           ...r,
           node_title: node?.title || 'Milestone',
           project_title: node ? getProjectTitle(node.id, nodes) : 'Project',
+          effective_color,
         };
       });
 
@@ -572,11 +566,11 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       { planned_date: newPlannedDateStr }
     );
 
-    fetchNodesAndReminders();
+    await fetchNodesAndReminders();
   };
 
-  const addNode = async (data: Partial<NodeItem>) => {
-    const newNodeId = crypto.randomUUID();
+  const addNode = async (data: Partial<NodeItem>): Promise<string> => {
+    const newNodeId = data.id || crypto.randomUUID();
     const newNode = {
       id: newNodeId,
       org_id: profile?.org_id || null,
@@ -598,7 +592,10 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const { error } = await supabase.from('nodes').insert(newNode);
-    if (error) console.error('addNode error:', error);
+    if (error) {
+      console.error('addNode Supabase insert error:', error);
+      throw error;
+    }
 
     await logNodeActivity(
       newNodeId,
@@ -608,7 +605,8 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       newNode
     );
 
-    fetchNodesAndReminders();
+    await fetchNodesAndReminders();
+    return newNodeId;
   };
 
   const updateNode = async (nodeId: string, data: Partial<NodeItem>) => {
@@ -636,7 +634,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       data
     );
 
-    fetchNodesAndReminders();
+    await fetchNodesAndReminders();
   };
 
   const deleteNode = async (nodeId: string) => {
@@ -653,7 +651,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { error } = await supabase.from('nodes').delete().eq('id', nodeId);
     if (error) console.error('deleteNode error:', error);
     if (selectedNode && selectedNode.id === nodeId) setSelectedNode(null);
-    fetchNodesAndReminders();
+    await fetchNodesAndReminders();
   };
 
   const toggleCritical = async (nodeId: string) => {
@@ -668,7 +666,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       `Critical path flagged: ${newCrit ? 'YES' : 'NO'}`
     );
 
-    fetchNodesAndReminders();
+    await fetchNodesAndReminders();
   };
 
   const updateStatus = async (nodeId: string, status: NodeStatus) => {
@@ -686,7 +684,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       { status }
     );
 
-    fetchNodesAndReminders();
+    await fetchNodesAndReminders();
   };
 
   const toggleDone = async (nodeId: string) => {
@@ -704,32 +702,51 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       { status: newStatus }
     );
 
-    fetchNodesAndReminders();
+    await fetchNodesAndReminders();
   };
 
+  // Pure Supabase Single Source of Truth: addReminder
   const addReminder = async (data: Partial<ReminderItem>) => {
-    const newRem = {
-      id: crypto.randomUUID(),
-      node_id: data.node_id!,
+    if (!data.node_id) {
+      console.error('addReminder error: missing node_id');
+      return;
+    }
+
+    const newRem: any = {
+      id: data.id || crypto.randomUUID(),
+      node_id: data.node_id,
       remind_at: data.remind_at || new Date().toISOString(),
       offset_mode: data.offset_mode || (data.offset_days !== null && data.offset_days !== undefined ? 'relative' : 'fixed'),
       offset_days: data.offset_days !== undefined ? data.offset_days : null,
       message: data.message || 'Milestone follow up reminder',
-      note: data.note || null,
       is_recurring: data.is_recurring || false,
     };
-    await supabase.from('reminders').insert(newRem);
-    fetchNodesAndReminders();
+    if (data.note) {
+      newRem.note = data.note;
+    }
+
+    const { error } = await supabase.from('reminders').insert(newRem);
+    if (error) {
+      console.error('addReminder Supabase insert error:', error);
+      alert(`Supabase DB error saving alert: ${error.message}\n\nPlease run the updated supabase/full_schema.sql query in your Supabase SQL Editor.`);
+      return;
+    }
+
+    // Refresh state directly from Supabase single source of truth
+    await fetchNodesAndReminders();
   };
 
   const updateReminder = async (reminderId: string, data: Partial<ReminderItem>) => {
-    await supabase.from('reminders').update({ ...data, updated_at: new Date().toISOString() }).eq('id', reminderId);
-    fetchNodesAndReminders();
+    const { error } = await supabase.from('reminders').update({ ...data, updated_at: new Date().toISOString() }).eq('id', reminderId);
+    if (error) console.error('updateReminder error:', error);
+    await fetchNodesAndReminders();
   };
 
   const dismissReminder = async (reminderId: string) => {
-    await supabase.from('reminders').update({ dismissed_at: new Date().toISOString() }).eq('id', reminderId);
-    fetchNodesAndReminders();
+    const nowISO = new Date().toISOString();
+    const { error } = await supabase.from('reminders').update({ dismissed_at: nowISO }).eq('id', reminderId);
+    if (error) console.error('dismissReminder error:', error);
+    await fetchNodesAndReminders();
   };
 
   const snoozeReminder = async (reminderId: string, snoozeOption: '1h' | '1d' | '3d' | string) => {
@@ -746,18 +763,21 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       snoozedISO = new Date(snoozeOption).toISOString();
     }
 
-    await supabase.from('reminders').update({ snoozed_until: snoozedISO }).eq('id', reminderId);
-    fetchNodesAndReminders();
+    const { error } = await supabase.from('reminders').update({ snoozed_until: snoozedISO }).eq('id', reminderId);
+    if (error) console.error('snoozeReminder error:', error);
+    await fetchNodesAndReminders();
   };
 
   const addReminderNote = async (reminderId: string, noteText: string) => {
-    await supabase.from('reminders').update({ note: noteText, updated_at: new Date().toISOString() }).eq('id', reminderId);
-    fetchNodesAndReminders();
+    const { error } = await supabase.from('reminders').update({ note: noteText, updated_at: new Date().toISOString() }).eq('id', reminderId);
+    if (error) console.error('addReminderNote error:', error);
+    await fetchNodesAndReminders();
   };
 
   const deleteReminder = async (reminderId: string) => {
-    await supabase.from('reminders').delete().eq('id', reminderId);
-    fetchNodesAndReminders();
+    const { error } = await supabase.from('reminders').delete().eq('id', reminderId);
+    if (error) console.error('deleteReminder error:', error);
+    await fetchNodesAndReminders();
   };
 
   const totalScheduledAlertsCount = reminders.filter(r => !r.dismissed_at).length;

@@ -84,16 +84,16 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
     return formatISO(addDays(new Date(), -daysBefore));
   })();
 
-  const handleCreateReminder = (e: React.FormEvent) => {
+  const handleCreateReminder = async (e: React.FormEvent) => {
     e.preventDefault();
     const daysBefore = reminderPreset === 'custom' ? customReminderDays : Math.abs(Number(reminderPreset));
     let remindAt = calculatedReminderDate || new Date().toISOString();
 
-    addReminder({
+    await addReminder({
       node_id: currentNode.id,
       remind_at: remindAt,
       offset_days: -daysBefore,
-      message: reminderMessage || `Follow up on: ${currentNode.title}`,
+      message: reminderMessage.trim() || `Follow up on: ${currentNode.title}`,
     });
 
     setReminderMessage('');
@@ -208,7 +208,6 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
                   </span>
                 )}
 
-                {/* Sleek Compact View-Only Lock Chip with Tooltip */}
                 {!isEditable && (
                   <span 
                     title={accessInfo.tooltipText}
@@ -222,7 +221,6 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
             </div>
 
             <div className="flex items-center gap-2">
-              {/* Activity Audit Logs Button */}
               <button
                 type="button"
                 onClick={() => setShowLogsModal(true)}
@@ -371,21 +369,21 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
                 <div>
                   <label className="block font-bold text-amber-950 mb-1.5">When should alert trigger?</label>
                   
-                  {/* Preset Buttons */}
-                  <div className="grid grid-cols-3 gap-1 mb-2">
+                  {/* Preset Buttons Grid */}
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 mb-2">
                     {[
-                      { label: 'On Due Day', val: '0' },
-                      { label: '1 Day Before', val: '-1' },
-                      { label: '2 Days Before', val: '-2' },
-                      { label: '3 Days Before', val: '-3' },
-                      { label: '7 Days Before', val: '-7' },
+                      { label: 'Due Day', val: '0' },
+                      { label: '1d Prior', val: '-1' },
+                      { label: '2d Prior', val: '-2' },
+                      { label: '3d Prior', val: '-3' },
+                      { label: '7d Prior', val: '-7' },
                       { label: 'Custom', val: 'custom' },
                     ].map(p => (
                       <button
                         key={p.val}
                         type="button"
                         onClick={() => setReminderPreset(p.val)}
-                        className={`py-1 px-1.5 rounded-lg text-[10px] font-bold border transition-colors truncate ${
+                        className={`py-1.5 px-1 rounded-xl text-[10px] font-bold border transition-colors text-center truncate ${
                           reminderPreset === p.val
                             ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
                             : 'bg-white text-gray-700 border-amber-200 hover:bg-amber-100'
