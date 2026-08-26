@@ -7,7 +7,8 @@ import { useNodes } from '../../context/NodeContext';
 import { NodeItem, ReminderItem } from '../../types/domain';
 import { resolveColor } from '../../lib/color-resolver';
 import { SearchableParentSelect } from '../shared/SearchableParentSelect';
-import { Filter, Calendar as CalendarIcon, Bell, CheckCircle2, Zap, Layers, FolderTree, XCircle } from 'lucide-react';
+import { ExportModal } from '../shared/ExportModal';
+import { Filter, Calendar as CalendarIcon, Bell, CheckCircle2, Zap, Layers, FolderTree, XCircle, FileSpreadsheet, Download } from 'lucide-react';
 
 interface CalendarViewProps {
   onSelectNode: (node: NodeItem) => void;
@@ -18,6 +19,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(true);
   const [showAlertsOnCal, setShowAlertsOnCal] = useState(true);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   // Calculate recursive descendant sub-task IDs for the selected parent task
   const allowedSubtreeNodeIds = useMemo(() => {
@@ -182,6 +184,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
             <span>Completed ({showCompleted ? 'Shown' : 'Hidden'})</span>
           </button>
+
+          {/* Export Excel Button */}
+          <button
+            type="button"
+            onClick={() => setShowExportModal(true)}
+            className="px-3 py-1.5 text-xs font-extrabold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-all shadow-2xs flex items-center gap-1.5"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-100" />
+            <span>Export Excel</span>
+          </button>
         </div>
       </div>
 
@@ -267,6 +279,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
           aspectRatio={1.6}
         />
       </div>
+
+      {showExportModal && <ExportModal onClose={() => setShowExportModal(false)} />}
     </div>
   );
 };

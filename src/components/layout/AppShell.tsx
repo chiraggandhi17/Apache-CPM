@@ -12,12 +12,13 @@ import { OrgAdminDashboard } from '../admin/OrgAdminDashboard';
 import { GoogleCalendarSyncModal } from '../calendar/GoogleCalendarSyncModal';
 import { TierPricingModal } from '../shared/TierPricingModal';
 import { PersonalUserSettingsModal } from '../settings/PersonalUserSettingsModal';
+import { ExportModal } from '../shared/ExportModal';
 import { ProtectedAppGuard } from '../auth/Guards';
 import { LoginPage } from '../auth/LoginPage';
 import { 
   Bell, Calendar, Home, Layers, LogOut, Footprints, ChevronRight, 
   ShieldCheck, Sparkles, User, Building2, FolderTree, Activity, 
-  AlertTriangle, Download, HardDrive, Users, CheckCircle2, Zap, Settings, KeyRound, Menu, X
+  AlertTriangle, Download, HardDrive, Users, CheckCircle2, Zap, Settings, KeyRound, Menu, X, FileSpreadsheet
 } from 'lucide-react';
 
 type NavTab = 'today' | 'browse' | 'calendar' | 'super_admin' | 'super_observability' | 'super_errors' | 'super_backups' | 'org_admin' | 'org_teams' | 'org_backup';
@@ -51,6 +52,7 @@ export const AppShellContent: React.FC = () => {
   const [showGoogleCalSync, setShowGoogleCalSync] = useState(false);
   const [showTierPricingModal, setShowTierPricingModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
 
   // Determine Dynamic Branding
@@ -580,6 +582,19 @@ export const AppShellContent: React.FC = () => {
                 <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-slate-300 transition-colors" />
               </button>
 
+              {/* Export to Excel Button */}
+              <button
+                type="button"
+                onClick={() => setShowExportModal(true)}
+                className="w-full bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-500/30 p-2.5 rounded-xl flex items-center justify-between text-xs text-emerald-200 transition-colors group shadow-2xs"
+              >
+                <div className="flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                  <span className="font-bold text-[11px]">Export Schedule (Excel)</span>
+                </div>
+                <Download className="w-3.5 h-3.5 text-emerald-400 group-hover:text-white transition-colors" />
+              </button>
+
               {/* Personal Workspace Settings Button */}
               <button
                 type="button"
@@ -727,6 +742,13 @@ export const AppShellContent: React.FC = () => {
       {showSettingsModal && (
         <PersonalUserSettingsModal
           onClose={() => setShowSettingsModal(false)}
+        />
+      )}
+
+      {/* Export Excel / CSV Modal */}
+      {showExportModal && (
+        <ExportModal
+          onClose={() => setShowExportModal(false)}
         />
       )}
 
