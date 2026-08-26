@@ -1,40 +1,22 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { User } from '@supabase/supabase-js';
 
-export type UserRole = 
-  | 'org_admin' 
-  | 'level_1' // Full Access (CPM / Department Lead)
-  | 'level_2' // Limited Access (Task Contributor)
-  | 'level_3' // View Only
-  | 'super_admin'
-  // Legacy aliases for backward compatibility
-  | 'senior_manager' 
-  | 'junior_manager' 
-  | 'admin' 
-  | 'manager' 
-  | 'editor' 
-  | 'viewer';
-
+export type UserRole = 'super_admin' | 'org_admin' | 'level_1' | 'level_2' | 'level_3' | 'senior_manager' | 'junior_manager' | 'viewer' | 'editor' | 'manager';
 export type UserStatus = 'pending' | 'approved' | 'revoked';
-
-export type FeatureKey = 
-  | 'base_tier' 
-  | 'google_calendar_sync' 
-  | 'advanced_reports' 
-  | 'node_mutation' 
-  | 'admin_management';
 
 export interface UserProfile {
   id: string;
-  email: string;
-  full_name: string | null;
-  avatar_url: string | null;
-  department: string | null;
-  role: UserRole;
-  status: UserStatus;
   org_id: string | null;
   team_id: string | null;
-  custom_role_id?: string | null;
+  email: string;
+  full_name: string | null;
+  role: UserRole;
+  account_type?: 'individual' | 'organization';
+  tier?: 'tier_1' | 'tier_2' | 'tier_3';
+  department?: string | null;
+  status: UserStatus;
+  approved_by: string | null;
   approved_at: string | null;
   created_at: string;
   updated_at: string;
@@ -71,29 +53,32 @@ export interface Team {
   updated_at: string;
 }
 
+export type FeatureKey = 'base_tier' | 'google_calendar_sync' | 'advanced_reports' | 'admin_management' | 'node_mutation';
+
 interface AuthContextType {
-  user: any | null;
+  user: User | null;
   profile: UserProfile | null;
   organization: Organization | null;
   team: Team | null;
-  isLoading: boolean;
   isSuperAdmin: boolean;
   isOrgAdmin: boolean;
   isApproved: boolean;
   isIndividual: boolean;
+  accessLevel: 1 | 2 | 3;
   tier: 1 | 2 | 3;
   setTier: (tier: 1 | 2 | 3) => void;
-  accessLevel: 1 | 2 | 3;
   hasFeature: (feature: FeatureKey) => boolean;
   hasRole: (roles: UserRole[]) => boolean;
+  isLoading: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  requestUpgrade: (requestedTier: 1 | 2 | 3, notes?: string) => Promise<{ success: boolean; message: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<any | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [team, setTeam] = useState<Team | null>(null);
@@ -104,7 +89,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [tierState, setTierState] = useState<1 | 2 | 3>(() => {
     const saved = localStorage.getItem('cadence_user_tier');
     if (saved) return Number(saved) as 1 | 2 | 3;
-    return 3; // Default to full suite
+    return 1; // Default to Tier 1 Personal Free
   });
 
   const setTier = (newTier: 1 | 2 | 3) => {
@@ -134,12 +119,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             email: user.email,
             full_name: user.user_metadata?.full_name || user.email.split('@')[0],
             role: defaultRole,
+            account_type: 'individual',
+            tier: 'tier_1',
             status: 'approved',
           })
           .select()
           .single();
 
         currentProfile = newProf as UserProfile;
+      }
+
+      // Auto-heal individual accounts: personal users must ALWAYS have level_1 access
+      if (currentProfile && !currentProfile.org_id && currentProfile.role !== 'level_1' && currentProfile.role !== 'super_admin') {
+        currentProfile.role = 'level_1';
+        currentProfile.account_type = 'individual';
+        supabase.from('profiles').update({ role: 'level_1', account_type: 'individual' }).eq('id', userId);
       }
 
       setProfile(currentProfile);
@@ -154,10 +148,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setOrganization(org);
         setTierState(3); // Organization users get Tier 3
       } else {
-        // Individual user defaults to Tier 1 unless upgraded
-        if (!localStorage.getItem('cadence_user_tier')) {
-          setTierState(1);
-        }
+        // Individual personal account
+        const profileTier = currentProfile?.tier === 'tier_3' ? 3 : currentProfile?.tier === 'tier_2' ? 2 : 1;
+        setTierState(profileTier);
       }
 
       // 3. Fetch Team
@@ -236,17 +229,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isSuperAdmin = profile?.role === 'super_admin';
   const isOrgAdmin = profile?.role === 'org_admin' || isSuperAdmin;
   const isApproved = profile?.status === 'approved' || isOrgAdmin;
-  const isIndividual = !profile?.org_id && !isSuperAdmin;
+  const isIndividual = (!profile?.org_id || profile?.account_type === 'individual') && !isSuperAdmin;
 
   // Normalized Access Level: 1 = Full, 2 = Limited, 3 = View Only
+  // CRITICAL: Individual personal users ALWAYS have Level 1 Full Access by default!
   const accessLevel: 1 | 2 | 3 = (() => {
-    if (isOrgAdmin || profile?.role === 'level_1' || profile?.role === 'senior_manager') return 1;
+    if (isIndividual || !profile?.org_id) return 1;
+    if (isSuperAdmin || isOrgAdmin || profile?.role === 'level_1' || profile?.role === 'senior_manager') return 1;
     if (profile?.role === 'level_2' || profile?.role === 'junior_manager' || profile?.role === 'editor' || profile?.role === 'manager') return 2;
     return 3;
   })();
 
   const hasFeature = (feature: FeatureKey): boolean => {
-    if (isOrgAdmin) return true;
+    if (isOrgAdmin || isIndividual) return true;
     
     // Tier-based access rules:
     if (feature === 'google_calendar_sync' && tierState < 2) return false;
@@ -266,6 +261,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return roles.includes(profile.role);
   };
 
+  // Formal Tier Upgrade Request Engine
+  const requestUpgrade = async (requestedTier: 1 | 2 | 3, notes?: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      const tierMap = { 1: 'tier_1', 2: 'tier_2', 3: 'tier_3' };
+      const reqTierStr = tierMap[requestedTier];
+      const curTierStr = tierMap[tierState];
+
+      const { error } = await supabase.from('tier_upgrade_requests').insert({
+        user_id: user?.id || profile?.id || null,
+        user_email: profile?.email || user?.email || 'unknown@cadence.app',
+        user_name: profile?.full_name || null,
+        org_id: organization?.id || null,
+        org_name: organization?.name || null,
+        requested_tier: reqTierStr,
+        current_tier: curTierStr,
+        status: 'pending',
+        notes: notes || `User requested upgrade from Tier ${tierState} to Tier ${requestedTier}`,
+      });
+
+      if (error) throw error;
+
+      return {
+        success: true,
+        message: `Upgrade request to Tier ${requestedTier} submitted successfully. Platform Admin will review and activate your plan.`,
+      };
+    } catch (err: any) {
+      console.error('Failed to submit tier upgrade request:', err);
+      return {
+        success: false,
+        message: err.message || 'Failed to submit upgrade request.',
+      };
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -273,18 +302,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         profile,
         organization,
         team,
-        isLoading,
         isSuperAdmin,
         isOrgAdmin,
         isApproved,
         isIndividual,
+        accessLevel,
         tier: tierState,
         setTier,
-        accessLevel,
         hasFeature,
         hasRole,
+        isLoading,
         signOut,
         refreshProfile,
+        requestUpgrade,
       }}
     >
       {children}
@@ -293,7 +323,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 };
 
 export const useAuth = () => {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
-  return ctx;
+  const context = useContext(AuthContext);
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
+  return context;
 };

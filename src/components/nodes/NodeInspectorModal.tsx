@@ -170,7 +170,7 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5">
           
-          {/* Main Title & Compact Access Chip */}
+          {/* Main Title & Action Bar */}
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="flex items-center flex-wrap gap-2 mb-1">
@@ -228,9 +228,9 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
                     type="button"
                     onClick={() => setIsEditing(true)}
                     title="Edit Milestone"
-                    className="p-1.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+                    className="px-3 py-1.5 rounded-xl border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 transition-colors text-xs font-bold flex items-center gap-1 shadow-2xs"
                   >
-                    <Edit3 className="w-4 h-4" />
+                    <Edit3 className="w-3.5 h-3.5 text-gray-600" /> Edit
                   </button>
 
                   <button
@@ -242,9 +242,9 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
                       }
                     }}
                     title="Delete Milestone"
-                    className="p-1.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors"
+                    className="px-3 py-1.5 rounded-xl border border-rose-200 text-rose-600 bg-rose-50 hover:bg-rose-100 transition-colors text-xs font-bold flex items-center gap-1 shadow-2xs"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5" /> Delete
                   </button>
                 </>
               )}
@@ -322,7 +322,7 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
                 <button
                   type="button"
                   onClick={() => setShowAddReminder(!showAddReminder)}
-                  className="text-xs text-teal-600 font-semibold hover:underline flex items-center gap-0.5"
+                  className="px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-xs font-bold hover:bg-amber-100 flex items-center gap-0.5"
                 >
                   <Plus className="w-3.5 h-3.5" /> Add Alert
                 </button>
@@ -388,7 +388,7 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
             )}
           </div>
 
-          {/* Children List with Drill-Down Action */}
+          {/* Children List with Direct Add Subtask Action */}
           <div className="space-y-2 pt-2 border-t border-gray-100">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold text-gray-900">Sub-Milestones ({children.length})</h3>
@@ -396,15 +396,28 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
                 <button
                   type="button"
                   onClick={() => setShowAddSubtask(true)}
-                  className="text-xs text-teal-600 font-semibold hover:underline flex items-center gap-0.5"
+                  className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-2xs flex items-center gap-1"
                 >
-                  <Plus className="w-3.5 h-3.5" /> Add Sub-task
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Sub-task</span>
                 </button>
               )}
             </div>
 
             {children.length === 0 ? (
-              <p className="text-xs text-gray-400 italic">No sub-milestones created under this task.</p>
+              <div className="p-4 bg-gray-50 rounded-2xl border border-dashed text-center space-y-2">
+                <p className="text-xs text-gray-500 italic">No sub-tasks created under this milestone yet.</p>
+                {isEditable && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddSubtask(true)}
+                    className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-2xs inline-flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Create First Sub-task</span>
+                  </button>
+                )}
+              </div>
             ) : (
               <div className="space-y-2">
                 {children.map(child => (

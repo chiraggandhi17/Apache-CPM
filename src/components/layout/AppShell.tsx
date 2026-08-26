@@ -11,12 +11,13 @@ import { SuperAdminDashboard } from '../admin/SuperAdminDashboard';
 import { OrgAdminDashboard } from '../admin/OrgAdminDashboard';
 import { GoogleCalendarSyncModal } from '../calendar/GoogleCalendarSyncModal';
 import { TierPricingModal } from '../shared/TierPricingModal';
+import { PersonalUserSettingsModal } from '../settings/PersonalUserSettingsModal';
 import { ProtectedAppGuard } from '../auth/Guards';
 import { LoginPage } from '../auth/LoginPage';
 import { 
   Bell, Calendar, Home, Layers, LogOut, Footprints, ChevronRight, 
   ShieldCheck, Sparkles, User, Building2, FolderTree, Activity, 
-  AlertTriangle, Download, HardDrive, Users, CheckCircle2, Zap
+  AlertTriangle, Download, HardDrive, Users, CheckCircle2, Zap, Settings
 } from 'lucide-react';
 
 type NavTab = 'today' | 'browse' | 'calendar' | 'super_admin' | 'super_observability' | 'super_errors' | 'super_backups' | 'org_admin' | 'org_teams' | 'org_backup';
@@ -29,7 +30,7 @@ export const AppShellContent: React.FC = () => {
   const isCompanyOrgAdmin = Boolean(profile && profile.role === 'org_admin');
   
   const [activeTab, setActiveTab] = useState<NavTab>(() => {
-    if (profile?.role === 'super_admin' || profile?.role === 'admin') return 'super_admin';
+    if (profile?.role === 'super_admin') return 'super_admin';
     if (profile?.role === 'org_admin') return 'org_admin';
     return 'today';
   });
@@ -47,6 +48,7 @@ export const AppShellContent: React.FC = () => {
   const [showManageAlerts, setShowManageAlerts] = useState(false);
   const [showGoogleCalSync, setShowGoogleCalSync] = useState(false);
   const [showTierPricingModal, setShowTierPricingModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
 
   // Determine Dynamic Branding
@@ -161,7 +163,7 @@ export const AppShellContent: React.FC = () => {
             </button>
           )}
 
-          {/* DEDICATED SUPER ADMIN NAVIGATION (No Manufacturing Task Clutter) */}
+          {/* DEDICATED SUPER ADMIN NAVIGATION */}
           {isSuperAdmin ? (
             <nav className="space-y-1">
               <div className="text-[10px] uppercase tracking-wider font-extrabold text-slate-500 px-3 py-1 mb-1">
@@ -422,6 +424,19 @@ export const AppShellContent: React.FC = () => {
                 </div>
                 <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-slate-300 transition-colors" />
               </button>
+
+              {/* Personal Workspace Settings Button */}
+              <button
+                type="button"
+                onClick={() => setShowSettingsModal(true)}
+                className="w-full bg-slate-850 hover:bg-slate-800 border border-slate-750 p-2.5 rounded-xl flex items-center justify-between text-xs text-slate-200 transition-colors group shadow-2xs"
+              >
+                <div className="flex items-center gap-2">
+                  <Settings className="w-4 h-4 text-teal-400" />
+                  <span className="font-semibold text-[11px]">Workspace Settings</span>
+                </div>
+                <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-slate-300 transition-colors" />
+              </button>
             </>
           )}
 
@@ -439,7 +454,7 @@ export const AppShellContent: React.FC = () => {
                   {displayEmail}
                 </span>
                 <span className="text-[9px] font-mono uppercase tracking-wider block truncate" style={{ color: brandColor }}>
-                  {displayRole} {team ? `• ${team.name}` : ''}
+                  {isIndividual ? 'Personal User' : `${displayRole} ${team ? `• ${team.name}` : ''}`}
                 </span>
               </div>
             </div>
@@ -501,6 +516,13 @@ export const AppShellContent: React.FC = () => {
       {showTierPricingModal && (
         <TierPricingModal
           onClose={() => setShowTierPricingModal(false)}
+        />
+      )}
+
+      {/* Personal User Settings Modal */}
+      {showSettingsModal && (
+        <PersonalUserSettingsModal
+          onClose={() => setShowSettingsModal(false)}
         />
       )}
     </div>

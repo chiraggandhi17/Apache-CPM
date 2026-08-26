@@ -82,7 +82,7 @@ interface NodeContextType {
 const NodeContext = createContext<NodeContextType | undefined>(undefined);
 
 export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { profile, isOrgAdmin, isIndividual, accessLevel } = useAuth();
+  const { profile, isSuperAdmin, isOrgAdmin, isIndividual, accessLevel } = useAuth();
   
   const [nodes, setNodes] = useState<NodeItem[]>([]);
   const [reminders, setReminders] = useState<ReminderItem[]>([]);
@@ -146,6 +146,9 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Audio chime polling hook
   useEffect(() => {
     const checkReminders = () => {
+      const soundEnabled = localStorage.getItem('cadence_sound_enabled') !== 'false';
+      if (!soundEnabled) return;
+
       const now = new Date();
       const active = reminders.filter(r => {
         if (r.dismissed_at) return false;
@@ -210,8 +213,8 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Helper: check if a node is an ancestor of any node assigned to the user
   const isNodeAncestorOfAssigned = useCallback((nodeId: string): boolean => {
-    // Personal users or Org Admins or Level 1 are never blocked by ancestor locks
-    if (!profile || isIndividual || !profile.org_id || isOrgAdmin || accessLevel === 1) return false;
+    // Personal users, Org Admins, and Level 1 are NEVER blocked by ancestor locks
+    if (!profile || isIndividual || !profile.org_id || isOrgAdmin || accessLevel === 1 || profile.role === 'level_1') return false;
 
     const userEmail = profile.email.toLowerCase();
     const userFullName = (profile.full_name || '').toLowerCase();
@@ -238,30 +241,27 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Scoped Edit Permission Check
   const canUserEditNode = useCallback((nodeId: string): boolean => {
-    if (!profile) return false;
+    // If no profile or individual personal user (no org_id) -> ALWAYS Full Creator/Edit access!
+    if (!profile || isIndividual || !profile.org_id || profile.role === 'level_1') {
+      return true;
+    }
     
-    // 0. Individual personal users have 100% full creator and edit access over their entire workspace!
-    if (isIndividual || !profile.org_id) {
-      return true;
-    }
-
     // 1. Super Admin & Org Admin have universal edit access
-    if (isOrgAdmin || profile.role === 'super_admin' || profile.role === 'org_admin') {
+    if (isSuperAdmin || isOrgAdmin || profile.role === 'super_admin' || profile.role === 'org_admin') {
       return true;
     }
 
-    // 2. Level 3 (View Only) has zero edit access
+    // 2. Level 1 (Full Access): Can edit all nodes within their organization
+    if (accessLevel === 1 || profile.role === 'senior_manager') {
+      return true;
+    }
+
+    // 3. Level 3 (View Only) has zero edit access
     if (accessLevel === 3 || profile.role === 'level_3' || profile.role === 'viewer') {
       return false;
     }
 
-    // 3. Level 1 (Full Access): Can edit all nodes within their organization
-    if (accessLevel === 1 || profile.role === 'level_1' || profile.role === 'senior_manager') {
-      return true;
-    }
-
     // 4. Level 2 (Limited Access):
-    // If target node is an ANCESTOR of their assigned milestone -> View-Only
     if (isNodeAncestorOfAssigned(nodeId)) {
       return false;
     }
@@ -296,17 +296,17 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     return true;
-  }, [nodes, profile, isOrgAdmin, isIndividual, accessLevel, isNodeAncestorOfAssigned]);
+  }, [nodes, profile, isSuperAdmin, isOrgAdmin, isIndividual, accessLevel, isNodeAncestorOfAssigned]);
 
   // Clean compact access info helper for UI tooltips
   const getNodeAccessInfo = useCallback((nodeId: string): NodeAccessInfo => {
     const node = nodes.find(n => n.id === nodeId);
-    const owningDept = node?.department || 'Production';
+    const owningDept = node?.department || 'Personal';
     const isAncestor = isNodeAncestorOfAssigned(nodeId);
-    const isCrossDept = Boolean(!isIndividual && profile?.department && node?.department && profile.department.toLowerCase() !== node.department.toLowerCase());
+    const isCrossDept = Boolean(!isIndividual && profile?.org_id && profile?.department && node?.department && profile.department.toLowerCase() !== node.department.toLowerCase());
     const isEditable = canUserEditNode(nodeId);
 
-    let tooltipText = 'Full Edit Access';
+    let tooltipText = 'Full Access (Level 1)';
     if (!isEditable) {
       if (isAncestor) {
         tooltipText = 'Parent Milestone (View-Only context)';
@@ -592,7 +592,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       is_critical: data.is_critical || false,
       assignee: data.assignee || null,
       vendor_contact: data.vendor_contact || null,
-      department: data.department || profile?.department || 'Production',
+      department: data.department || profile?.department || (isIndividual ? 'Personal' : 'Production'),
       season: data.season || 'SS26',
       sort_order: data.sort_order || 1,
     };

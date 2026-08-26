@@ -6,7 +6,10 @@ import { CriticalFlag } from '../shared/CriticalFlag';
 import { formatLocalDate, getRelativeDateBadge } from '../../utils/date-format';
 import { NodeForm } from './NodeForm';
 import { SubtreeCompletionModal } from './SubtreeCompletionModal';
-import { ChevronRight, ChevronDown, Plus, Folder, Calendar, CheckSquare, Layers, Clock, Check, Lock } from 'lucide-react';
+import { 
+  ChevronRight, ChevronDown, Plus, Folder, Calendar, CheckSquare, 
+  Layers, Clock, Check, Lock, Edit3, Trash2 
+} from 'lucide-react';
 
 interface NodeRowProps {
   node: TreeNode;
@@ -23,9 +26,10 @@ const TYPE_ICONS: Record<NodeType, React.ReactNode> = {
 };
 
 export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
-  const { toggleCritical, updateStatus, toggleDone, getNodeAccessInfo, getDescendantNodes, completeNodeAndSubtree } = useNodes();
+  const { toggleCritical, updateStatus, toggleDone, deleteNode, getNodeAccessInfo, getDescendantNodes, completeNodeAndSubtree } = useNodes();
   const [isExpanded, setIsExpanded] = useState(false);
   const [showAddChild, setShowAddChild] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
 
   const hasChildren = node.children && node.children.length > 0;
@@ -152,7 +156,7 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
           )}
         </div>
 
-        {/* Right metadata & controls */}
+        {/* Right metadata & Action Controls */}
         <div className="flex items-center gap-2 shrink-0">
           {node.planned_date && (
             <span
@@ -180,19 +184,48 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
             size="sm" 
           />
 
+          {/* Editable Actions: Add Sub-task, Edit, Delete */}
           {isEditable && (
-            <button
-              type="button"
-              onClick={e => {
-                e.stopPropagation();
-                setShowAddChild(true);
-              }}
-              title={`Add item under ${node.title}`}
-              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-teal-700 hover:bg-teal-50 rounded-md border border-teal-200 text-[11px] font-semibold flex items-center gap-0.5"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Add</span>
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation();
+                  setShowAddChild(true);
+                }}
+                title={`Add sub-task under "${node.title}"`}
+                className="p-1 text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-lg border border-teal-200 text-[11px] font-bold flex items-center gap-0.5 shadow-2xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Sub-task</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation();
+                  setIsEditing(true);
+                }}
+                title="Edit Milestone Details"
+                className="p-1 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg border border-gray-200"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation();
+                  if (confirm(`Delete "${node.title}" and all its subtasks?`)) {
+                    deleteNode(node.id);
+                  }
+                }}
+                title="Delete Milestone"
+                className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg border border-rose-200"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -211,6 +244,14 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
           parentType={node.type}
           parentDate={node.planned_date}
           onClose={() => setShowAddChild(false)}
+        />
+      )}
+
+      {isEditing && (
+        <NodeForm
+          initialNode={node}
+          parentId={node.parent_id}
+          onClose={() => setIsEditing(false)}
         />
       )}
 
