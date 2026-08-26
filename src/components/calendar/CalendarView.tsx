@@ -6,6 +6,7 @@ import interactionPlugin from '@fullcalendar/interaction';
 import { useNodes } from '../../context/NodeContext';
 import { NodeItem, ReminderItem } from '../../types/domain';
 import { resolveColor } from '../../lib/color-resolver';
+import { SearchableParentSelect } from '../shared/SearchableParentSelect';
 import { Filter, Calendar as CalendarIcon, Bell, CheckCircle2, Zap, Layers, FolderTree, XCircle } from 'lucide-react';
 
 interface CalendarViewProps {
@@ -14,26 +15,9 @@ interface CalendarViewProps {
 
 export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
   const { nodes, reminders } = useNodes();
-  const [showFilters, setShowFilters] = useState(false);
-  const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
-  const [selectedSeasons, setSelectedSeasons] = useState<string[]>([]);
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(true);
   const [showAlertsOnCal, setShowAlertsOnCal] = useState(true);
-
-  const departments = useMemo(() => {
-    return Array.from(new Set(nodes.map(n => n.department).filter(Boolean))) as string[];
-  }, [nodes]);
-
-  const seasons = useMemo(() => {
-    return Array.from(new Set(nodes.map(n => n.season).filter(Boolean))) as string[];
-  }, [nodes]);
-
-  // List candidate Parent Nodes (nodes that have children or act as containers)
-  const parentOptions = useMemo(() => {
-    const parentIdsWithChildren = new Set(nodes.map(n => n.parent_id).filter(Boolean));
-    return nodes.filter(n => parentIdsWithChildren.has(n.id) || ['project', 'department', 'season', 'task'].includes(n.type));
-  }, [nodes]);
 
   // Calculate recursive descendant sub-task IDs for the selected parent task
   const allowedSubtreeNodeIds = useMemo(() => {
@@ -66,9 +50,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
       .filter(n => {
         if (!n.planned_date) return false;
         if (!showCompleted && n.status === 'done') return false;
-        if (selectedDepts.length > 0 && n.department && !selectedDepts.includes(n.department)) return false;
-        if (selectedSeasons.length > 0 && n.season && !selectedSeasons.includes(n.season)) return false;
-        // Parent Task Subtree Filter
+        // Level 1 Department / Stream Subtree Filter
         if (allowedSubtreeNodeIds && !allowedSubtreeNodeIds.has(n.id)) return false;
         return true;
       })
@@ -149,19 +131,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
       : [];
 
     return [...nodeEvents, ...reminderEvents];
-  }, [nodes, reminders, selectedDepts, selectedSeasons, showCompleted, showAlertsOnCal, allowedSubtreeNodeIds]);
-
-  const toggleDept = (dept: string) => {
-    setSelectedDepts(prev =>
-      prev.includes(dept) ? prev.filter(d => d !== dept) : [...prev, dept]
-    );
-  };
-
-  const toggleSeason = (season: string) => {
-    setSelectedSeasons(prev =>
-      prev.includes(season) ? prev.filter(s => s !== season) : [...prev, season]
-    );
-  };
+  }, [nodes, reminders, showCompleted, showAlertsOnCal, allowedSubtreeNodeIds]);
 
   return (
     <div className="space-y-4">
@@ -178,33 +148,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
         </div>
 
         <div className="flex items-center flex-wrap gap-2.5">
-          {/* PARENT TASK / MODEL SUBTREE SELECTOR */}
-          <div className="flex items-center gap-1.5 bg-indigo-50/90 p-1 rounded-xl border border-indigo-200/80 shadow-2xs">
-            <FolderTree className="w-4 h-4 text-indigo-600 ml-1.5 shrink-0" />
-            <select
-              value={selectedParentId || ''}
-              onChange={e => setSelectedParentId(e.target.value || null)}
-              className="text-xs font-bold text-indigo-950 bg-transparent outline-none pr-2 py-1 cursor-pointer max-w-[210px] truncate"
-            >
-              <option value="">✨ All Parent Tasks & Subtrees</option>
-              {parentOptions.map(p => (
-                <option key={p.id} value={p.id}>
-                  [{p.type.toUpperCase()}] {p.title}
-                </option>
-              ))}
-            </select>
-
-            {selectedParentId && (
-              <button
-                type="button"
-                onClick={() => setSelectedParentId(null)}
-                className="p-1 text-indigo-600 hover:text-indigo-950 rounded-md transition-colors"
-                title="Clear Parent Task Filter"
-              >
-                <XCircle className="w-4 h-4" />
-              </button>
-            )}
-          </div>
+          {/* SEARCHABLE PARENT TASK / MODEL SUBTREE SELECTOR */}
+          <SearchableParentSelect
+            nodes={nodes}
+            selectedParentId={selectedParentId}
+            onSelectParent={setSelectedParentId}
+          />
 
           {/* Toggle Alerts */}
           <button
@@ -233,29 +182,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
             <span>Completed ({showCompleted ? 'Shown' : 'Hidden'})</span>
           </button>
-
-          <button
-            type="button"
-            onClick={() => setShowFilters(!showFilters)}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-xl border flex items-center gap-1.5 transition-colors ${
-              showFilters || selectedDepts.length > 0 || selectedSeasons.length > 0
-                ? 'bg-teal-50 text-teal-800 border-teal-300'
-                : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-            }`}
-          >
-            <Filter className="w-3.5 h-3.5" />
-            <span>Filter {selectedDepts.length + selectedSeasons.length > 0 && `(${selectedDepts.length + selectedSeasons.length})`}</span>
-          </button>
         </div>
       </div>
 
-      {/* ACTIVE SUBTREE FILTER BANNER */}
+      {/* ACTIVE DEPARTMENT / STREAM FILTER BANNER */}
       {selectedParentNode && (
         <div className="bg-indigo-50/90 border border-indigo-200 px-4 py-2.5 rounded-2xl flex items-center justify-between text-xs text-indigo-950 font-medium shadow-2xs animate-in fade-in">
           <div className="flex items-center gap-2">
-            <FolderTree className="w-4 h-4 text-indigo-600 shrink-0" />
+            <Layers className="w-4 h-4 text-indigo-600 shrink-0" />
             <span>
-              Isolated View: Showing subtasks & alerts for <strong>"[{selectedParentNode.type.toUpperCase()}] {selectedParentNode.title}"</strong> ({allowedSubtreeNodeIds?.size || 0} sub-items)
+              Isolated View: Showing all tasks & alerts for <strong>"{selectedParentNode.title}"</strong> ({allowedSubtreeNodeIds?.size || 0} items)
             </span>
           </div>
           <button
@@ -263,68 +199,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
             onClick={() => setSelectedParentId(null)}
             className="text-xs text-indigo-700 hover:text-indigo-950 font-bold underline ml-2"
           >
-            Clear Subtree Filter
+            Clear Filter (Show All)
           </button>
-        </div>
-      )}
-
-      {showFilters && (
-        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs space-y-3 animate-in fade-in duration-150">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider">Filter Milestones</h3>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedDepts([]);
-                setSelectedSeasons([]);
-              }}
-              className="text-xs text-teal-600 font-medium hover:underline"
-            >
-              Reset Filters
-            </button>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 text-xs">
-            <div>
-              <span className="block font-semibold text-gray-600 mb-1.5">Department</span>
-              <div className="flex flex-wrap gap-1.5">
-                {departments.map(dept => (
-                  <button
-                    key={dept}
-                    type="button"
-                    onClick={() => toggleDept(dept)}
-                    className={`px-2.5 py-1 rounded-lg border font-medium transition-colors ${
-                      selectedDepts.includes(dept)
-                        ? 'bg-teal-600 text-white border-teal-600'
-                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-                    }`}
-                  >
-                    {dept}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <span className="block font-semibold text-gray-600 mb-1.5">Season</span>
-              <div className="flex flex-wrap gap-1.5">
-                {seasons.map(season => (
-                  <button
-                    key={season}
-                    type="button"
-                    onClick={() => toggleSeason(season)}
-                    className={`px-2.5 py-1 rounded-lg border font-medium transition-colors ${
-                      selectedSeasons.includes(season)
-                        ? 'bg-indigo-600 text-white border-indigo-600'
-                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-                    }`}
-                  >
-                    {season}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
         </div>
       )}
 
