@@ -5,7 +5,12 @@ import { ColorPicker } from '../shared/ColorPicker';
 import { CriticalFlag } from '../shared/CriticalFlag';
 import { getUnusedProjectColor } from '../../lib/color-resolver';
 import { getAncestorPath } from '../../utils/hierarchy';
-import { X, Calendar, User, Tag, FileText, Bell, Layers, Check, ChevronRight } from 'lucide-react';
+import { formatLocalDate } from '../../utils/date-format';
+import { addDays, isValid, parseISO, formatISO } from 'date-fns';
+import { 
+  X, Calendar, User, Tag, FileText, Bell, Layers, Check, 
+  ChevronRight, ArrowLeft, ArrowRight, Sparkles, Clock, AlertCircle 
+} from 'lucide-react';
 
 interface NodeFormProps {
   parentId?: string | null;
@@ -18,6 +23,7 @@ interface NodeFormProps {
 export const NodeForm: React.FC<NodeFormProps> = ({
   parentId = null,
   parentType,
+  parentDate = null,
   initialNode = null,
   onClose,
 }) => {
@@ -35,6 +41,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
 
   const parentNode = parentId ? nodes.find(n => n.id === parentId) : null;
   const ancestorPath = getAncestorPath(parentId, nodes);
+  const parentEffectiveDate = parentNode?.planned_date || parentDate;
 
   const isRootOrProject = !parentId || getSuggestedType() === 'project' || getSuggestedType() === 'department';
 
@@ -50,10 +57,26 @@ export const NodeForm: React.FC<NodeFormProps> = ({
     initialNode?.planned_date ? initialNode.planned_date.substring(0, 10) : ''
   );
   const [color, setColor] = useState<string | null>(defaultAutoColor);
+  
+  // Date Mode State: Default to 'relative' if parent exists, else 'absolute'
   const [dateMode, setDateMode] = useState<'absolute' | 'relative'>(
-    initialNode?.trigger_offset_days !== null && initialNode?.trigger_offset_days !== undefined ? 'relative' : 'absolute'
+    initialNode?.trigger_offset_days !== null && initialNode?.trigger_offset_days !== undefined
+      ? 'relative'
+      : parentId
+      ? 'relative'
+      : 'absolute'
   );
-  const [offsetDays, setOffsetDays] = useState<number>(initialNode?.trigger_offset_days || -7);
+
+  // Intuitive Offset State
+  const initialOffset = initialNode?.trigger_offset_days !== null && initialNode?.trigger_offset_days !== undefined 
+    ? initialNode.trigger_offset_days 
+    : -7;
+
+  const [offsetDirection, setOffsetDirection] = useState<'before' | 'after' | 'same'>(
+    initialOffset < 0 ? 'before' : initialOffset > 0 ? 'after' : 'same'
+  );
+  const [offsetDaysQty, setOffsetDaysQty] = useState<number>(Math.abs(initialOffset) || 7);
+
   const [isCritical, setIsCritical] = useState<boolean>(initialNode?.is_critical || false);
   const [status, setStatus] = useState<NodeStatus>(initialNode?.status || 'not_started');
   const [assignee, setAssignee] = useState(initialNode?.assignee || '');
@@ -62,10 +85,47 @@ export const NodeForm: React.FC<NodeFormProps> = ({
 
   // Reminder on-creation state
   const [attachReminder, setAttachReminder] = useState(false);
-  const [reminderMode, setReminderMode] = useState<'relative' | 'fixed'>('relative');
-  const [reminderOffset, setReminderOffset] = useState(-2);
-  const [reminderFixedDate, setReminderFixedDate] = useState('');
+  const [reminderPreset, setReminderPreset] = useState<string>('-2'); // '-2' = 2 days before
+  const [customReminderDays, setCustomReminderDays] = useState<number>(2);
   const [reminderMessage, setReminderMessage] = useState('');
+
+  // Calculate final offset
+  const computedOffsetDays: number | null = (() => {
+    if (dateMode !== 'relative' || !parentId) return null;
+    if (offsetDirection === 'same') return 0;
+    if (offsetDirection === 'before') return -Math.abs(offsetDaysQty);
+    return Math.abs(offsetDaysQty);
+  })();
+
+  // Calculate live resulting target date
+  const calculatedTargetDate: string | null = (() => {
+    if (dateMode === 'relative' && parentEffectiveDate && computedOffsetDays !== null) {
+      try {
+        const base = new Date(parentEffectiveDate);
+        if (isValid(base)) {
+          return formatISO(addDays(base, computedOffsetDays));
+        }
+      } catch {
+        return null;
+      }
+    }
+    return plannedDate ? new Date(plannedDate).toISOString() : null;
+  })();
+
+  // Calculate live reminder trigger date
+  const calculatedReminderDate: string | null = (() => {
+    if (!calculatedTargetDate) return null;
+    const daysBefore = reminderPreset === 'custom' ? customReminderDays : Math.abs(Number(reminderPreset));
+    try {
+      const target = new Date(calculatedTargetDate);
+      if (isValid(target)) {
+        return formatISO(addDays(target, -daysBefore));
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  })();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,7 +135,8 @@ export const NodeForm: React.FC<NodeFormProps> = ({
     let finalOffset: number | null = null;
 
     if (dateMode === 'relative' && parentId) {
-      finalOffset = Number(offsetDays);
+      finalOffset = computedOffsetDays;
+      finalPlannedDate = calculatedTargetDate;
     } else if (plannedDate) {
       finalPlannedDate = new Date(plannedDate).toISOString();
     }
@@ -110,21 +171,13 @@ export const NodeForm: React.FC<NodeFormProps> = ({
         description: description || null,
       });
 
-      if (attachReminder) {
-        let remindAtStr = new Date().toISOString();
-        if (reminderMode === 'fixed' && reminderFixedDate) {
-          remindAtStr = new Date(reminderFixedDate).toISOString();
-        } else if (finalPlannedDate) {
-          const target = new Date(finalPlannedDate);
-          target.setDate(target.getDate() + Number(reminderOffset));
-          remindAtStr = target.toISOString();
-        }
-
+      if (attachReminder && calculatedReminderDate) {
+        const daysBefore = reminderPreset === 'custom' ? customReminderDays : Math.abs(Number(reminderPreset));
         addReminder({
           node_id: newId,
-          remind_at: remindAtStr,
-          offset_mode: reminderMode,
-          offset_days: reminderMode === 'relative' ? reminderOffset : null,
+          remind_at: calculatedReminderDate,
+          offset_mode: 'relative',
+          offset_days: -daysBefore,
           message: reminderMessage || `Follow up on ${title}`,
         });
       }
@@ -135,10 +188,10 @@ export const NodeForm: React.FC<NodeFormProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100 animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] flex flex-col">
         
         {/* Modal Header */}
-        <div className="px-6 py-3.5 border-b border-gray-100 flex items-center justify-between bg-gray-50/60">
+        <div className="px-6 py-3.5 border-b border-gray-100 flex items-center justify-between bg-gray-50/60 shrink-0">
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-teal-600 shrink-0" />
             <div>
@@ -146,8 +199,8 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                 {isEditing ? 'Edit Milestone' : `Add ${type.charAt(0).toUpperCase() + type.slice(1)}`}
               </h2>
               
-              {/* FULL ANCESTOR HIERARCHY BREADCRUMB PATH */}
-              {ancestorPath.length > 0 ? (
+              {/* Ancestor Breadcrumb Path */}
+              {ancestorPath.length > 0 && (
                 <div className="flex items-center flex-wrap gap-1 text-[11px] text-gray-500 leading-tight mt-0.5 font-medium">
                   <span>Hierarchy:</span>
                   {ancestorPath.map((step, idx) => (
@@ -160,160 +213,299 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                       )}
                     </React.Fragment>
                   ))}
-                  <ChevronRight className="w-3 h-3 text-teal-600 shrink-0 inline" />
-                  <span className="text-teal-700 font-bold">[{type}]</span>
                 </div>
-              ) : (
-                <p className="text-[11px] text-gray-500 leading-tight">Creating top-level milestone</p>
               )}
             </div>
           </div>
+
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-200/60 transition-colors"
+            className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-3.5 max-h-[82vh] overflow-y-auto">
+        {/* Form Body */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
           
-          {/* BOX 1: Primary Details */}
-          <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-2xs space-y-3">
+          {/* Milestone Title */}
+          <div>
+            <label className="block font-bold text-gray-800 mb-1">
+              Milestone / Task Name <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              autoFocus
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="e.g. 2D/3D Pattern Review, Tooling Opening, Material Test..."
+              className="w-full text-xs px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+            />
+          </div>
+
+          {/* Type & Color Customization */}
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-gray-900 mb-1">Title *</label>
-              <input
-                type="text"
-                required
-                autoFocus
-                value={title}
-                onChange={e => setTitle(e.target.value)}
-                placeholder="e.g. Material A in-house delivery"
-                className="w-full text-xs px-3 py-2 border border-gray-300 rounded-xl shadow-2xs focus:ring-2 focus:ring-teal-500 outline-none"
-              />
+              <label className="block font-bold text-gray-700 mb-1">Hierarchy Level</label>
+              <select
+                value={type}
+                onChange={e => setType(e.target.value as NodeType)}
+                className="w-full text-xs px-2.5 py-2 border border-gray-300 rounded-xl font-semibold outline-none focus:border-teal-500"
+              >
+                <option value="department">Department / Stream</option>
+                <option value="season">Season / Group</option>
+                <option value="project">Project / Model</option>
+                <option value="task">Major Task</option>
+                <option value="subtask">Sub-Task Milestone</option>
+              </select>
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-semibold text-gray-900 flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-teal-600" /> Target Date
-                </label>
-
-                {parentId && (
-                  <div className="flex items-center text-[11px] bg-gray-100 p-0.5 rounded-lg border border-gray-200">
-                    <button
-                      type="button"
-                      onClick={() => setDateMode('absolute')}
-                      className={`px-2 py-0.5 rounded-md font-medium transition-colors ${
-                        dateMode === 'absolute' ? 'bg-white text-gray-900 shadow-2xs' : 'text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      Fixed Date
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDateMode('relative')}
-                      className={`px-2 py-0.5 rounded-md font-medium transition-colors ${
-                        dateMode === 'relative' ? 'bg-white text-teal-700 font-semibold shadow-2xs' : 'text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      Relative Offset
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {dateMode === 'absolute' || !parentId ? (
-                <input
-                  type="date"
-                  value={plannedDate}
-                  onChange={e => setPlannedDate(e.target.value)}
-                  className="w-full text-xs px-3 py-1.5 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-teal-500"
-                />
-              ) : (
-                <div className="bg-teal-50/60 p-2.5 rounded-xl border border-teal-200/80 space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      value={offsetDays}
-                      onChange={e => setOffsetDays(Number(e.target.value))}
-                      className="w-16 text-xs px-2 py-1 border border-teal-300 rounded-md font-mono text-center font-bold text-teal-900 bg-white"
-                    />
-                    <span className="text-[11px] text-teal-900 font-medium">
-                      days {offsetDays < 0 ? 'before' : 'after'} parent ({parentNode?.title})
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-teal-700 leading-tight">
-                    ⚡ Auto-cascade: If {parentNode?.title}'s date shifts, this date shifts automatically.
-                  </p>
-                </div>
-              )}
+              <label className="block font-bold text-gray-700 mb-1">Color Theme</label>
+              <ColorPicker value={color} onChange={setColor} />
             </div>
           </div>
 
-          {/* BOX 2: Priority & Alerts (Optional) */}
-          <div className="bg-amber-50/40 p-3.5 rounded-2xl border border-amber-200/60 space-y-3">
+          {/* TARGET DATE & RELATIVE OFFSET SECTION */}
+          <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="font-bold text-gray-900 flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-teal-600" /> Target Planned Date
+              </label>
+
+              {parentId && (
+                <div className="flex items-center bg-white p-0.5 rounded-xl border border-gray-200 shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => setDateMode('relative')}
+                    className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors ${
+                      dateMode === 'relative' 
+                        ? 'bg-teal-600 text-white shadow-xs' 
+                        : 'text-gray-500 hover:text-gray-900'
+                    }`}
+                  >
+                    ⚡ Relative Offset
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDateMode('absolute')}
+                    className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors ${
+                      dateMode === 'absolute' 
+                        ? 'bg-teal-600 text-white shadow-xs' 
+                        : 'text-gray-500 hover:text-gray-900'
+                    }`}
+                  >
+                    📅 Fixed Date
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* RELATIVE OFFSET BUILDER */}
+            {dateMode === 'relative' && parentId ? (
+              <div className="bg-white p-3.5 rounded-xl border border-teal-200/80 space-y-3 shadow-2xs">
+                
+                {/* Immediate Parent Reference */}
+                <div className="flex items-center justify-between text-[11px] bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                  <span className="text-gray-600 font-semibold truncate">
+                    Parent: <strong>"{parentNode?.title || 'Parent Task'}"</strong>
+                  </span>
+                  <span className="font-mono font-bold text-slate-800 shrink-0 ml-2">
+                    {parentEffectiveDate ? formatLocalDate(parentEffectiveDate, 'MMM d, yyyy') : 'No date set'}
+                  </span>
+                </div>
+
+                {/* Intuitive Direction Selector */}
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-1.5">Schedule Timing</label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setOffsetDirection('before')}
+                      className={`py-1.5 px-2 rounded-lg font-bold text-[11px] border flex items-center justify-center gap-1 transition-all ${
+                        offsetDirection === 'before'
+                          ? 'bg-teal-50 border-teal-500 text-teal-800 ring-1 ring-teal-400'
+                          : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      <ArrowLeft className="w-3 h-3 text-teal-600" />
+                      <span>Before Parent</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setOffsetDirection('same')}
+                      className={`py-1.5 px-2 rounded-lg font-bold text-[11px] border flex items-center justify-center gap-1 transition-all ${
+                        offsetDirection === 'same'
+                          ? 'bg-teal-50 border-teal-500 text-teal-800 ring-1 ring-teal-400'
+                          : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      <span>Same Day</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setOffsetDirection('after')}
+                      className={`py-1.5 px-2 rounded-lg font-bold text-[11px] border flex items-center justify-center gap-1 transition-all ${
+                        offsetDirection === 'after'
+                          ? 'bg-teal-50 border-teal-500 text-teal-800 ring-1 ring-teal-400'
+                          : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      <span>After Parent</span>
+                      <ArrowRight className="w-3 h-3 text-teal-600" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Days Quantity Stepper & Quick Presets */}
+                {offsetDirection !== 'same' && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <label className="text-[11px] font-bold text-gray-700">Days:</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="365"
+                        value={offsetDaysQty}
+                        onChange={e => setOffsetDaysQty(Math.max(1, Number(e.target.value) || 1))}
+                        className="w-16 h-8 text-center text-xs font-mono font-bold bg-gray-50 border border-gray-300 rounded-lg outline-none focus:border-teal-500 focus:bg-white"
+                      />
+                      <span className="text-gray-600 text-[11px] font-medium">days {offsetDirection} parent</span>
+                    </div>
+
+                    {/* Quick Preset Buttons */}
+                    <div className="flex items-center flex-wrap gap-1">
+                      {[1, 3, 7, 14, 21, 30].map(d => (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => setOffsetDaysQty(d)}
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-colors ${
+                            offsetDaysQty === d
+                              ? 'bg-teal-600 text-white border-teal-600'
+                              : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+                          }`}
+                        >
+                          {d}d
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* LIVE CALCULATED TARGET DATE PREVIEW */}
+                <div className="bg-teal-50 p-2.5 rounded-xl border border-teal-300 text-teal-950 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-teal-700 block">
+                      Calculated Target Date
+                    </span>
+                    <span className="text-xs font-extrabold text-teal-900 font-mono">
+                      {calculatedTargetDate ? formatLocalDate(calculatedTargetDate, 'EEEE, MMM d, yyyy') : 'Parent has no target date'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold bg-teal-200/80 text-teal-800 px-2 py-0.5 rounded-md">
+                    {offsetDirection === 'same' ? '0d' : `${offsetDirection === 'before' ? '-' : '+'}${offsetDaysQty}d`}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              /* FIXED CALENDAR DATE INPUT */
+              <input
+                type="date"
+                value={plannedDate}
+                onChange={e => setPlannedDate(e.target.value)}
+                className="w-full text-xs px-3 py-2 bg-white border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+              />
+            )}
+          </div>
+
+          {/* CRITICAL PATH & ALERTS */}
+          <div className="bg-amber-50/50 p-3.5 rounded-2xl border border-amber-200/80 space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <span className="text-xs font-semibold text-amber-950 block">Critical Path & Alert Triggers <span className="text-amber-700 font-normal">(Optional)</span></span>
+                <span className="text-xs font-bold text-amber-950 block">Critical Path & Reminders</span>
+                <span className="text-[11px] text-amber-800">Flag milestone priority & configure alert triggers</span>
               </div>
               <CriticalFlag isCritical={isCritical} onToggle={() => setIsCritical(!isCritical)} interactive size="sm" />
             </div>
 
             {!isEditing && (
-              <div className="pt-2 border-t border-amber-200/50 space-y-2 text-xs">
+              <div className="pt-2 border-t border-amber-200/60 space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="font-semibold text-amber-900 flex items-center gap-1.5">
-                    <Bell className="w-3.5 h-3.5 text-amber-600" /> Set Reminder Alert
+                  <label className="font-bold text-amber-900 flex items-center gap-1.5 cursor-pointer">
+                    <Bell className="w-4 h-4 text-amber-600" />
+                    <span>Set Automatic Alert Trigger</span>
                   </label>
                   <input
                     type="checkbox"
                     checked={attachReminder}
                     onChange={e => setAttachReminder(e.target.checked)}
-                    className="rounded border-amber-300 text-teal-600 focus:ring-teal-500"
+                    className="w-4 h-4 rounded border-amber-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
                   />
                 </div>
 
                 {attachReminder && (
-                  <div className="space-y-2 pt-1.5 bg-white p-2.5 rounded-xl border border-amber-200">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-medium text-gray-700">Trigger:</span>
-                      <select
-                        value={reminderMode}
-                        onChange={e => setReminderMode(e.target.value as 'relative' | 'fixed')}
-                        className="px-2 py-0.5 bg-gray-50 border border-gray-200 rounded-md text-[11px]"
-                      >
-                        <option value="relative">Relative Offset (X days before date)</option>
-                        <option value="fixed">Fixed Timestamp</option>
-                      </select>
+                  <div className="bg-white p-3 rounded-xl border border-amber-200 space-y-2.5 animate-in fade-in">
+                    <label className="block text-[11px] font-bold text-gray-700">When should alert fire?</label>
+                    
+                    {/* Quick Alert Presets */}
+                    <div className="grid grid-cols-3 gap-1">
+                      {[
+                        { label: 'On Due Day', val: '0' },
+                        { label: '1 Day Before', val: '-1' },
+                        { label: '2 Days Before', val: '-2' },
+                        { label: '3 Days Before', val: '-3' },
+                        { label: '7 Days Before', val: '-7' },
+                        { label: 'Custom', val: 'custom' },
+                      ].map(p => (
+                        <button
+                          key={p.val}
+                          type="button"
+                          onClick={() => setReminderPreset(p.val)}
+                          className={`py-1 px-1.5 rounded-lg text-[10px] font-bold border transition-colors truncate ${
+                            reminderPreset === p.val
+                              ? 'bg-amber-500 text-white border-amber-500 shadow-2xs'
+                              : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
                     </div>
 
-                    {reminderMode === 'relative' ? (
-                      <div className="flex items-center gap-2">
+                    {reminderPreset === 'custom' && (
+                      <div className="flex items-center gap-2 pt-1">
                         <input
                           type="number"
-                          value={reminderOffset}
-                          onChange={e => setReminderOffset(Number(e.target.value))}
-                          className="w-16 p-1 border border-gray-300 rounded-md text-center font-mono text-xs font-bold"
+                          min="1"
+                          max="60"
+                          value={customReminderDays}
+                          onChange={e => setCustomReminderDays(Math.max(1, Number(e.target.value) || 1))}
+                          className="w-16 h-7 text-center font-mono font-bold bg-gray-50 border border-gray-300 rounded-lg text-xs"
                         />
                         <span className="text-[11px] text-gray-600">days before target date</span>
                       </div>
-                    ) : (
-                      <input
-                        type="datetime-local"
-                        value={reminderFixedDate}
-                        onChange={e => setReminderFixedDate(e.target.value)}
-                        className="w-full text-xs p-1 border border-gray-300 rounded-md font-mono"
-                      />
+                    )}
+
+                    {/* Live Calculated Alert Date */}
+                    {calculatedReminderDate && (
+                      <div className="p-2 bg-amber-50 rounded-lg border border-amber-200 text-amber-900 text-[11px] font-bold flex items-center justify-between">
+                        <span>🔔 Alert Date:</span>
+                        <span className="font-mono">{formatLocalDate(calculatedReminderDate, 'EEE, MMM d, yyyy')}</span>
+                      </div>
                     )}
 
                     <input
                       type="text"
-                      placeholder="Reminder message..."
+                      placeholder="Reminder message (e.g. Follow up on sample room pull)..."
                       value={reminderMessage}
                       onChange={e => setReminderMessage(e.target.value)}
-                      className="w-full text-xs p-1.5 border border-gray-300 rounded-md outline-none"
+                      className="w-full text-xs p-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-medium"
                     />
                   </div>
                 )}
@@ -321,75 +513,61 @@ export const NodeForm: React.FC<NodeFormProps> = ({
             )}
           </div>
 
-          {/* BOX 3: Ownership & Vendor Details (Optional) */}
-          <div className="bg-gray-50/80 p-3.5 rounded-2xl border border-gray-200 space-y-2">
-            <span className="text-xs font-semibold text-gray-800 block">
-              Ownership & Vendor Info <span className="text-gray-400 font-normal">(Optional)</span>
-            </span>
+          {/* ASSIGNEE & VENDOR DETAILS */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block font-bold text-gray-700 mb-1 flex items-center gap-1">
+                <User className="w-3.5 h-3.5 text-gray-400" /> Assignee
+              </label>
+              <input
+                type="text"
+                value={assignee}
+                onChange={e => setAssignee(e.target.value)}
+                placeholder="e.g. Alex J. (alex@company.com)"
+                className="w-full text-xs px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500"
+              />
+            </div>
 
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div>
-                <label className="block text-[11px] font-medium text-gray-600 mb-0.5 flex items-center gap-1">
-                  <User className="w-3 h-3 text-gray-400" /> Assignee
-                </label>
-                <input
-                  type="text"
-                  value={assignee}
-                  onChange={e => setAssignee(e.target.value)}
-                  placeholder="e.g. Alex (Merchandising)"
-                  className="w-full text-xs px-2.5 py-1.5 bg-white border border-gray-300 rounded-xl outline-none focus:border-teal-500"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium text-gray-600 mb-0.5 flex items-center gap-1">
-                  <Tag className="w-3 h-3 text-gray-400" /> Vendor Contact
-                </label>
-                <input
-                  type="text"
-                  value={vendorContact}
-                  onChange={e => setVendorContact(e.target.value)}
-                  placeholder="e.g. Supplier X Email/Tel"
-                  className="w-full text-xs px-2.5 py-1.5 bg-white border border-gray-300 rounded-xl outline-none focus:border-teal-500"
-                />
-              </div>
+            <div>
+              <label className="block font-bold text-gray-700 mb-1 flex items-center gap-1">
+                <Tag className="w-3.5 h-3.5 text-gray-400" /> Vendor Contact
+              </label>
+              <input
+                type="text"
+                value={vendorContact}
+                onChange={e => setVendorContact(e.target.value)}
+                placeholder="e.g. Apache Footwear Tier 1"
+                className="w-full text-xs px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500"
+              />
             </div>
           </div>
 
-          {/* BOX 4: Notes & Description (Optional) */}
-          <div className="bg-gray-50/80 p-3.5 rounded-2xl border border-gray-200 space-y-1.5">
-            <label className="text-xs font-semibold text-gray-800 flex items-center gap-1">
-              <FileText className="w-3.5 h-3.5 text-gray-500" /> Notes & Follow-up Log <span className="text-gray-400 font-normal">(Optional)</span>
+          {/* Description & Follow-up Notes */}
+          <div>
+            <label className="block font-bold text-gray-700 mb-1 flex items-center gap-1">
+              <FileText className="w-3.5 h-3.5 text-gray-400" /> Notes & Follow-up Log
             </label>
             <textarea
               rows={2}
               value={description}
               onChange={e => setDescription(e.target.value)}
-              placeholder="Record technical specs, batch codes, or vendor follow-up logs..."
-              className="w-full text-xs p-2.5 bg-white border border-gray-300 rounded-xl outline-none focus:border-teal-500"
-            />
-          </div>
-
-          {/* BOX 5: Compact Color Theme (Optional) */}
-          <div className="bg-gray-50/60 p-3 rounded-2xl border border-gray-200">
-            <ColorPicker
-              value={color}
-              onChange={setColor}
-              inheritedFromTitle={parentNode?.title}
+              placeholder="Milestone technical requirements, fit comments, vendor instructions..."
+              className="w-full text-xs p-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 leading-relaxed"
             />
           </div>
 
           {/* Form Actions */}
-          <div className="pt-3 border-t border-gray-100 flex items-center justify-end gap-2">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-medium text-gray-600 hover:text-gray-800 rounded-xl transition-colors"
+              className="h-9 px-4 text-gray-600 font-semibold rounded-xl hover:bg-gray-100 transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2 text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-xl shadow-xs transition-colors flex items-center gap-1.5"
+              className="h-9 px-5 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5"
             >
               <Check className="w-4 h-4" />
               <span>{isEditing ? 'Save Changes' : 'Create Milestone'}</span>

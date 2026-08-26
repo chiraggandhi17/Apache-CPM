@@ -49,16 +49,24 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
 
         const color = resolveColor(n.color, ancestorColors);
         const isDone = n.status === 'done';
+        const dateStr = n.planned_date!.length >= 10 ? n.planned_date!.slice(0, 10) : n.planned_date!;
 
         return {
           id: n.id,
-          title: `${isDone ? '✓ ' : n.is_critical ? '⚡ ' : ''}${n.title}`,
-          start: n.planned_date!,
-          backgroundColor: isDone ? '#64748b' : color,
-          borderColor: isDone ? '#475569' : color,
-          textColor: isDone ? '#e2e8f0' : '#ffffff',
-          classNames: isDone ? ['fc-event-done', 'line-through', 'opacity-65'] : [],
-          extendedProps: { node: n, isReminder: false, isDone },
+          title: n.title,
+          start: dateStr,
+          allDay: true,
+          backgroundColor: isDone ? '#94a3b8' : color,
+          borderColor: isDone ? '#64748b' : color,
+          textColor: '#ffffff',
+          extendedProps: { 
+            node: n, 
+            isReminder: false, 
+            isDone, 
+            isCritical: n.is_critical, 
+            color,
+            department: n.department 
+          },
         };
       });
 
@@ -68,15 +76,21 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
           .filter(r => !r.dismissed_at && r.remind_at)
           .map(r => {
             const parentNode = nodes.find(n => n.id === r.node_id);
+            const dateStr = r.remind_at.length >= 10 ? r.remind_at.slice(0, 10) : r.remind_at;
             return {
               id: `reminder-${r.id}`,
-              title: `🔔 [Alert] ${r.message}`,
-              start: r.remind_at,
-              backgroundColor: '#d97706', // Amber 600
-              borderColor: '#b45309',
+              title: r.message,
+              start: dateStr,
+              allDay: true,
+              backgroundColor: '#f59e0b', // Amber 500
+              borderColor: '#d97706',
               textColor: '#ffffff',
-              classNames: ['fc-event-reminder', 'font-bold'],
-              extendedProps: { reminder: r, node: parentNode, isReminder: true },
+              extendedProps: { 
+                reminder: r, 
+                node: parentNode, 
+                isReminder: true,
+                parentTitle: parentNode?.title || 'Milestone'
+              },
             };
           })
       : [];
@@ -106,22 +120,22 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
           </div>
           <div>
             <h2 className="text-base font-bold text-gray-900">Master CPM & Alerts Calendar</h2>
-            <p className="text-xs text-gray-500">Cross-functional milestone schedule and scheduled alert triggers</p>
+            <p className="text-xs text-gray-500">Color-coded milestone schedules and trigger alerts across all dates</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center flex-wrap gap-2">
           {/* Toggle Alerts */}
           <button
             type="button"
             onClick={() => setShowAlertsOnCal(!showAlertsOnCal)}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-xl border flex items-center gap-1.5 transition-colors ${
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-colors shadow-2xs ${
               showAlertsOnCal
-                ? 'bg-amber-50 text-amber-800 border-amber-300'
+                ? 'bg-amber-50 text-amber-900 border-amber-300 ring-1 ring-amber-200'
                 : 'bg-white text-gray-500 border-gray-200'
             }`}
           >
-            <Bell className="w-3.5 h-3.5" />
+            <Bell className="w-3.5 h-3.5 text-amber-600" />
             <span>Alerts {showAlertsOnCal ? 'On' : 'Off'}</span>
           </button>
 
@@ -129,13 +143,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
           <button
             type="button"
             onClick={() => setShowCompleted(!showCompleted)}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-xl border flex items-center gap-1.5 transition-colors ${
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-colors shadow-2xs ${
               showCompleted
-                ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                ? 'bg-emerald-50 text-emerald-900 border-emerald-300 ring-1 ring-emerald-200'
                 : 'bg-white text-gray-500 border-gray-200'
             }`}
           >
-            <CheckCircle2 className="w-3.5 h-3.5" />
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
             <span>Completed ({showCompleted ? 'Shown' : 'Hidden'})</span>
           </button>
 
@@ -215,7 +229,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
       )}
 
       {/* Calendar Grid Container */}
-      <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs font-sans text-xs">
+      <div className="bg-white p-4 rounded-3xl border border-gray-200 shadow-2xs font-sans text-xs">
         <FullCalendar
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
           initialView="dayGridMonth"
@@ -232,12 +246,38 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
           eventContent={eventInfo => {
             const isDone = eventInfo.event.extendedProps.isDone;
             const isReminder = eventInfo.event.extendedProps.isReminder;
+            const isCritical = eventInfo.event.extendedProps.isCritical;
+            const color = eventInfo.event.extendedProps.color || eventInfo.event.backgroundColor || '#0d9488';
+
+            if (isReminder) {
+              return (
+                <div
+                  title={`Alert: ${eventInfo.event.title} (for ${eventInfo.event.extendedProps.parentTitle})`}
+                  className="w-full px-2 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold truncate flex items-center gap-1 shadow-xs border border-amber-600 cursor-pointer my-0.5"
+                >
+                  <span className="shrink-0 text-xs">🔔</span>
+                  <span className="truncate">{eventInfo.event.title}</span>
+                </div>
+              );
+            }
 
             return (
-              <div className={`px-1.5 py-0.5 rounded text-[11px] truncate flex items-center gap-1 ${
-                isDone ? 'line-through opacity-70 italic' : ''
-              } ${isReminder ? 'font-bold bg-amber-600 text-white shadow-2xs' : ''}`}>
-                <span>{eventInfo.event.title}</span>
+              <div
+                title={eventInfo.event.title}
+                style={{
+                  backgroundColor: isDone ? '#94a3b8' : color,
+                  borderColor: isDone ? '#64748b' : color,
+                }}
+                className={`w-full px-2 py-1 rounded-lg text-white text-[11px] font-bold truncate flex items-center gap-1 shadow-xs border transition-all hover:brightness-110 cursor-pointer my-0.5 ${
+                  isDone ? 'line-through opacity-70 italic' : ''
+                }`}
+              >
+                {isDone ? (
+                  <span className="shrink-0 text-white font-extrabold">✓</span>
+                ) : isCritical ? (
+                  <span className="shrink-0 text-amber-300">⚡</span>
+                ) : null}
+                <span className="truncate">{eventInfo.event.title}</span>
               </div>
             );
           }}

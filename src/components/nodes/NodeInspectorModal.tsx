@@ -13,7 +13,7 @@ import {
   ChevronLeft, ArrowLeft, ArrowRight, FileText, Sparkles, History, 
   Lock, RefreshCw, Clock, Building2
 } from 'lucide-react';
-import { formatISO, addDays } from 'date-fns';
+import { formatISO, addDays, isValid } from 'date-fns';
 
 interface NodeInspectorModalProps {
   initialNode: NodeItem;
@@ -37,8 +37,10 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
   const [auditLogs, setAuditLogs] = useState<NodeAuditLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
 
+  // Intuitive Reminder Form State
   const [reminderMessage, setReminderMessage] = useState('');
-  const [reminderOffset, setReminderOffset] = useState(-2);
+  const [reminderPreset, setReminderPreset] = useState<string>('-2'); // '-2' = 2 days before
+  const [customReminderDays, setCustomReminderDays] = useState<number>(2);
 
   const currentNode = nodes.find(n => n.id === currentNodeId) || initialNode;
   const parentNode = currentNode.parent_id ? nodes.find(n => n.id === currentNode.parent_id) : null;
@@ -66,18 +68,35 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
     }
   }, [showLogsModal, currentNode.id]);
 
+  // Live preview of reminder date
+  const calculatedReminderDate: string | null = (() => {
+    const daysBefore = reminderPreset === 'custom' ? customReminderDays : Math.abs(Number(reminderPreset));
+    if (currentNode.planned_date) {
+      try {
+        const base = new Date(currentNode.planned_date);
+        if (isValid(base)) {
+          return formatISO(addDays(base, -daysBefore));
+        }
+      } catch {
+        return null;
+      }
+    }
+    return formatISO(addDays(new Date(), -daysBefore));
+  })();
+
   const handleCreateReminder = (e: React.FormEvent) => {
     e.preventDefault();
-    let remindAt = new Date().toISOString();
-    if (currentNode.planned_date) {
-      remindAt = formatISO(addDays(new Date(currentNode.planned_date), reminderOffset));
-    }
+    const daysBefore = reminderPreset === 'custom' ? customReminderDays : Math.abs(Number(reminderPreset));
+    let remindAt = calculatedReminderDate || new Date().toISOString();
+
     addReminder({
       node_id: currentNode.id,
       remind_at: remindAt,
-      offset_days: reminderOffset,
+      offset_days: -daysBefore,
       message: reminderMessage || `Follow up on: ${currentNode.title}`,
     });
+
+    setReminderMessage('');
     setShowAddReminder(false);
   };
 
@@ -279,7 +298,13 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
             {currentNode.trigger_offset_days !== null && currentNode.trigger_offset_days !== undefined && (
               <div className="text-xs text-teal-900 bg-teal-50 px-3 py-1.5 rounded-xl border border-teal-200 flex items-center justify-between">
                 <span>Relative trigger offset:</span>
-                <span className="font-mono font-bold">{currentNode.trigger_offset_days} days from parent ({parentNode?.title})</span>
+                <span className="font-mono font-bold">
+                  {currentNode.trigger_offset_days < 0 
+                    ? `${Math.abs(currentNode.trigger_offset_days)} days before parent (${parentNode?.title || 'Parent'})`
+                    : currentNode.trigger_offset_days > 0
+                    ? `${currentNode.trigger_offset_days} days after parent (${parentNode?.title || 'Parent'})`
+                    : `Same day as parent (${parentNode?.title || 'Parent'})`}
+                </span>
               </div>
             )}
           </div>
@@ -312,7 +337,7 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
             </div>
           )}
 
-          {/* Reminders Section */}
+          {/* Reminders Section with Intuitive Form */}
           <div className="space-y-2 pt-2 border-t border-gray-100">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
@@ -330,33 +355,73 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
             </div>
 
             {showAddReminder && isEditable && (
-              <form onSubmit={handleCreateReminder} className="bg-amber-50/80 p-3.5 rounded-2xl border border-amber-200 space-y-2 text-xs">
+              <form onSubmit={handleCreateReminder} className="bg-amber-50/80 p-3.5 rounded-2xl border border-amber-200 space-y-3 text-xs animate-in fade-in">
                 <div>
-                  <label className="block font-semibold text-amber-900 mb-1">Alert Message</label>
+                  <label className="block font-bold text-amber-950 mb-1">Alert Message</label>
                   <input
                     type="text"
                     required
                     value={reminderMessage}
                     onChange={e => setReminderMessage(e.target.value)}
                     placeholder="e.g. Follow up on dispatch"
-                    className="w-full text-xs p-2 border border-amber-300 rounded-xl bg-white outline-none"
+                    className="w-full text-xs p-2 border border-amber-300 rounded-xl bg-white outline-none focus:border-teal-500 font-medium"
                   />
                 </div>
+
                 <div>
-                  <label className="block font-semibold text-amber-900 mb-1">Trigger Offset</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      value={reminderOffset}
-                      onChange={e => setReminderOffset(Number(e.target.value))}
-                      className="w-16 p-1 border border-amber-300 rounded-md bg-white text-center font-mono font-bold"
-                    />
-                    <span className="text-amber-800 text-[11px]">days before target date</span>
+                  <label className="block font-bold text-amber-950 mb-1.5">When should alert trigger?</label>
+                  
+                  {/* Preset Buttons */}
+                  <div className="grid grid-cols-3 gap-1 mb-2">
+                    {[
+                      { label: 'On Due Day', val: '0' },
+                      { label: '1 Day Before', val: '-1' },
+                      { label: '2 Days Before', val: '-2' },
+                      { label: '3 Days Before', val: '-3' },
+                      { label: '7 Days Before', val: '-7' },
+                      { label: 'Custom', val: 'custom' },
+                    ].map(p => (
+                      <button
+                        key={p.val}
+                        type="button"
+                        onClick={() => setReminderPreset(p.val)}
+                        className={`py-1 px-1.5 rounded-lg text-[10px] font-bold border transition-colors truncate ${
+                          reminderPreset === p.val
+                            ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
+                            : 'bg-white text-gray-700 border-amber-200 hover:bg-amber-100'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
                   </div>
+
+                  {reminderPreset === 'custom' && (
+                    <div className="flex items-center gap-2 mb-2">
+                      <input
+                        type="number"
+                        min="1"
+                        max="60"
+                        value={customReminderDays}
+                        onChange={e => setCustomReminderDays(Math.max(1, Number(e.target.value) || 1))}
+                        className="w-16 h-7 text-center font-mono font-bold bg-white border border-amber-300 rounded-lg text-xs"
+                      />
+                      <span className="text-[11px] text-amber-900 font-medium">days before milestone date</span>
+                    </div>
+                  )}
+
+                  {/* Live calculated date */}
+                  {calculatedReminderDate && (
+                    <div className="p-2 bg-white/90 rounded-lg border border-amber-200 text-amber-950 text-[11px] font-bold flex items-center justify-between">
+                      <span>🔔 Trigger Date:</span>
+                      <span className="font-mono text-amber-900">{formatLocalDate(calculatedReminderDate, 'EEE, MMM d, yyyy')}</span>
+                    </div>
+                  )}
                 </div>
-                <div className="flex justify-end gap-2 pt-1">
-                  <button type="button" onClick={() => setShowAddReminder(false)} className="px-2.5 py-1 text-amber-800">Cancel</button>
-                  <button type="submit" className="px-3 py-1 bg-amber-600 text-white font-semibold rounded-xl shadow-2xs">Save Alert</button>
+
+                <div className="flex justify-end gap-2 pt-1 border-t border-amber-200/60">
+                  <button type="button" onClick={() => setShowAddReminder(false)} className="px-2.5 py-1 text-amber-800 font-semibold hover:underline">Cancel</button>
+                  <button type="submit" className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl shadow-xs">Save Alert</button>
                 </div>
               </form>
             )}
@@ -464,6 +529,7 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
         <NodeForm
           initialNode={currentNode}
           parentId={currentNode.parent_id}
+          parentDate={parentNode?.planned_date}
           onClose={() => setIsEditing(false)}
         />
       )}
