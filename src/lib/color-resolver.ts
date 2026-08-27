@@ -2,62 +2,124 @@ import { NodeItem } from '../types/domain';
 
 export const DEFAULT_FALLBACK_COLOR = '#0D9488'; // Vibrant Emerald Teal
 
+// Curated palette — kept saturated & clean (zen-friendly, not neon) so that
+// every level-gradient derived from them still reads clearly on the calendar.
 export const CURATED_SWATCHES = [
-  { name: 'Emerald Teal', hex: '#0D9488' },
-  { name: 'Royal Sapphire', hex: '#2563EB' },
-  { name: 'Vivid Amber', hex: '#D97706' },
-  { name: 'Electric Violet', hex: '#7C3AED' },
-  { name: 'Ruby Crimson', hex: '#E11D48' },
-  { name: 'Lush Emerald', hex: '#059669' },
-  { name: 'Sunset Orange', hex: '#EA580C' },
-  { name: 'Ocean Cyan', hex: '#0891B2' },
-  { name: 'Deep Purple', hex: '#9333EA' },
-  { name: 'Sky Cerulean', hex: '#0284C7' },
-  { name: 'Berry Magenta', hex: '#C026D3' },
-  { name: 'Coral Flame', hex: '#F43F5E' },
+  { name: 'Emerald Teal', hex: '#0EA5A0' },
+  { name: 'Royal Sapphire', hex: '#3B6FED' },
+  { name: 'Vivid Amber', hex: '#E08A0E' },
+  { name: 'Electric Violet', hex: '#8B5CF6' },
+  { name: 'Ruby Crimson', hex: '#EF4468' },
+  { name: 'Lush Emerald', hex: '#22A866' },
+  { name: 'Sunset Orange', hex: '#F2650F' },
+  { name: 'Ocean Cyan', hex: '#0EA5C4' },
+  { name: 'Deep Purple', hex: '#A64BF0' },
+  { name: 'Sky Cerulean', hex: '#2E9AE8' },
+  { name: 'Berry Magenta', hex: '#D63AE0' },
+  { name: 'Coral Flame', hex: '#F14F72' },
 ];
 
-/**
- * Lightens a HEX color by a given percentage (0 to 100) while keeping color clean and vibrant
- */
-export function lightenColor(hex: string, percent: number): string {
-  if (!hex || !hex.startsWith('#') || percent <= 0) return hex || DEFAULT_FALLBACK_COLOR;
-  let cleanHex = hex.slice(1);
-  if (cleanHex.length === 3) {
-    cleanHex = cleanHex.split('').map(c => c + c).join('');
+// ── HEX <-> HSL helpers ─────────────────────────────────────────────
+function hexToRgb(hex: string): [number, number, number] | null {
+  if (!hex || !hex.startsWith('#')) return null;
+  let clean = hex.slice(1);
+  if (clean.length === 3) clean = clean.split('').map(c => c + c).join('');
+  if (clean.length !== 6) return null;
+  const num = parseInt(clean, 16);
+  if (isNaN(num)) return null;
+  return [(num >> 16) & 0xff, (num >> 8) & 0xff, num & 0xff];
+}
+
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0;
+  const l = (max + min) / 2;
+  const d = max - min;
+  if (d !== 0) {
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = ((g - b) / d + (g < b ? 6 : 0)); break;
+      case g: h = (b - r) / d + 2; break;
+      default: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
   }
-  
-  let num = parseInt(cleanHex, 16);
-  if (isNaN(num)) return hex;
+  return [h * 360, s * 100, l * 100];
+}
 
-  let r = (num >> 16) & 0xff;
-  let g = (num >> 8) & 0xff;
-  let b = num & 0xff;
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  h = ((h % 360) + 360) % 360;
+  h /= 360; s = Math.min(1, Math.max(0, s / 100)); l = Math.min(1, Math.max(0, l / 100));
+  if (s === 0) {
+    const v = Math.round(l * 255);
+    return [v, v, v];
+  }
+  const hue2rgb = (p: number, q: number, t: number) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  return [
+    Math.round(hue2rgb(p, q, h + 1 / 3) * 255),
+    Math.round(hue2rgb(p, q, h) * 255),
+    Math.round(hue2rgb(p, q, h - 1 / 3) * 255),
+  ];
+}
 
-  // Mix with white (#ffffff)
-  const factor = Math.min(0.78, Math.max(0, percent / 100));
-  r = Math.round(r + (255 - r) * factor);
-  g = Math.round(g + (255 - g) * factor);
-  b = Math.round(b + (255 - b) * factor);
+function toHex(r: number, g: number, b: number): string {
+  const c = (v: number) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
+  return `#${c(r)}${c(g)}${c(b)}`;
+}
 
-  const toHex = (c: number) => c.toString(16).padStart(2, '0');
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+export function hexToHsl(hex: string): [number, number, number] | null {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return null;
+  return rgbToHsl(...rgb);
 }
 
 /**
- * Calculates level lighten percentage:
- * Level 1 (distance 0): 0% (full vibrant tone)
- * Level 2 (distance 1): 20% lighter
- * Level 3 (distance 2): 38% lighter
- * Level 4 (distance 3): 54% lighter
- * Level 5+ (distance 4+): 68% lighter
+ * Lightens a HEX color for level-gradient shading. Unlike a plain white-mix
+ * (which quickly desaturates into pale/dull grays), this works in HSL space:
+ * lightness rises steadily while saturation is only trimmed slightly, so
+ * deeper hierarchy levels stay bright & readable instead of washing out.
+ */
+export function lightenColor(hex: string, percent: number): string {
+  const rgb = hexToRgb(hex);
+  if (!rgb || percent <= 0) return hex || DEFAULT_FALLBACK_COLOR;
+
+  const [h, s, l] = rgbToHsl(...rgb);
+  const factor = Math.min(1, Math.max(0, percent / 100));
+
+  // Push lightness toward a bright ceiling (never fully white) …
+  const targetL = Math.min(88, l + (92 - l) * factor);
+  // …and only gently soften saturation so color identity survives.
+  const targetS = Math.max(38, s * (1 - factor * 0.28));
+
+  const [r, g, b] = hslToRgb(h, targetS, targetL);
+  return toHex(r, g, b);
+}
+
+/**
+ * Calculates level lighten percentage — tuned so 4-5 hierarchy levels each
+ * produce a visually distinct, still-vivid shade of the same hue:
+ * Level 1 (distance 0): 0%   — full vibrant tone
+ * Level 2 (distance 1): 26%  lighter
+ * Level 3 (distance 2): 46%  lighter
+ * Level 4 (distance 3): 62%  lighter
+ * Level 5+ (distance 4+): 74%+ lighter (capped)
  */
 export function getLevelLightenPercent(distance: number): number {
   if (distance <= 0) return 0;
-  if (distance === 1) return 20;
-  if (distance === 2) return 38;
-  if (distance === 3) return 54;
-  return Math.min(75, 54 + (distance - 3) * 12);
+  if (distance === 1) return 26;
+  if (distance === 2) return 46;
+  if (distance === 3) return 62;
+  return Math.min(82, 62 + (distance - 3) * 10);
 }
 
 /**
@@ -86,6 +148,32 @@ export function resolveColor(
 }
 
 /**
+ * Returns the full level-gradient ladder (level 1 -> level 5+) for a given
+ * root/base color. Used for live previews (e.g. in the color picker) so
+ * users can see exactly how a chosen color will shade down the hierarchy.
+ */
+export function getGradientLadder(baseHex: string, levels: number = 5): string[] {
+  const ladder: string[] = [];
+  for (let i = 0; i < levels; i++) {
+    ladder.push(i === 0 ? baseHex : lightenColor(baseHex, getLevelLightenPercent(i)));
+  }
+  return ladder;
+}
+
+/**
+ * Given a background color, returns the ideal readable text color
+ * (near-black or near-white) using relative luminance.
+ */
+export function getReadableTextColor(bgHex: string): string {
+  const rgb = hexToRgb(bgHex);
+  if (!rgb) return '#0f172a';
+  const [r, g, b] = rgb.map(v => v / 255);
+  const lin = (v: number) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+  const luminance = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  return luminance > 0.52 ? '#0f172a' : '#ffffff';
+}
+
+/**
  * Smart Auto-Distinct Color Selection:
  * Returns the first unused swatch color for a new top-level project to avoid color collisions.
  */
@@ -108,4 +196,3 @@ export function getUnusedProjectColor(existingNodes: NodeItem[]): string {
   // Fallback to random swatch if all swatches are used
   return CURATED_SWATCHES[Math.floor(Math.random() * CURATED_SWATCHES.length)].hex;
 }
-

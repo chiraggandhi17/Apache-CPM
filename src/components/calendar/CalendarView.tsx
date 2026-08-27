@@ -5,23 +5,32 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { useNodes } from '../../context/NodeContext';
 import { NodeItem } from '../../types/domain';
-import { resolveColor } from '../../lib/color-resolver';
+import { resolveColor, getReadableTextColor } from '../../lib/color-resolver';
 import { SearchableParentSelect } from '../shared/SearchableParentSelect';
 import { addDays, parseISO } from 'date-fns';
-import { 
-  Filter, Calendar as CalendarIcon, Bell, CheckCircle2, 
-  Layers, ChevronLeft, ChevronRight, MousePointer
+import {
+  Filter, Calendar as CalendarIcon, Bell, CheckCircle2,
+  Layers, ChevronLeft, ChevronRight, ChevronDown, MousePointer, Zap, Check,
 } from 'lucide-react';
 
 interface CalendarViewProps {
   onSelectNode: (node: NodeItem) => void;
 }
 
+const LEVEL_DEFS = [
+  { lvl: 1, label: 'Department', short: 'L1' },
+  { lvl: 2, label: 'Season', short: 'L2' },
+  { lvl: 3, label: 'Model', short: 'L3' },
+  { lvl: 4, label: 'Task', short: 'L4' },
+  { lvl: 5, label: 'Subtask', short: 'L5' },
+];
+
 export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
   const { nodes, reminders } = useNodes();
   const calendarRef = useRef<FullCalendar>(null);
   const calendarContainerRef = useRef<HTMLDivElement>(null);
   const lastScrollTime = useRef<number>(0);
+  const levelDropdownRef = useRef<HTMLDivElement>(null);
 
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
   const [selectedLevels, setSelectedLevels] = useState<number[]>([1, 2, 3, 4, 5]);
@@ -29,6 +38,19 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
   const [showAlertsOnCal, setShowAlertsOnCal] = useState(true);
   const [currentMonthTitle, setCurrentMonthTitle] = useState<string>('');
   const [activeView, setActiveView] = useState<'dayGridMonth' | 'timeGridWeek' | 'timeGridDay'>('dayGridMonth');
+  const [levelDropdownOpen, setLevelDropdownOpen] = useState(false);
+
+  // Close level dropdown on outside click
+  useEffect(() => {
+    if (!levelDropdownOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (levelDropdownRef.current && !levelDropdownRef.current.contains(e.target as Node)) {
+        setLevelDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [levelDropdownOpen]);
 
   // Mouse wheel scroll to move between months / weeks / days
   useEffect(() => {
@@ -112,7 +134,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
       .filter(n => {
         if (!n.planned_date) return false;
         if (!showCompleted && n.status === 'done') return false;
-        
+
         // Level Matrix Filter
         const level = getNodeLevel(n);
         if (!selectedLevels.includes(level)) return false;
@@ -154,16 +176,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
           allDay: true,
           backgroundColor: isDone ? '#94a3b8' : color,
           borderColor: isDone ? '#64748b' : color,
-          textColor: level >= 3 && !isDone ? '#0f172a' : '#ffffff',
-          extendedProps: { 
-            node: n, 
-            isReminder: false, 
+          textColor: isDone ? '#ffffff' : getReadableTextColor(color),
+          extendedProps: {
+            node: n,
+            isReminder: false,
             isRange,
-            isDone, 
-            isCritical: n.is_critical, 
+            isDone,
+            isCritical: n.is_critical,
             color,
             level,
-            department: n.department 
+            department: n.department
           },
         };
       });
@@ -207,15 +229,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
               backgroundColor: '#fffbe6',
               borderColor: '#f59e0b',
               textColor: '#92400e',
-              extendedProps: { 
-                reminder: r, 
-                isReminder: true, 
+              extendedProps: {
+                reminder: r,
+                isReminder: true,
                 parentTitle: parentNode?.title || 'Task',
-                isDone: false, 
-                isCritical: false, 
+                isDone: false,
+                isCritical: false,
                 color,
                 level: parentLevel,
-                department: parentNode?.department || null 
+                department: parentNode?.department || null
               },
             };
           })
@@ -233,44 +255,45 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
     calendarRef.current?.getApi().changeView(view);
   };
 
+  const allLevelsSelected = selectedLevels.length === 5;
+  const noLevelsSelected = selectedLevels.length === 0;
+
   return (
     <div className="space-y-4">
-      {/* REORGANIZED UNIFIED CALENDAR CONTROL CENTER */}
-      <div className="bg-[var(--card-bg)] p-4 rounded-3xl border border-[var(--border)] shadow-2xs space-y-3.5">
-        
+      {/* CALENDAR CONTROL CENTER */}
+      <div className="bg-[var(--card-bg)] p-4 rounded-3xl border border-[var(--border)] shadow-2xs space-y-3">
+
         {/* TOP ROW: Title & Month Navigation + View Mode Controls */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[var(--border)] pb-3">
-          
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+
           {/* Title & Active Month Indicator */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-2xl bg-[var(--accent-subtle)] text-[var(--accent)] flex items-center justify-center border border-[var(--accent)]/20 shrink-0 shadow-2xs">
               <CalendarIcon className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-extrabold text-[var(--text-primary)] tracking-tight">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <h2 className="text-base font-extrabold text-[var(--text-primary)] tracking-tight truncate">
                   {currentMonthTitle || 'Master Execution Calendar'}
                 </h2>
-                <span className="text-[10px] font-mono font-extrabold bg-[var(--accent-subtle)] text-[var(--accent)] px-2 py-0.5 rounded-md border border-[var(--accent)]/20 shadow-2xs">
-                  {events.length} Events
+                <span className="text-[10px] font-mono font-bold bg-[var(--accent-subtle)] text-[var(--accent)] px-2 py-0.5 rounded-md border border-[var(--accent)]/20 shrink-0">
+                  {events.length}
                 </span>
               </div>
               <p className="text-[11px] text-[var(--text-secondary)] font-medium flex items-center gap-1 mt-0.5">
-                <MousePointer className="w-3 h-3 text-[var(--accent)]" />
-                <span>Scroll mouse wheel over calendar grid to switch months naturally</span>
+                <MousePointer className="w-3 h-3 text-[var(--accent)] shrink-0" />
+                <span className="truncate">Scroll over the grid to move between months</span>
               </p>
             </div>
           </div>
 
           {/* Month Navigation & View Modes */}
-          <div className="flex items-center flex-wrap gap-2">
-            
-            {/* Prev / Today / Next Controls */}
-            <div className="flex items-center bg-[var(--badge-bg)] p-1 rounded-xl border border-[var(--border)] shadow-2xs">
+          <div className="flex items-center flex-wrap gap-2 shrink-0">
+            <div className="flex items-center bg-[var(--badge-bg)] p-1 rounded-xl border border-[var(--border)]">
               <button
                 type="button"
                 onClick={handlePrev}
-                title="Previous Month/Week (Or Scroll Up)"
+                title="Previous (or scroll up)"
                 className="p-1.5 rounded-lg text-[var(--text-primary)] hover:bg-[var(--card-bg)] transition-colors"
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -287,15 +310,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
               <button
                 type="button"
                 onClick={handleNext}
-                title="Next Month/Week (Or Scroll Down)"
+                title="Next (or scroll down)"
                 className="p-1.5 rounded-lg text-[var(--text-primary)] hover:bg-[var(--card-bg)] transition-colors"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
 
-            {/* View Switcher Tabs (Month / Week / Day) */}
-            <div className="flex items-center bg-[var(--badge-bg)] p-1 rounded-xl border border-[var(--border)] shadow-2xs">
+            <div className="flex items-center bg-[var(--badge-bg)] p-1 rounded-xl border border-[var(--border)]">
               {[
                 { view: 'dayGridMonth' as const, label: 'Month' },
                 { view: 'timeGridWeek' as const, label: 'Week' },
@@ -305,7 +327,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
                   key={v.view}
                   type="button"
                   onClick={() => handleViewChange(v.view)}
-                  className={`px-3 py-1 text-xs font-extrabold rounded-lg transition-all ${
+                  className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
                     activeView === v.view
                       ? 'bg-[var(--accent)] text-white shadow-2xs'
                       : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -318,83 +340,99 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
           </div>
         </div>
 
-        {/* BOTTOM ROW: Filters & Toggles Action Bar */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          
-          {/* Searchable Subtree Filter & Display Toggles */}
-          <div className="flex items-center flex-wrap gap-2">
-            <SearchableParentSelect
-              nodes={nodes}
-              selectedParentId={selectedParentId}
-              onSelectParent={setSelectedParentId}
-            />
+        {/* DIVIDER */}
+        <div className="border-t border-[var(--border-subtle)]" />
 
+        {/* FILTER BAR: single unified row, wraps gracefully */}
+        <div className="flex flex-wrap items-center gap-2">
+          <SearchableParentSelect
+            nodes={nodes}
+            selectedParentId={selectedParentId}
+            onSelectParent={setSelectedParentId}
+          />
+
+          {/* Level Filter Dropdown (replaces 5 loose pill buttons) */}
+          <div className="relative" ref={levelDropdownRef}>
             <button
               type="button"
-              onClick={() => setShowAlertsOnCal(!showAlertsOnCal)}
-              className={`h-9 px-3 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-all shadow-2xs ${
-                showAlertsOnCal
-                  ? 'bg-amber-50 text-amber-900 border-amber-300 ring-1 ring-amber-200/60'
+              onClick={() => setLevelDropdownOpen(o => !o)}
+              className={`h-9 px-3 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-all ${
+                levelDropdownOpen || !allLevelsSelected
+                  ? 'bg-[var(--accent-subtle)] text-[var(--accent)] border-[var(--accent)]/30'
                   : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--badge-bg)]'
               }`}
             >
-              <Bell className="w-3.5 h-3.5 text-amber-600" />
-              <span>Alerts {showAlertsOnCal ? 'On' : 'Off'}</span>
+              <Filter className="w-3.5 h-3.5" />
+              <span>Levels {noLevelsSelected ? '(none)' : allLevelsSelected ? '(all)' : `(${selectedLevels.length}/5)`}</span>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${levelDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 
-            <button
-              type="button"
-              onClick={() => setShowCompleted(!showCompleted)}
-              className={`h-9 px-3 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-all shadow-2xs ${
-                showCompleted
-                  ? 'bg-emerald-50 text-emerald-900 border-emerald-300 ring-1 ring-emerald-200/60'
-                  : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--badge-bg)]'
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Completed ({showCompleted ? 'Shown' : 'Hidden'})</span>
-            </button>
+            {levelDropdownOpen && (
+              <div className="absolute z-20 mt-1.5 w-56 bg-[var(--card-bg)] border border-[var(--border)] rounded-2xl shadow-lg p-2 animate-in fade-in">
+                {LEVEL_DEFS.map(item => {
+                  const active = selectedLevels.includes(item.lvl);
+                  return (
+                    <button
+                      key={item.lvl}
+                      type="button"
+                      onClick={() => toggleLevel(item.lvl)}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+                        active ? 'bg-[var(--accent-subtle)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--badge-bg)]'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] font-extrabold text-[var(--accent)] w-6 text-left">{item.short}</span>
+                        <span>{item.label}</span>
+                      </span>
+                      {active && <Check className="w-3.5 h-3.5 text-[var(--accent)]" />}
+                    </button>
+                  );
+                })}
+                <div className="flex items-center justify-between px-2 pt-1.5 mt-1 border-t border-[var(--border-subtle)]">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedLevels([1, 2, 3, 4, 5])}
+                    className="text-[11px] font-bold text-[var(--accent)] hover:underline"
+                  >
+                    Select All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedLevels([])}
+                    className="text-[11px] font-bold text-[var(--text-muted)] hover:underline"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Hierarchy Level Matrix Pills */}
-          <div className="flex items-center flex-wrap gap-1.5">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider text-[var(--text-secondary)] mr-1 flex items-center gap-1">
-              <Filter className="w-3 h-3 text-[var(--accent)]" /> Levels:
-            </span>
+          <button
+            type="button"
+            onClick={() => setShowAlertsOnCal(!showAlertsOnCal)}
+            className={`h-9 px-3 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-all ${
+              showAlertsOnCal
+                ? 'bg-amber-50 text-amber-900 border-amber-300'
+                : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--badge-bg)]'
+            }`}
+          >
+            <Bell className="w-3.5 h-3.5 text-amber-600" />
+            <span>Alerts</span>
+          </button>
 
-            {[
-              { lvl: 1, label: 'L1 Dept' },
-              { lvl: 2, label: 'L2 Season' },
-              { lvl: 3, label: 'L3 Model' },
-              { lvl: 4, label: 'L4 Task' },
-              { lvl: 5, label: 'L5 Subtask' },
-            ].map(item => {
-              const active = selectedLevels.includes(item.lvl);
-              return (
-                <button
-                  key={item.lvl}
-                  type="button"
-                  onClick={() => toggleLevel(item.lvl)}
-                  className={`px-2.5 py-1 rounded-lg border text-xs transition-all flex items-center gap-1 ${
-                    active
-                      ? 'bg-[var(--accent)] text-white border-[var(--accent)] shadow-2xs font-bold ring-1 ring-[var(--accent)]/30'
-                      : 'bg-[var(--badge-bg)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--card-bg)] font-medium'
-                  }`}
-                >
-                  <span className="text-[10px]">{active ? '✓' : '+'}</span>
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-
-            <button
-              type="button"
-              onClick={() => setSelectedLevels(selectedLevels.length === 5 ? [] : [1, 2, 3, 4, 5])}
-              className="text-[11px] font-extrabold text-[var(--accent)] hover:text-[var(--text-primary)] underline ml-1 cursor-pointer transition-colors"
-            >
-              {selectedLevels.length === 5 ? 'Clear' : 'All'}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowCompleted(!showCompleted)}
+            className={`h-9 px-3 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-all ${
+              showCompleted
+                ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--badge-bg)]'
+            }`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Completed {showCompleted ? 'Shown' : 'Hidden'}</span>
+          </button>
         </div>
       </div>
 
@@ -418,8 +456,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
       )}
 
       {/* Calendar Grid Container with Wheel Scroll Listener */}
-      <div 
-        ref={calendarContainerRef} 
+      <div
+        ref={calendarContainerRef}
         className="bg-[var(--card-bg)] p-4 rounded-3xl border border-[var(--border)] shadow-2xs font-sans text-xs select-none"
       >
         <FullCalendar
@@ -442,75 +480,50 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
             const isReminder = eventInfo.event.extendedProps.isReminder;
             const isRange = eventInfo.event.extendedProps.isRange;
             const isCritical = eventInfo.event.extendedProps.isCritical;
-            const color = eventInfo.event.extendedProps.color || '#0d9488';
+            const color = eventInfo.event.extendedProps.color || '#0EA5A0';
             const level = eventInfo.event.extendedProps.level || 1;
 
             if (isReminder) {
               return (
                 <div
-                  title={`🔔 Alert: ${eventInfo.event.title} (for "${eventInfo.event.extendedProps.parentTitle}")`}
-                  className="w-full px-2 py-1 rounded-lg bg-amber-50 border-l-4 border-l-amber-500 border border-amber-200 text-amber-950 text-[11px] font-extrabold truncate flex items-center gap-1.5 shadow-2xs cursor-pointer transition-all hover:scale-[1.01]"
+                  title={`Alert: ${eventInfo.event.title} (for "${eventInfo.event.extendedProps.parentTitle}")`}
+                  className="w-full px-2 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-950 text-[11px] font-bold truncate flex items-center gap-1.5 shadow-2xs cursor-pointer transition-all hover:shadow-sm"
+                  style={{ borderLeft: '3px solid #F59E0B' }}
                 >
-                  <span className="text-[11px] shrink-0 animate-pulse">🔔</span>
+                  <Bell className="w-3 h-3 shrink-0 text-amber-500" />
                   <span className="truncate">{eventInfo.event.title}</span>
                 </div>
               );
             }
 
-            // Sleek Rendering for Multi-Day Date Range Spans
-            if (isRange) {
-              const isLightBackground = level >= 3 && !isDone;
-              return (
-                <div
-                  title={`🗓️ Range [L${level}]: ${eventInfo.event.title}`}
-                  style={{
-                    backgroundColor: isDone ? '#f1f5f9' : color,
-                    borderColor: isDone ? '#94a3b8' : color,
-                    color: isDone ? '#64748b' : isLightBackground ? '#0f172a' : '#ffffff',
-                  }}
-                  className={`w-full px-2 py-1 rounded-lg text-[11px] font-extrabold truncate flex items-center justify-between gap-1 shadow-2xs border-l-4 transition-all hover:scale-[1.01] cursor-pointer ${
-                    isDone ? 'line-through opacity-70 italic border-l-slate-400 border' : ''
-                  }`}
-                >
-                  <div className="flex items-center gap-1 truncate">
-                    <span className="shrink-0 text-[10px]">🗓️</span>
-                    <span className="truncate">{eventInfo.event.title}</span>
-                  </div>
-                  <span className={`text-[9px] font-mono px-1 rounded shrink-0 ${isLightBackground ? 'bg-black/10 text-slate-900 font-bold' : 'bg-white/25 text-white font-bold'}`}>
-                    L{level}
-                  </span>
-                </div>
-              );
-            }
-
-            // Standard Task Event Card with Shaded Level Gradient Pill
-            const isLightBackground = level >= 3 && !isDone;
-            const textColor = isDone ? '#64748b' : isLightBackground ? '#0f172a' : '#ffffff';
+            const cardBg = isDone ? 'var(--badge-bg)' : `${color}1C`;
+            const barColor = isDone ? '#94a3b8' : color;
 
             return (
               <div
-                title={`[L${level}] ${eventInfo.event.title}`}
+                title={`[L${level}]${isRange ? ' Range' : ''} ${eventInfo.event.title}`}
                 style={{
-                  backgroundColor: isDone ? '#f1f5f9' : color,
-                  borderColor: isDone ? '#cbd5e1' : color,
-                  color: textColor,
+                  backgroundColor: cardBg,
+                  borderLeftColor: barColor,
+                  color: isDone ? 'var(--text-muted)' : 'var(--text-primary)',
                 }}
-                className={`w-full px-2 py-1 rounded-lg text-[11px] font-extrabold truncate flex items-center justify-between gap-1 shadow-2xs border transition-all hover:scale-[1.01] cursor-pointer ${
-                  isDone ? 'line-through opacity-75 italic' : ''
+                className={`group w-full pl-2 pr-1.5 py-1 rounded-lg text-[11px] font-bold truncate flex items-center justify-between gap-1 border-l-[3px] transition-all hover:shadow-sm hover:brightness-105 cursor-pointer ${
+                  isDone ? 'line-through opacity-70 italic' : ''
                 }`}
               >
-                <div className="flex items-center gap-1 truncate">
+                <div className="flex items-center gap-1 min-w-0">
                   {isDone ? (
-                    <span className="shrink-0 text-[10px] font-extrabold text-emerald-600">✓</span>
+                    <Check className="w-3 h-3 shrink-0 text-emerald-600" strokeWidth={3} />
+                  ) : isRange ? (
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: barColor }} />
                   ) : isCritical ? (
-                    <span className="shrink-0 text-amber-300 font-bold text-[10px]">⚡</span>
+                    <Zap className="w-3 h-3 shrink-0 text-amber-500" fill="currentColor" />
                   ) : null}
                   <span className="truncate">{eventInfo.event.title}</span>
                 </div>
-                <span 
-                  className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-extrabold shrink-0 ${
-                    isLightBackground ? 'bg-slate-900/10 text-slate-900 border border-slate-900/10' : 'bg-white/25 text-white'
-                  }`}
+                <span
+                  style={!isDone ? { color: barColor, borderColor: `${barColor}55`, backgroundColor: `${barColor}14` } : undefined}
+                  className="text-[9px] font-mono font-extrabold px-1 rounded shrink-0 border opacity-0 group-hover:opacity-100 transition-opacity"
                 >
                   L{level}
                 </span>
@@ -524,4 +537,3 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
     </div>
   );
 };
-

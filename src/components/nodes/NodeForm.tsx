@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { NodeItem, NodeType, NodeStatus } from '../../types/domain';
 import { useNodes } from '../../context/NodeContext';
 import { ColorPicker } from '../shared/ColorPicker';
+import { InlineCalendar } from '../shared/InlineCalendar';
 import { CriticalFlag } from '../shared/CriticalFlag';
 import { getUnusedProjectColor } from '../../lib/color-resolver';
 import { getAncestorPath } from '../../utils/hierarchy';
@@ -613,35 +614,52 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                     {offsetDirection === 'same' ? '0 Days' : `${offsetDirection === 'before' ? '-' : '+'}${offsetDaysQty} Days`}
                   </span>
                 </div>
+
+                {/* Read-only mini calendar landing preview */}
+                {calculatedTargetDate && (
+                  <InlineCalendar
+                    mode="single"
+                    selectedDate={calculatedTargetDate.substring(0, 10)}
+                    accentColor={parentResolvedColor}
+                    maxDate={parentEffectiveDate ? new Date(parentEffectiveDate) : null}
+                  />
+                )}
               </div>
             ) : dateMode === 'range' ? (
-              /* MODE 2: DATE RANGE INPUT (Start Date -> Target End Date) */
+              /* MODE 2: DATE RANGE INPUT (Start Date -> Target End Date) via visual calendar */
               <div className="bg-white p-4 rounded-2xl border border-indigo-200 space-y-3.5 shadow-2xs animate-in fade-in">
+                {/* Start / End readout chips indicating what the next click sets */}
                 <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <label className="block font-bold text-gray-700 mb-1">Start Date</label>
-                    <input
-                      type="date"
-                      value={startDate}
-                      onChange={e => setStartDate(e.target.value)}
-                      className="w-full text-xs px-3.5 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold transition-all"
-                    />
+                  <div className={`p-2.5 rounded-xl border-2 transition-all ${!startDate || (startDate && !plannedDate) ? 'border-indigo-400 bg-indigo-50/80 ring-2 ring-indigo-200' : 'border-gray-200 bg-gray-50'}`}>
+                    <span className="block font-bold text-gray-500 text-[10px] uppercase tracking-wide">Start Date</span>
+                    <span className="font-mono font-extrabold text-indigo-950 text-xs">
+                      {startDate ? formatLocalDate(new Date(startDate).toISOString(), 'MMM d, yyyy') : 'Tap a day →'}
+                    </span>
                   </div>
-
-                  <div>
-                    <label className="block font-bold text-gray-700 mb-1">Target End Date</label>
-                    <input
-                      type="date"
-                      value={plannedDate}
-                      onChange={e => setPlannedDate(e.target.value)}
-                      className="w-full text-xs px-3.5 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold transition-all"
-                    />
+                  <div className={`p-2.5 rounded-xl border-2 transition-all ${startDate && !plannedDate ? 'border-indigo-400 bg-indigo-50/80 ring-2 ring-indigo-200' : 'border-gray-200 bg-gray-50'}`}>
+                    <span className="block font-bold text-gray-500 text-[10px] uppercase tracking-wide">Target End Date</span>
+                    <span className="font-mono font-extrabold text-indigo-950 text-xs">
+                      {plannedDate ? formatLocalDate(new Date(plannedDate).toISOString(), 'MMM d, yyyy') : startDate ? 'Tap end day →' : '—'}
+                    </span>
                   </div>
                 </div>
 
+                {/* Visual Range Calendar — first click sets start, second click sets end */}
+                <InlineCalendar
+                  mode="range"
+                  rangeStart={startDate || null}
+                  rangeEnd={plannedDate || null}
+                  onSelectRange={(start, end) => {
+                    setStartDate(start || '');
+                    setPlannedDate(end || '');
+                  }}
+                  accentColor={parentResolvedColor}
+                  maxDate={parentEffectiveDate ? new Date(parentEffectiveDate) : null}
+                />
+
                 {/* Quick Add Duration Presets */}
                 <div className="space-y-1.5 pt-1 border-t border-gray-100">
-                  <span className="text-[10px] uppercase font-bold text-gray-400 block">Quick Duration Add:</span>
+                  <span className="text-[10px] uppercase font-bold text-gray-400 block">Quick Duration Add (from Start Date):</span>
                   <div className="grid grid-cols-5 gap-1.5">
                     {[
                       { label: '+3 Days', days: 3 },
@@ -682,15 +700,16 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                 )}
               </div>
             ) : (
-              /* MODE 3: SINGLE FIXED CALENDAR DATE INPUT */
+              /* MODE 3: SINGLE FIXED CALENDAR DATE INPUT — visual calendar picker */
               <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-3 shadow-2xs animate-in fade-in">
                 <div>
                   <label className="block font-bold text-gray-700 mb-1.5">Select Fixed Target Date</label>
-                  <input
-                    type="date"
-                    value={plannedDate}
-                    onChange={e => setPlannedDate(e.target.value)}
-                    className="w-full text-xs px-3.5 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold transition-all"
+                  <InlineCalendar
+                    mode="single"
+                    selectedDate={plannedDate || null}
+                    onSelectSingle={d => setPlannedDate(d)}
+                    accentColor={parentResolvedColor}
+                    maxDate={parentEffectiveDate ? new Date(parentEffectiveDate) : null}
                   />
                 </div>
 

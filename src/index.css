@@ -51,6 +51,20 @@
   background-color: var(--accent-subtle, rgba(196,112,75,0.1)) !important;
 }
 
+.fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
+  color: var(--accent, #C4704B) !important;
+  font-weight: 800 !important;
+}
+
+.fc .fc-daygrid-day:hover {
+  background-color: var(--border-subtle, #F0ECE8) !important;
+  transition: background-color 0.12s ease;
+}
+
+.fc .fc-day-sat, .fc .fc-day-sun {
+  background-color: color-mix(in srgb, var(--canvas-bg, #FAF8F5) 55%, transparent);
+}
+
 .fc .fc-daygrid-event-harness {
   margin-bottom: 3px !important;
 }
@@ -61,10 +75,15 @@
   box-shadow: none !important;
   padding: 0 !important;
   margin: 0 !important;
+  transition: transform 0.12s ease !important;
 }
 
 .fc .fc-event-main {
   padding: 0 !important;
+}
+
+.fc .fc-daygrid-day-frame {
+  transition: background-color 0.12s ease;
 }
 
 .fc .fc-more-link {
