@@ -32,8 +32,8 @@ describe('Color Resolver Pure Function (resolveColor)', () => {
     ];
 
     const nextColor = getUnusedProjectColor(existingNodes as NodeItem[]);
-    // Should pick Orange (#F97316), the 3rd swatch
-    expect(nextColor).toBe('#F97316');
+    // Should pick Indigo (#4F46E5), the 2nd swatch in new vibrant palette
+    expect(nextColor).toBe('#4F46E5');
     expect(nextColor).not.toBe('#0D9488');
     expect(nextColor).not.toBe('#2563EB');
   });

@@ -8,7 +8,7 @@ import { NodeForm } from './NodeForm';
 import { SubtreeCompletionModal } from './SubtreeCompletionModal';
 import { 
   ChevronRight, ChevronDown, Plus, Folder, Calendar, CheckSquare, 
-  Layers, Clock, Check, Lock, Edit3, Trash2, Bell 
+  Layers, Clock, Check, Lock, Edit3, Trash2, Bell, Building2, FolderKanban, Box, Zap, CornerDownRight
 } from 'lucide-react';
 
 interface NodeRowProps {
@@ -16,13 +16,16 @@ interface NodeRowProps {
   onSelectNode: (node: TreeNode) => void;
 }
 
-const TYPE_ICONS: Record<NodeType, React.ReactNode> = {
-  department: <Layers className="w-4 h-4 text-blue-600" />,
-  season: <Folder className="w-4 h-4 text-indigo-500" />,
-  project: <Calendar className="w-4 h-4 text-teal-600" />,
-  task: <CheckSquare className="w-4 h-4 text-gray-600" />,
-  subtask: <Clock className="w-4 h-4 text-gray-400" />,
-  reminder: <Clock className="w-4 h-4 text-amber-500" />,
+const getNodeIcon = (type: NodeType): React.ReactNode => {
+  switch (type) {
+    case 'department': return <Building2 className="w-4 h-4" />;
+    case 'season': return <FolderKanban className="w-4 h-4" />;
+    case 'project': return <Box className="w-4 h-4" />;
+    case 'task': return <Zap className="w-4 h-4" />;
+    case 'subtask': return <CornerDownRight className="w-4 h-4" />;
+    case 'reminder': return <Bell className="w-4 h-4" />;
+    default: return <Zap className="w-4 h-4" />;
+  }
 };
 
 export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
@@ -31,7 +34,8 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
     getNodeAccessInfo, getDescendantNodes, completeNodeAndSubtree 
   } = useNodes();
   
-  const [isExpanded, setIsExpanded] = useState(true);
+  // Collapse tree hierarchy by default
+  const [isExpanded, setIsExpanded] = useState(false);
   const [showAddChild, setShowAddChild] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
@@ -129,8 +133,10 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
             </span>
           )}
 
-          {/* Type Icon */}
-          <span className="shrink-0">{TYPE_ICONS[node.type] || TYPE_ICONS.task}</span>
+          {/* Type Icon (Dynamically tinted with node's level gradient color) */}
+          <span className="shrink-0 transition-colors" style={{ color: node.effective_color }}>
+            {getNodeIcon(node.type)}
+          </span>
 
           {/* Title */}
           <span className={`font-semibold text-xs md:text-sm truncate ${

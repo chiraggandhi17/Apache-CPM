@@ -27,9 +27,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
     );
   };
 
-  const getNodeDepth = (nodeId: string): number => {
+  // Explicit type level resolution with depth fallback
+  const getNodeLevel = (node: NodeItem): number => {
+    if (node.type === 'department') return 1;
+    if (node.type === 'season') return 2;
+    if (node.type === 'project') return 3;
+    if (node.type === 'task') return 4;
+    if (node.type === 'subtask') return 5;
+
     let depth = 1;
-    let curr = nodes.find(n => n.id === nodeId);
+    let curr: NodeItem | undefined = node;
     while (curr && curr.parent_id) {
       depth++;
       curr = nodes.find(n => n.id === curr!.parent_id);
@@ -70,8 +77,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
         if (!showCompleted && n.status === 'done') return false;
         
         // Level Matrix Filter
-        const depth = getNodeDepth(n.id);
-        if (!selectedLevels.includes(depth)) return false;
+        const level = getNodeLevel(n);
+        if (!selectedLevels.includes(level)) return false;
 
         // Level 1 Department / Stream Subtree Filter
         if (allowedSubtreeNodeIds && !allowedSubtreeNodeIds.has(n.id)) return false;
@@ -122,12 +129,18 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
         };
       });
 
-    // 2. Active Alerts & Reminders Events (Strictly bound to user's authorized nodes & parent subtree)
+    // 2. Active Alerts & Reminders Events (Strictly bound to user authorized nodes, level filter, & parent subtree)
     const reminderEvents = showAlertsOnCal
       ? reminders
           .filter(r => {
             if (r.dismissed_at || !r.remind_at) return false;
-            if (!nodes.some(n => n.id === r.node_id)) return false;
+            const parentNode = nodes.find(n => n.id === r.node_id);
+            if (!parentNode) return false;
+
+            // Level Matrix Filter for Reminders
+            const parentLevel = getNodeLevel(parentNode);
+            if (!selectedLevels.includes(parentLevel)) return false;
+
             if (allowedSubtreeNodeIds && !allowedSubtreeNodeIds.has(r.node_id)) return false;
             return true;
           })
@@ -157,6 +170,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
               extendedProps: { 
                 reminder: r, 
                 isReminder: true, 
+                parentTitle: parentNode?.title || 'Task',
                 isDone: false, 
                 isCritical: false, 
                 color,
@@ -167,7 +181,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
       : [];
 
     return [...nodeEvents, ...reminderEvents];
-  }, [nodes, reminders, showCompleted, showAlertsOnCal, allowedSubtreeNodeIds]);
+  }, [nodes, reminders, showCompleted, showAlertsOnCal, allowedSubtreeNodeIds, selectedLevels]);
 
   return (
     <div className="space-y-4">
@@ -221,30 +235,47 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
         </div>
       </div>
 
-      {/* SLEEK HIERARCHY LEVEL MATRIX FILTER BAR */}
-      <div className="bg-white px-4 py-2.5 rounded-2xl border border-gray-200 flex items-center flex-wrap gap-2 text-xs font-bold shadow-2xs">
-        <span className="text-gray-500 text-[11px] uppercase tracking-wider mr-1">Filter Hierarchy Levels:</span>
-        {[
-          { lvl: 1, label: 'L1 Dept / Stream' },
-          { lvl: 2, label: 'L2 Season' },
-          { lvl: 3, label: 'L3 Model' },
-          { lvl: 4, label: 'L4 Task' },
-          { lvl: 5, label: 'L5 Subtask' },
-        ].map(item => (
+      {/* SLEEK GLASSMORPHISM HIERARCHY LEVEL MATRIX FILTER BAR */}
+      <div className="bg-slate-900 text-white px-4 py-3 rounded-2xl border border-slate-800 shadow-sm flex items-center flex-wrap justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2">
+          <Filter className="w-4 h-4 text-teal-400 shrink-0" />
+          <span className="text-slate-300 font-extrabold uppercase tracking-wider text-[11px]">Filter Hierarchy Levels:</span>
+        </div>
+
+        <div className="flex items-center flex-wrap gap-2">
+          {[
+            { lvl: 1, label: 'L1 Dept' },
+            { lvl: 2, label: 'L2 Season' },
+            { lvl: 3, label: 'L3 Model' },
+            { lvl: 4, label: 'L4 Task' },
+            { lvl: 5, label: 'L5 Subtask' },
+          ].map(item => {
+            const active = selectedLevels.includes(item.lvl);
+            return (
+              <button
+                key={item.lvl}
+                type="button"
+                onClick={() => toggleLevel(item.lvl)}
+                className={`px-3 py-1 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  active
+                    ? 'bg-teal-500 text-slate-950 border-teal-400 shadow-2xs font-extrabold ring-1 ring-teal-400/40'
+                    : 'bg-slate-800/80 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <span className="text-[10px] font-extrabold">{active ? '✓' : '+'}</span>
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+
           <button
-            key={item.lvl}
             type="button"
-            onClick={() => toggleLevel(item.lvl)}
-            className={`px-2.5 py-1 rounded-lg border text-[11px] transition-all flex items-center gap-1 ${
-              selectedLevels.includes(item.lvl)
-                ? 'bg-teal-600 text-white border-teal-600 shadow-2xs'
-                : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
-            }`}
+            onClick={() => setSelectedLevels(selectedLevels.length === 5 ? [] : [1, 2, 3, 4, 5])}
+            className="text-[11px] font-extrabold text-teal-400 hover:text-teal-300 underline ml-2 cursor-pointer transition-colors"
           >
-            {selectedLevels.includes(item.lvl) && <span className="font-extrabold text-[10px]">✓</span>}
-            <span>{item.label}</span>
+            {selectedLevels.length === 5 ? 'Deselect All' : 'Select All'}
           </button>
-        ))}
+        </div>
       </div>
 
       {/* ACTIVE DEPARTMENT / STREAM FILTER BANNER */}

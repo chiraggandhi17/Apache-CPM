@@ -4,17 +4,17 @@ export const DEFAULT_FALLBACK_COLOR = '#6B7280'; // gray-500
 
 export const CURATED_SWATCHES = [
   { name: 'Teal', hex: '#0D9488' },
+  { name: 'Indigo', hex: '#4F46E5' },
   { name: 'Blue', hex: '#2563EB' },
-  { name: 'Orange', hex: '#F97316' },
-  { name: 'Purple', hex: '#8B5CF6' },
-  { name: 'Red', hex: '#EF4444' },
-  { name: 'Green', hex: '#22C55E' },
-  { name: 'Indigo', hex: '#6366F1' },
-  { name: 'Amber', hex: '#EAB308' },
-  { name: 'Sky', hex: '#0EA5E9' },
-  { name: 'Pink', hex: '#EC4899' },
-  { name: 'Rose', hex: '#F43F5E' },
-  { name: 'Gray', hex: '#6B7280' },
+  { name: 'Emerald', hex: '#059669' },
+  { name: 'Violet', hex: '#7C3AED' },
+  { name: 'Rose', hex: '#E11D48' },
+  { name: 'Amber', hex: '#D97706' },
+  { name: 'Orange', hex: '#EA580C' },
+  { name: 'Magenta', hex: '#C026D3' },
+  { name: 'Cyan', hex: '#0891B2' },
+  { name: 'Purple', hex: '#9333EA' },
+  { name: 'Sky', hex: '#0284C7' },
 ];
 
 /**
