@@ -185,19 +185,24 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
 
   return (
     <div className="space-y-4">
-      {/* Calendar Top Control Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-3xl border border-gray-200 shadow-2xs">
+      {/* Calendar Top Control Header (Single-Row Balanced Layout) */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-white/90 p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-teal-500/10 text-teal-700 flex items-center justify-center border border-teal-500/20 shrink-0">
-            <CalendarIcon className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-xl bg-teal-500/10 text-teal-700 flex items-center justify-center border border-teal-500/20 shrink-0">
+            <CalendarIcon className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="text-base font-extrabold text-gray-900 tracking-tight">Master Execution Calendar</h2>
-            <p className="text-xs text-gray-500">Color-coded milestone schedule view with Subtree filtering and alert sync</p>
+            <h2 className="text-sm font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+              <span>Master Execution Calendar</span>
+              <span className="text-[10px] font-mono font-bold bg-teal-50 text-teal-700 px-2 py-0.5 rounded-md border border-teal-200">
+                {events.length} Events
+              </span>
+            </h2>
           </div>
         </div>
 
-        <div className="flex items-center flex-wrap gap-2.5">
+        {/* Unified Single-Row Control Action Bar */}
+        <div className="flex items-center flex-wrap gap-2">
           {/* SEARCHABLE PARENT TASK / MODEL SUBTREE SELECTOR */}
           <SearchableParentSelect
             nodes={nodes}
@@ -209,10 +214,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
           <button
             type="button"
             onClick={() => setShowAlertsOnCal(!showAlertsOnCal)}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-colors shadow-2xs ${
+            className={`h-9 px-3 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-all shadow-2xs ${
               showAlertsOnCal
-                ? 'bg-amber-50 text-amber-900 border-amber-300 ring-1 ring-amber-200'
-                : 'bg-white text-gray-500 border-gray-200'
+                ? 'bg-amber-50 text-amber-900 border-amber-300 ring-1 ring-amber-200/60'
+                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
             }`}
           >
             <Bell className="w-3.5 h-3.5 text-amber-600" />
@@ -223,10 +228,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
           <button
             type="button"
             onClick={() => setShowCompleted(!showCompleted)}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-colors shadow-2xs ${
+            className={`h-9 px-3 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-all shadow-2xs ${
               showCompleted
-                ? 'bg-emerald-50 text-emerald-900 border-emerald-300 ring-1 ring-emerald-200'
-                : 'bg-white text-gray-500 border-gray-200'
+                ? 'bg-emerald-50 text-emerald-900 border-emerald-300 ring-1 ring-emerald-200/60'
+                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
             }`}
           >
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
@@ -235,14 +240,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
         </div>
       </div>
 
-      {/* SLEEK GLASSMORPHISM HIERARCHY LEVEL MATRIX FILTER BAR */}
-      <div className="bg-slate-900 text-white px-4 py-3 rounded-2xl border border-slate-800 shadow-sm flex items-center flex-wrap justify-between gap-3 text-xs">
+      {/* MELLOW EYE-SOOTHING HIERARCHY LEVEL MATRIX FILTER BAR */}
+      <div className="bg-slate-200/60 backdrop-blur-xs px-3.5 py-2.5 rounded-2xl border border-slate-300/70 shadow-2xs flex items-center flex-wrap justify-between gap-2.5 text-xs">
         <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-teal-400 shrink-0" />
-          <span className="text-slate-300 font-extrabold uppercase tracking-wider text-[11px]">Filter Hierarchy Levels:</span>
+          <Filter className="w-3.5 h-3.5 text-teal-700 shrink-0" />
+          <span className="text-slate-700 font-extrabold uppercase tracking-wider text-[11px]">Filter Hierarchy Levels:</span>
         </div>
 
-        <div className="flex items-center flex-wrap gap-2">
+        <div className="flex items-center flex-wrap gap-1.5">
           {[
             { lvl: 1, label: 'L1 Dept' },
             { lvl: 2, label: 'L2 Season' },
@@ -256,10 +261,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
                 key={item.lvl}
                 type="button"
                 onClick={() => toggleLevel(item.lvl)}
-                className={`px-3 py-1 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 ${
+                className={`px-2.5 py-1 rounded-xl border text-xs transition-all flex items-center gap-1 font-bold ${
                   active
-                    ? 'bg-teal-500 text-slate-950 border-teal-400 shadow-2xs font-extrabold ring-1 ring-teal-400/40'
-                    : 'bg-slate-800/80 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-800'
+                    ? 'bg-teal-600 text-white border-teal-600 shadow-2xs font-extrabold ring-1 ring-teal-500/30'
+                    : 'bg-white/80 text-slate-600 border-slate-300/80 hover:bg-white hover:text-slate-900'
                 }`}
               >
                 <span className="text-[10px] font-extrabold">{active ? '✓' : '+'}</span>
@@ -271,7 +276,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
           <button
             type="button"
             onClick={() => setSelectedLevels(selectedLevels.length === 5 ? [] : [1, 2, 3, 4, 5])}
-            className="text-[11px] font-extrabold text-teal-400 hover:text-teal-300 underline ml-2 cursor-pointer transition-colors"
+            className="text-[11px] font-extrabold text-teal-800 hover:text-teal-950 underline ml-2 cursor-pointer transition-colors"
           >
             {selectedLevels.length === 5 ? 'Deselect All' : 'Select All'}
           </button>

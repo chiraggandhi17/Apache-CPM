@@ -32,7 +32,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
 
   const getSuggestedType = (): NodeType => {
     if (initialNode) return initialNode.type;
-    if (!parentType) return 'project';
+    if (!parentId) return 'department'; // Level 1 Department by default for root creation
     if (parentType === 'department') return 'season';
     if (parentType === 'season') return 'project';
     if (parentType === 'project') return 'task';
@@ -62,8 +62,8 @@ export const NodeForm: React.FC<NodeFormProps> = ({
   
   // Color Override Toggle (De-cluttered: only show swatch picker when checked)
   const [overrideColor, setOverrideColor] = useState<boolean>(Boolean(initialNode?.color));
-  const [color, setColor] = useState<string | null>(defaultAutoColor);
-  
+  const [color, setColor] = useState<string | null>(defaultAutoColor || (isRootOrProject ? getUnusedProjectColor(nodes) : null));
+
   // Date Mode State: 'single' (Fixed Date), 'offset' (Relative to Parent), 'range' (Start -> End Range)
   const [dateMode, setDateMode] = useState<'single' | 'offset' | 'range'>(
     initialNode?.start_date
@@ -193,7 +193,16 @@ export const NodeForm: React.FC<NodeFormProps> = ({
     let finalStartDate: string | null = null;
     let finalPlannedDate: string | null = null;
     let finalOffset: number | null = null;
-    let finalColor: string | null = overrideColor ? color : null;
+    
+    // Fix: Root nodes (!parentId) ALWAYS get saved with a vibrant color, subtasks inherit parent color!
+    let finalColor: string | null = null;
+    if (overrideColor && color) {
+      finalColor = color;
+    } else if (!parentId) {
+      finalColor = color || defaultAutoColor || getUnusedProjectColor(nodes);
+    } else {
+      finalColor = null;
+    }
 
     if (dateMode === 'offset' && parentId) {
       finalOffset = computedOffsetDays;
