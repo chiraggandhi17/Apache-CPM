@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNodes } from '../../context/NodeContext';
+import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../lib/supabase';
+import { themes, THEME_IDS, type ThemeId } from '../../lib/theme';
 import { playNotificationSound } from '../../utils/sound';
 import { 
   Settings, User, Bell, Volume2, Download, Upload, Trash2, 
-  RefreshCw, Check, AlertTriangle, X, Shield, Sparkles, Sliders
+  RefreshCw, Check, AlertTriangle, X, Shield, Sparkles, Sliders, Palette
 } from 'lucide-react';
 
 interface PersonalUserSettingsModalProps {
@@ -15,6 +17,7 @@ interface PersonalUserSettingsModalProps {
 export const PersonalUserSettingsModal: React.FC<PersonalUserSettingsModalProps> = ({ onClose }) => {
   const { profile, refreshProfile, tier } = useAuth();
   const { nodes, reminders, deleteNode } = useNodes();
+  const { themeId, setTheme } = useTheme();
 
   const [fullName, setFullName] = useState(profile?.full_name || '');
   const [soundEnabled, setSoundEnabled] = useState(() => {
@@ -115,8 +118,8 @@ export const PersonalUserSettingsModal: React.FC<PersonalUserSettingsModalProps>
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-      <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-gray-200 space-y-5 max-h-[90vh] overflow-y-auto text-xs">
+    <div className="fixed inset-0 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in" style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}>
+      <div className="rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto text-xs" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border)', border: '1px solid var(--border)' }}>
         
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-100 pb-3">
@@ -140,6 +143,62 @@ export const PersonalUserSettingsModal: React.FC<PersonalUserSettingsModalProps>
             <Check className="w-4 h-4 text-emerald-600" /> Settings saved successfully!
           </div>
         )}
+
+        {/* ──── THEME PICKER ──── */}
+        <div className="space-y-3">
+          <h3 className="font-bold uppercase tracking-wider text-[10px] flex items-center gap-1.5" style={{ color: 'var(--text-secondary)' }}>
+            <Palette className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} /> Appearance Theme
+          </h3>
+
+          <div className="grid grid-cols-3 gap-2.5">
+            {THEME_IDS.map((id) => {
+              const t = themes[id];
+              const isActive = themeId === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setTheme(id)}
+                  className={`p-3 rounded-xl border-2 transition-all text-left relative ${
+                    isActive
+                      ? 'ring-2 shadow-md'
+                      : 'hover:shadow-sm'
+                  }`}
+                  style={{
+                    borderColor: isActive ? t.accent : t.cardBorder,
+                    backgroundColor: t.canvasBg,
+                    ...(isActive ? { ringColor: t.accent } : {}),
+                  }}
+                >
+                  {/* Mini preview */}
+                  <div className="flex gap-1.5 mb-2.5 h-8 rounded-md overflow-hidden border" style={{ borderColor: t.cardBorder }}>
+                    {/* Sidebar strip */}
+                    <div className="w-5 shrink-0" style={{ backgroundColor: t.sidebarBg }}>
+                      <div className="w-2.5 h-1 mt-1.5 mx-auto rounded-sm" style={{ backgroundColor: t.sidebarActive }} />
+                      <div className="w-2.5 h-0.5 mt-1 mx-auto rounded-sm" style={{ backgroundColor: t.sidebarTextMuted }} />
+                      <div className="w-2.5 h-0.5 mt-0.5 mx-auto rounded-sm" style={{ backgroundColor: t.sidebarTextMuted }} />
+                    </div>
+                    {/* Content area */}
+                    <div className="flex-1 p-1" style={{ backgroundColor: t.canvasBg }}>
+                      <div className="w-full h-1.5 rounded-sm mb-0.5" style={{ backgroundColor: t.border }} />
+                      <div className="w-3/4 h-1 rounded-sm" style={{ backgroundColor: t.border }} />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold" style={{ color: t.textPrimary }}>{t.emoji} {t.label}</span>
+                  </div>
+
+                  {isActive && (
+                    <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full flex items-center justify-center" style={{ backgroundColor: t.accent }}>
+                      <Check className="w-2.5 h-2.5 text-white" />
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         {/* Profile Settings Form */}
         <form onSubmit={handleSaveProfile} className="space-y-4">

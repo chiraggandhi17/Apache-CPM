@@ -52,7 +52,7 @@ export const TodayView: React.FC<TodayViewProps> = ({ onSelectNode }) => {
       <div
         key={item.id}
         onClick={() => fullNode && onSelectNode(fullNode)}
-        className="group relative flex flex-col sm:flex-row items-start sm:items-center justify-between p-3.5 bg-white rounded-xl border border-gray-200/80 shadow-2xs hover:shadow-xs hover:border-gray-300 transition-all cursor-pointer gap-2.5"
+        className="group relative flex flex-col sm:flex-row items-start sm:items-center justify-between p-3.5 bg-[var(--card-bg)] rounded-xl border border-[var(--border)] shadow-2xs hover:shadow-xs hover:border-[var(--input-border)] transition-all cursor-pointer gap-2.5"
       >
         <div className="flex items-center gap-3 min-w-0 w-full sm:w-auto">
           <span
@@ -62,13 +62,13 @@ export const TodayView: React.FC<TodayViewProps> = ({ onSelectNode }) => {
 
           <div className="min-w-0 space-y-0.5 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-semibold text-xs md:text-sm text-gray-900 group-hover:text-teal-700 transition-colors truncate">
+              <span className="font-semibold text-xs md:text-sm text-[var(--text-primary)] group-hover:text-[var(--accent)] transition-colors truncate">
                 {item.title}
               </span>
               <CriticalFlag isCritical={item.is_critical} size="sm" />
             </div>
 
-            <p className="text-[11px] text-gray-500 flex items-center gap-1 truncate">
+            <p className="text-[11px] text-[var(--text-secondary)] flex items-center gap-1 truncate">
               <span>{item.project_title || 'Cadence Project'}</span>
               <span>•</span>
               <span className="font-mono">{formatLocalDate(item.planned_date, 'MMM d, yyyy')}</span>
@@ -76,12 +76,12 @@ export const TodayView: React.FC<TodayViewProps> = ({ onSelectNode }) => {
           </div>
         </div>
 
-        <div className="flex items-center justify-between sm:justify-end gap-2.5 shrink-0 w-full sm:w-auto pt-1 sm:pt-0 border-t sm:border-t-0 border-gray-100">
+        <div className="flex items-center justify-between sm:justify-end gap-2.5 shrink-0 w-full sm:w-auto pt-1 sm:pt-0 border-t sm:border-t-0 border-[var(--border-subtle)]">
           <span
             className={`text-[11px] font-mono font-semibold px-2.5 py-0.5 rounded-md border ${
               item.is_overdue
                 ? 'bg-rose-50 text-rose-700 border-rose-200'
-                : 'bg-teal-50 text-teal-800 border-teal-200'
+                : 'bg-[var(--accent-subtle)] text-[var(--accent)] border-[var(--accent)]/20'
             }`}
           >
             {dateBadge.label}
@@ -89,7 +89,7 @@ export const TodayView: React.FC<TodayViewProps> = ({ onSelectNode }) => {
 
           <StatusBadge status={item.status} onChange={s => updateStatus(item.id, s)} size="sm" />
 
-          <ArrowUpRight className="w-4 h-4 text-gray-300 group-hover:text-teal-600 transition-colors hidden sm:block" />
+          <ArrowUpRight className="w-4 h-4 text-[var(--text-muted)] group-hover:text-[var(--accent)] transition-colors hidden sm:block" />
         </div>
       </div>
     );
@@ -98,10 +98,10 @@ export const TodayView: React.FC<TodayViewProps> = ({ onSelectNode }) => {
   return (
     <div className="space-y-6">
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-teal-900 to-teal-800 text-white p-6 rounded-2xl shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-[var(--header-gradient-from)] to-[var(--header-gradient-to)] text-white p-6 rounded-2xl shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-teal-800/80 text-teal-200 border border-teal-700/50 mb-2">
-            <Sparkles className="w-3 h-3 text-teal-300" /> Today's Action Feed
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[var(--sidebar-hover)] text-teal-200 border border-[var(--sidebar-border)] mb-2">
+            <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Today's Action Feed
           </div>
           <h1 className="text-xl md:text-2xl font-bold tracking-tight">Footwear Critical Path</h1>
           <p className="text-xs md:text-sm text-teal-100/90 mt-1 max-w-xl">
@@ -116,22 +116,22 @@ export const TodayView: React.FC<TodayViewProps> = ({ onSelectNode }) => {
       </div>
 
       {/* Dashboard Global Deep Search Bar */}
-      <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-2xs flex items-center gap-3">
+      <div className="bg-[var(--card-bg)] p-3.5 rounded-2xl border border-[var(--border)] shadow-2xs flex items-center gap-3">
         <div className="relative flex-1">
           <input
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search subtasks, vendors (e.g. Supplier X), assignees, or months (e.g. October)..."
-            className="w-full text-xs pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-teal-500 focus:bg-white"
+            className="w-full text-xs pl-9 pr-3 py-2 bg-[var(--input-bg)] border border-[var(--input-border)] rounded-xl outline-none focus:border-[var(--input-focus-border)] focus:bg-[var(--card-bg)]"
           />
-          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+          <Search className="w-4 h-4 text-[var(--text-muted)] absolute left-3 top-2.5" />
         </div>
         {searchQuery && (
           <button
             type="button"
             onClick={() => setSearchQuery('')}
-            className="text-xs text-teal-600 hover:underline font-semibold"
+            className="text-xs text-[var(--accent)] hover:underline font-semibold"
           >
             Clear Search
           </button>
@@ -139,10 +139,10 @@ export const TodayView: React.FC<TodayViewProps> = ({ onSelectNode }) => {
       </div>
 
       {totalActionItems === 0 ? (
-        <div className="bg-white rounded-2xl p-12 text-center border border-gray-200 shadow-2xs">
+        <div className="bg-[var(--card-bg)] rounded-2xl p-12 text-center border border-[var(--border)] shadow-2xs">
           <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-3" />
-          <h3 className="text-base font-bold text-gray-900">All caught up!</h3>
-          <p className="text-xs text-gray-500 max-w-sm mx-auto mt-1">
+          <h3 className="text-base font-bold text-[var(--text-primary)]">All caught up!</h3>
+          <p className="text-xs text-[var(--text-secondary)] max-w-sm mx-auto mt-1">
             {searchQuery ? 'No matching action items found for your search query.' : 'No overdue items or deadlines due this week. Production is on track. 🎉'}
           </p>
         </div>
@@ -173,8 +173,8 @@ export const TodayView: React.FC<TodayViewProps> = ({ onSelectNode }) => {
           {/* Section 3: Coming Up This Week */}
           {upcoming.length > 0 && (
             <div className="space-y-2">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-teal-900 flex items-center gap-1.5 px-1">
-                <Clock className="w-4 h-4 text-teal-600" />
+              <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-1.5 px-1">
+                <Clock className="w-4 h-4 text-[var(--accent)]" />
                 Coming Up This Week ({upcoming.length})
               </h2>
               <div className="space-y-2">{upcoming.map(renderTodayRow)}</div>

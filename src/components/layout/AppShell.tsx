@@ -126,9 +126,9 @@ export const AppShellContent: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row text-gray-900 antialiased relative">
+    <div className="min-h-screen flex flex-col md:flex-row antialiased relative" style={{ backgroundColor: 'var(--canvas-bg)', color: 'var(--text-primary)' }}>
       {/* STICKY TOP MOBILE BAR (Only shown on small screens md:hidden) */}
-      <header className="md:hidden sticky top-0 z-40 bg-slate-900 text-white border-b border-slate-800 px-4 py-3 flex items-center justify-between shadow-md">
+      <header className="md:hidden sticky top-0 z-40 px-4 py-3 flex items-center justify-between shadow-md" style={{ backgroundColor: 'var(--sidebar-bg)', color: 'var(--sidebar-text)', borderBottom: '1px solid var(--sidebar-border)' }}>
         <div className="flex items-center gap-2.5 min-w-0">
           {logoUrl && !isSuperAdmin ? (
             <img src={logoUrl} alt="Logo" className="w-7 h-7 object-contain rounded-lg bg-white p-0.5 shrink-0" />
@@ -260,283 +260,186 @@ export const AppShellContent: React.FC = () => {
       )}
 
       {/* Sidebar Navigation (Hidden on small mobile screens md:flex) */}
-      <aside className="hidden md:flex w-64 bg-slate-900 text-slate-100 flex-col justify-between shrink-0 p-4 border-r border-slate-800">
-        <div>
-          {/* Logo Brand Header (Co-Branded) */}
-          <div className="flex items-center gap-3 px-2 py-3 mb-4 border-b border-slate-800 pb-4">
+      <aside className="hidden md:flex w-64 flex-col justify-between shrink-0 p-3 border-r transition-colors" style={{ backgroundColor: 'var(--sidebar-bg)', borderColor: 'var(--sidebar-border)', color: 'var(--sidebar-text)' }}>
+        <div className="space-y-1">
+          {/* Logo Brand Header */}
+          <div className="flex items-center gap-3 px-2 py-3 mb-3 border-b pb-3" style={{ borderColor: 'var(--sidebar-border)' }}>
             {logoUrl && !isSuperAdmin ? (
-              <img src={logoUrl} alt="Company Logo" className="w-9 h-9 object-contain rounded-xl bg-white p-1 shrink-0" />
+              <img src={logoUrl} alt="Company Logo" className="w-8 h-8 object-contain rounded-lg bg-white/10 p-0.5 shrink-0" />
             ) : (
               <div
-                className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-950 font-extrabold text-xl shadow-lg shrink-0"
-                style={{ backgroundColor: brandColor }}
+                className="w-8 h-8 rounded-lg flex items-center justify-center font-extrabold text-lg shrink-0"
+                style={{ backgroundColor: 'var(--sidebar-active)', color: 'var(--sidebar-active-text)' }}
               >
-                <Footprints className="w-5 h-5 text-slate-950" />
+                <Footprints className="w-4 h-4" />
               </div>
             )}
             <div className="min-w-0">
-              <span className="font-extrabold text-sm tracking-tight block text-white truncate" title={brandTitle}>
+              <span className="font-bold text-sm tracking-tight block truncate" style={{ color: 'var(--sidebar-text)' }} title={brandTitle}>
                 {brandTitle}
               </span>
-              <span className="text-[9px] text-slate-400 font-medium block truncate max-w-[150px]" title={brandTagline}>
+              <span className="text-[9px] font-medium block truncate max-w-[150px]" style={{ color: 'var(--sidebar-text-muted)' }} title={brandTagline}>
                 {brandTagline}
               </span>
             </div>
           </div>
 
-          {/* Persistent Platform Admin Console Switcher for Super Admins Only */}
+          {/* Super Admin Console Switcher */}
           {isSuperAdmin && (
             <button
               type="button"
               onClick={() => setActiveTab('super_admin')}
-              className={`w-full mb-3 px-3 py-2.5 rounded-xl border text-xs font-extrabold flex items-center justify-between transition-all shadow-sm ${
-                activeTab.startsWith('super')
-                  ? 'bg-teal-500 text-slate-950 border-teal-400'
-                  : 'bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border-teal-500/40'
+              className={`w-full mb-2 px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
+                activeTab.startsWith('super') ? 'shadow-sm' : 'opacity-80 hover:opacity-100'
               }`}
+              style={activeTab.startsWith('super')
+                ? { backgroundColor: 'var(--sidebar-active)', color: 'var(--sidebar-active-text)' }
+                : { backgroundColor: 'var(--sidebar-hover)', color: 'var(--sidebar-text)' }
+              }
             >
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-teal-300" />
-                <span>Platform Admin Console</span>
-              </div>
-              <span className="text-[10px] bg-slate-950 text-teal-300 px-1.5 py-0.5 rounded font-mono font-black border border-teal-500/30">
-                SaaS Admin
-              </span>
+              <ShieldCheck className="w-4 h-4" />
+              <span>Platform Admin</span>
             </button>
           )}
 
-          {/* Active Workspace Tier Selector Button */}
-          {!isSuperAdmin && (
-            <button
-              type="button"
-              onClick={() => setShowTierPricingModal(true)}
-              className={`w-full mb-4 px-3 py-2 rounded-xl border text-[11px] font-bold flex items-center justify-between transition-all hover:brightness-110 shadow-2xs ${tierLabels[tier].color}`}
-            >
-              <div className="flex items-center gap-1.5">
-                <Zap className="w-3.5 h-3.5" />
-                <span>{tierLabels[tier].name}</span>
-              </div>
-              <span className="text-[10px] underline text-slate-400">Plans</span>
-            </button>
-          )}
-
-          {/* DEDICATED SUPER ADMIN NAVIGATION */}
+          {/* â”€â”€â”€â”€ NAVIGATION SECTION â”€â”€â”€â”€ */}
           {isSuperAdmin ? (
-            <nav className="space-y-1">
-              <div className="text-[10px] uppercase tracking-wider font-extrabold text-slate-500 px-3 py-1 mb-1">
+            <nav className="space-y-0.5">
+              <div className="text-[10px] uppercase tracking-widest font-bold px-3 pt-3 pb-1.5" style={{ color: 'var(--sidebar-section-label)' }}>
                 Platform Console
               </div>
 
-              <button
-                type="button"
-                onClick={() => setActiveTab('super_admin')}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
-                  activeTab === 'super_admin'
-                    ? 'bg-teal-500 text-slate-950 shadow-sm font-bold'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Building2 className="w-4 h-4" />
-                  <span>SaaS Organizations</span>
-                </div>
-                <span className="text-[10px] bg-slate-800 text-teal-300 px-1.5 py-0.5 rounded font-mono font-bold">
-                  Clients
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('super_observability')}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
-                  activeTab === 'super_observability'
-                    ? 'bg-teal-500 text-slate-950 shadow-sm font-bold'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Activity className="w-4 h-4" />
-                  <span>Cloud & Quotas</span>
-                </div>
-                <span className="text-[10px] bg-slate-800 text-slate-400 font-mono">
-                  Metrics
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('super_errors')}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
-                  activeTab === 'super_errors'
-                    ? 'bg-teal-500 text-slate-950 shadow-sm font-bold'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <AlertTriangle className="w-4 h-4" />
-                  <span>System Error Logs</span>
-                </div>
-                <span className="text-[10px] bg-slate-800 text-slate-400 font-mono">
-                  Audit
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('super_backups')}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
-                  activeTab === 'super_backups'
-                    ? 'bg-teal-500 text-slate-950 shadow-sm font-bold'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Download className="w-4 h-4" />
-                  <span>Global DB Backups</span>
-                </div>
-                <span className="text-[10px] bg-slate-800 text-slate-400 font-mono">
-                  JSON
-                </span>
-              </button>
+              {[
+                { tab: 'super_admin', icon: Building2, label: 'Organizations' },
+                { tab: 'super_observability', icon: Activity, label: 'Cloud & Quotas' },
+                { tab: 'super_errors', icon: AlertTriangle, label: 'Error Logs' },
+                { tab: 'super_backups', icon: Download, label: 'DB Backups' },
+              ].map(item => (
+                <button
+                  key={item.tab}
+                  type="button"
+                  onClick={() => setActiveTab(item.tab as typeof activeTab)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all"
+                  style={activeTab === item.tab
+                    ? { backgroundColor: 'var(--sidebar-active)', color: 'var(--sidebar-active-text)' }
+                    : { color: 'var(--sidebar-text)' }
+                  }
+                  onMouseEnter={e => { if (activeTab !== item.tab) (e.currentTarget.style.backgroundColor = 'var(--sidebar-hover)'); }}
+                  onMouseLeave={e => { if (activeTab !== item.tab) (e.currentTarget.style.backgroundColor = 'transparent'); }}
+                >
+                  <item.icon className="w-4 h-4 shrink-0" />
+                  <span>{item.label}</span>
+                </button>
+              ))}
             </nav>
           ) : isCompanyOrgAdmin ? (
-            /* DEDICATED COMPANY ORG ADMIN NAVIGATION */
-            <nav className="space-y-1">
-              <div className="text-[10px] uppercase tracking-wider font-extrabold text-slate-500 px-3 py-1 mb-1">
-                Company Admin Center
+            <nav className="space-y-0.5">
+              <div className="text-[10px] uppercase tracking-widest font-bold px-3 pt-3 pb-1.5" style={{ color: 'var(--sidebar-section-label)' }}>
+                Company Admin
               </div>
 
+              {[
+                { tab: 'org_admin', icon: Users, label: 'Employee Directory', badge: pendingApprovalsCount > 0 ? `${pendingApprovalsCount} New` : null },
+                { tab: 'org_teams', icon: FolderTree, label: 'Org Structure' },
+                { tab: 'org_backup', icon: HardDrive, label: 'Data Export' },
+              ].map(item => (
+                <button
+                  key={item.tab}
+                  type="button"
+                  onClick={() => setActiveTab(item.tab as typeof activeTab)}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all"
+                  style={activeTab === item.tab
+                    ? { backgroundColor: 'var(--sidebar-active)', color: 'var(--sidebar-active-text)' }
+                    : { color: 'var(--sidebar-text)' }
+                  }
+                  onMouseEnter={e => { if (activeTab !== item.tab) (e.currentTarget.style.backgroundColor = 'var(--sidebar-hover)'); }}
+                  onMouseLeave={e => { if (activeTab !== item.tab) (e.currentTarget.style.backgroundColor = 'transparent'); }}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <item.icon className="w-4 h-4 shrink-0" />
+                    <span>{item.label}</span>
+                  </div>
+                  {'badge' in item && item.badge && (
+                    <span className="text-[9px] bg-amber-400 text-amber-950 px-1.5 py-0.5 rounded-md font-mono font-bold animate-pulse">
+                      {item.badge}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </nav>
+          ) : (
+            /* â”€â”€â”€â”€ OPERATIONAL CPM USER NAVIGATION â”€â”€â”€â”€ */
+            <nav className="space-y-0.5">
+              <div className="text-[10px] uppercase tracking-widest font-bold px-3 pt-2 pb-1.5" style={{ color: 'var(--sidebar-section-label)' }}>
+                Navigation
+              </div>
+
+              {[
+                { tab: 'today', icon: Home, label: 'Today' },
+                { tab: 'browse', icon: Layers, label: 'Hierarchy' },
+                { tab: 'calendar', icon: Calendar, label: 'Calendar' },
+              ].map(item => (
+                <button
+                  key={item.tab}
+                  type="button"
+                  onClick={() => setActiveTab(item.tab as typeof activeTab)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all"
+                  style={activeTab === item.tab
+                    ? { backgroundColor: 'var(--sidebar-active)', color: 'var(--sidebar-active-text)' }
+                    : { color: 'var(--sidebar-text)' }
+                  }
+                  onMouseEnter={e => { if (activeTab !== item.tab) (e.currentTarget.style.backgroundColor = 'var(--sidebar-hover)'); }}
+                  onMouseLeave={e => { if (activeTab !== item.tab) (e.currentTarget.style.backgroundColor = 'transparent'); }}
+                >
+                  <item.icon className="w-4 h-4 shrink-0" />
+                  <span>{item.label}</span>
+                </button>
+              ))}
+
+              {/* â”€â”€â”€â”€ TOOLS SECTION â”€â”€â”€â”€ */}
+              <div className="text-[10px] uppercase tracking-widest font-bold px-3 pt-4 pb-1.5" style={{ color: 'var(--sidebar-section-label)' }}>
+                Tools
+              </div>
+
+              {/* Manage Alerts */}
               <button
                 type="button"
-                onClick={() => setActiveTab('org_admin')}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
-                  activeTab === 'org_admin'
-                    ? 'text-slate-950 shadow-sm font-bold'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-                style={activeTab === 'org_admin' ? { backgroundColor: brandColor } : {}}
+                onClick={() => setShowManageAlerts(true)}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all"
+                style={{ color: 'var(--sidebar-text)' }}
+                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--sidebar-hover)'; }}
+                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; }}
               >
                 <div className="flex items-center gap-2.5">
-                  <Users className="w-4 h-4" />
-                  <span>Employee Directory</span>
+                  <div className="relative">
+                    <Bell className={`w-4 h-4 shrink-0 ${triggeredAlertsCount > 0 ? 'text-amber-400' : ''}`} style={triggeredAlertsCount === 0 ? { color: 'var(--sidebar-text-muted)' } : {}} />
+                    {triggeredAlertsCount > 0 && (
+                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full" />
+                    )}
+                  </div>
+                  <span>Alerts</span>
                 </div>
-                {pendingApprovalsCount > 0 ? (
-                  <span className="text-[9px] bg-amber-400 text-slate-950 px-2 py-0.5 rounded-full font-mono font-extrabold animate-bounce">
-                    {pendingApprovalsCount} New
-                  </span>
-                ) : (
-                  <span className="text-[10px] bg-slate-800 text-slate-400 font-mono">
-                    Staff
+                {totalScheduledAlertsCount > 0 && (
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md" style={{ backgroundColor: 'var(--sidebar-hover)', color: 'var(--sidebar-text-muted)' }}>
+                    {totalScheduledAlertsCount}
                   </span>
                 )}
               </button>
 
+              {/* Export Schedule */}
               <button
                 type="button"
-                onClick={() => setActiveTab('org_teams')}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
-                  activeTab === 'org_teams'
-                    ? 'text-slate-950 shadow-sm font-bold'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-                style={activeTab === 'org_teams' ? { backgroundColor: brandColor } : {}}
+                onClick={() => setShowExportModal(true)}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all"
+                style={{ color: 'var(--sidebar-text)' }}
+                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--sidebar-hover)'; }}
+                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; }}
               >
-                <div className="flex items-center gap-2.5">
-                  <FolderTree className="w-4 h-4" />
-                  <span>Company Org Structure</span>
-                </div>
-                <span className="text-[10px] bg-slate-800 text-slate-400 font-mono">
-                  Teams
-                </span>
+                <FileSpreadsheet className="w-4 h-4 shrink-0" style={{ color: 'var(--sidebar-text-muted)' }} />
+                <span>Export Excel</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => setActiveTab('org_backup')}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
-                  activeTab === 'org_backup'
-                    ? 'text-slate-950 shadow-sm font-bold'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-                style={activeTab === 'org_backup' ? { backgroundColor: brandColor } : {}}
-              >
-                <div className="flex items-center gap-2.5">
-                  <HardDrive className="w-4 h-4" />
-                  <span>Company Data Export</span>
-                </div>
-                <span className="text-[10px] bg-slate-800 text-slate-400 font-mono">
-                  Backup
-                </span>
-              </button>
-            </nav>
-          ) : (
-            /* OPERATIONAL CPM USER NAVIGATION (Managers & Personal Users) */
-            <nav className="space-y-1">
-              <button
-                type="button"
-                onClick={() => setActiveTab('today')}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
-                  activeTab === 'today'
-                    ? 'text-slate-950 shadow-sm font-bold'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-                style={activeTab === 'today' ? { backgroundColor: brandColor } : {}}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Home className="w-4 h-4" />
-                  <span>Today / Action Feed</span>
-                </div>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold ${
-                  activeTab === 'today' ? 'bg-slate-950 text-white' : 'bg-slate-800 text-slate-400'
-                }`}>
-                  Home
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('browse')}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
-                  activeTab === 'browse'
-                    ? 'text-slate-950 shadow-sm font-bold'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-                style={activeTab === 'browse' ? { backgroundColor: brandColor } : {}}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Layers className="w-4 h-4" />
-                  <span>Browse Hierarchy</span>
-                </div>
-                <span className="text-[10px] text-slate-400 font-mono">Tree</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('calendar')}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
-                  activeTab === 'calendar'
-                    ? 'text-slate-950 shadow-sm font-bold'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-                style={activeTab === 'calendar' ? { backgroundColor: brandColor } : {}}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Calendar className="w-4 h-4" />
-                  <span>Master Calendar</span>
-                </div>
-                <span className="text-[10px] text-slate-400 font-mono">Grid</span>
-              </button>
-            </nav>
-          )}
-        </div>
-
-        {/* Global Controls & Sidebar Profile Footer */}
-        <div className="pt-4 border-t border-slate-800/80 space-y-2">
-          
-          {/* Operational Tools (Only shown for non-Super Admin operational users) */}
-          {!isSuperAdmin && !isCompanyOrgAdmin && (
-            <>
-              {/* Google Cal Sync Launcher (Tier 2 & 3 Feature) */}
+              {/* Google Cal Sync */}
               <button
                 type="button"
                 onClick={() => {
@@ -546,85 +449,77 @@ export const AppShellContent: React.FC = () => {
                     setShowGoogleCalSync(true);
                   }
                 }}
-                className="w-full bg-slate-850 hover:bg-slate-800 border border-slate-750 p-2.5 rounded-xl flex items-center justify-between text-xs text-slate-200 transition-colors group shadow-2xs"
-              >
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4" style={{ color: brandColor }} />
-                  <span className="font-semibold text-[11px]">Google Cal Sync</span>
-                </div>
-                {tier < 2 ? (
-                  <span className="text-[9px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded font-mono font-bold">PRO</span>
-                ) : (
-                  <Sparkles className="w-3.5 h-3.5" style={{ color: brandColor }} />
-                )}
-              </button>
-
-              {/* Manage Alerts Pill */}
-              <button
-                type="button"
-                onClick={() => setShowManageAlerts(true)}
-                className="w-full bg-slate-800/90 hover:bg-slate-800 border border-slate-700/80 p-2.5 rounded-xl flex items-center justify-between text-xs text-slate-200 transition-colors group shadow-2xs"
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all"
+                style={{ color: 'var(--sidebar-text)' }}
+                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--sidebar-hover)'; }}
+                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; }}
               >
                 <div className="flex items-center gap-2.5">
-                  <div className="relative">
-                    <Bell className={`w-4 h-4 ${triggeredAlertsCount > 0 ? 'text-amber-400 animate-bounce' : 'text-slate-400'}`} />
-                    {triggeredAlertsCount > 0 && (
-                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full" />
-                    )}
-                  </div>
-                  <div className="text-left">
-                    <span className="font-semibold block text-[11px] leading-tight">Manage Alerts</span>
-                    <span className="text-[9px] text-slate-400 block font-mono">
-                      {totalScheduledAlertsCount} scheduled
-                    </span>
-                  </div>
+                  <Calendar className="w-4 h-4 shrink-0" style={{ color: 'var(--sidebar-text-muted)' }} />
+                  <span>Google Cal</span>
                 </div>
-                <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-slate-300 transition-colors" />
+                {tier < 2 && (
+                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-md" style={{ backgroundColor: 'var(--accent-subtle)', color: 'var(--accent)' }}>
+                    PRO
+                  </span>
+                )}
               </button>
+            </nav>
+          )}
+        </div>
 
-              {/* Export to Excel Button */}
-              <button
-                type="button"
-                onClick={() => setShowExportModal(true)}
-                className="w-full bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-500/30 p-2.5 rounded-xl flex items-center justify-between text-xs text-emerald-200 transition-colors group shadow-2xs"
-              >
-                <div className="flex items-center gap-2">
-                  <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-                  <span className="font-bold text-[11px]">Export Schedule (Excel)</span>
-                </div>
-                <Download className="w-3.5 h-3.5 text-emerald-400 group-hover:text-white transition-colors" />
-              </button>
-
-              {/* Personal Workspace Settings Button */}
-              <button
-                type="button"
-                onClick={() => setShowSettingsModal(true)}
-                className="w-full bg-slate-850 hover:bg-slate-800 border border-slate-750 p-2.5 rounded-xl flex items-center justify-between text-xs text-slate-200 transition-colors group shadow-2xs"
-              >
-                <div className="flex items-center gap-2">
-                  <Settings className="w-4 h-4 text-teal-400" />
-                  <span className="font-semibold text-[11px]">Workspace Settings</span>
-                </div>
-                <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-slate-300 transition-colors" />
-              </button>
-            </>
+        {/* â”€â”€â”€â”€ BOTTOM PINNED: Settings + Profile â”€â”€â”€â”€ */}
+        <div className="space-y-2 pt-3 border-t" style={{ borderColor: 'var(--sidebar-border)' }}>
+          
+          {/* Settings Button (operational users) */}
+          {!isSuperAdmin && !isCompanyOrgAdmin && (
+            <button
+              type="button"
+              onClick={() => setShowSettingsModal(true)}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all"
+              style={{ color: 'var(--sidebar-text)' }}
+              onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--sidebar-hover)'; }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+            >
+              <div className="flex items-center gap-2.5">
+                <Settings className="w-4 h-4 shrink-0" style={{ color: 'var(--sidebar-text-muted)' }} />
+                <span>Settings</span>
+              </div>
+              <ChevronRight className="w-3.5 h-3.5" style={{ color: 'var(--sidebar-text-muted)' }} />
+            </button>
           )}
 
-          {/* Bottom-left Sidebar User Footer */}
-          <div className="bg-slate-850 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2 text-xs">
+          {/* Subtle Tier Indicator (tucked at bottom â€” not prominent) */}
+          {!isSuperAdmin && (
+            <button
+              type="button"
+              onClick={() => setShowTierPricingModal(true)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-medium transition-all"
+              style={{ color: 'var(--sidebar-text-muted)' }}
+              onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--sidebar-hover)'; }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+            >
+              <Zap className="w-3 h-3 shrink-0" style={{ color: 'var(--accent)' }} />
+              <span>{tierLabels[tier].name}</span>
+              <span className="ml-auto text-[9px] underline" style={{ color: 'var(--sidebar-text-muted)' }}>Plans</span>
+            </button>
+          )}
+
+          {/* User Profile Footer */}
+          <div className="p-2.5 rounded-lg flex items-center justify-between gap-2 text-xs" style={{ backgroundColor: 'var(--sidebar-hover)', borderColor: 'var(--sidebar-border)' }}>
             <div className="min-w-0 flex items-center gap-2">
               <div
-                className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 border border-white/20 text-slate-950"
-                style={{ backgroundColor: brandColor }}
+                className="w-7 h-7 rounded-md flex items-center justify-center font-bold text-xs shrink-0"
+                style={{ backgroundColor: 'var(--sidebar-active)', color: 'var(--sidebar-active-text)' }}
               >
                 <User className="w-3.5 h-3.5" />
               </div>
               <div className="truncate">
-                <span className="text-slate-200 font-semibold block truncate text-[11px]">
+                <span className="font-semibold block truncate text-[11px]" style={{ color: 'var(--sidebar-text)' }}>
                   {displayEmail}
                 </span>
-                <span className="text-[9px] font-mono uppercase tracking-wider block truncate" style={{ color: brandColor }}>
-                  {isSuperAdmin ? '👑 Super Admin' : isIndividual ? 'Personal User' : `${displayRole} ${team ? `• ${team.name}` : ''}`}
+                <span className="text-[9px] font-mono uppercase tracking-wider block truncate" style={{ color: 'var(--sidebar-text-muted)' }}>
+                  {isSuperAdmin ? 'ðŸ‘‘ Super Admin' : isIndividual ? 'Personal User' : `${displayRole} ${team ? `â€¢ ${team.name}` : ''}`}
                 </span>
               </div>
             </div>
@@ -632,10 +527,10 @@ export const AppShellContent: React.FC = () => {
             <button
               type="button"
               onClick={handleSignOut}
-              title="Sign Out of Cadence"
-              className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/20 rounded-lg transition-colors shrink-0 flex items-center gap-1 text-[11px] font-bold"
+              title="Sign Out"
+              className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/20 rounded-md transition-colors shrink-0"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
@@ -661,7 +556,7 @@ export const AppShellContent: React.FC = () => {
       </main>
 
       {/* FIXED MOBILE BOTTOM QUICK TAB BAR (Only shown on small screens md:hidden) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 flex items-center justify-around z-40 px-2 shadow-xl">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 backdrop-blur-md flex items-center justify-around z-40 px-2 shadow-xl" style={{ backgroundColor: 'var(--sidebar-bg)', borderTop: '1px solid var(--sidebar-border)' }}>
         <button
           type="button"
           onClick={() => setActiveTab('today')}

@@ -87,9 +87,9 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
       <div
         onClick={() => onSelectNode(node)}
         style={{ paddingLeft: `${node.depth * 20 + 12}px` }}
-        className={`group relative flex items-center justify-between py-2.5 pr-3 rounded-xl border border-gray-200/80 bg-white hover:bg-gray-50/80 transition-all cursor-pointer shadow-2xs ${
+        className={`group relative flex items-center justify-between py-2.5 pr-3 rounded-xl border border-[var(--border)] bg-[var(--card-bg)] hover:bg-[var(--canvas-bg)] transition-all cursor-pointer shadow-2xs ${
           node.is_overdue ? 'ring-1 ring-rose-300 border-rose-200' : ''
-        } ${isCompleted ? 'opacity-70 bg-gray-50/60' : ''}`}
+        } ${isCompleted ? 'opacity-70 bg-[var(--canvas-bg)]' : ''}`}
       >
         <span
           className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full shadow-2xs"
@@ -105,7 +105,7 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
                 e.stopPropagation();
                 setIsExpanded(!isExpanded);
               }}
-              className="p-1 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-200/60 transition-colors"
+              className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border-subtle)] transition-colors"
             >
               {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
             </button>
@@ -122,14 +122,14 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
               className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0 ${
                 isCompleted
                   ? 'bg-emerald-600 border-emerald-600 text-white'
-                  : 'border-gray-300 hover:border-teal-500 bg-white'
+                  : 'border-[var(--input-border)] hover:border-[var(--accent)] bg-[var(--card-bg)]'
               }`}
             >
               {isCompleted && <Check className="w-3 h-3 stroke-[3]" />}
             </button>
           ) : (
             <span className="w-4 h-4 flex items-center justify-center shrink-0" title={accessInfo.tooltipText}>
-              <Lock className="w-3.5 h-3.5 text-gray-400" />
+              <Lock className="w-3.5 h-3.5 text-[var(--text-muted)]" />
             </span>
           )}
 
@@ -140,7 +140,7 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
 
           {/* Title */}
           <span className={`font-semibold text-xs md:text-sm truncate ${
-            isCompleted ? 'line-through text-gray-400 font-normal' : 'text-gray-900'
+            isCompleted ? 'line-through text-[var(--text-muted)] font-normal' : 'text-[var(--text-primary)]'
           }`}>
             {node.title}
           </span>
@@ -171,10 +171,10 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
 
           {/* Progress bar pill */}
           {percentDone !== null && (
-            <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 bg-gray-100 rounded-full text-[10px] font-mono text-gray-600 border border-gray-200">
-              <div className="w-12 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+            <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 bg-[var(--canvas-bg)] rounded-full text-[10px] font-mono text-[var(--text-secondary)] border border-[var(--border)]">
+              <div className="w-12 h-1.5 bg-[var(--border-subtle)] rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-teal-500 rounded-full"
+                  className="h-full bg-[var(--accent)] rounded-full"
                   style={{ width: `${percentDone}%` }}
                 />
               </div>
@@ -192,7 +192,7 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
                   ? 'bg-rose-50 text-rose-700 border-rose-200 font-bold'
                   : dateBadge.isToday && !isCompleted
                   ? 'bg-amber-50 text-amber-800 border-amber-200 font-bold'
-                  : 'bg-gray-50 text-gray-600 border-gray-200'
+                  : 'bg-[var(--badge-bg)] text-[var(--text-secondary)] border-[var(--border)]'
               }`}
             >
               {formatLocalDate(node.planned_date, 'MMM d')}
@@ -221,7 +221,7 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
                   setShowAddChild(true);
                 }}
                 title={`Add sub-task under "${node.title}"`}
-                className="p-1 text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-lg border border-teal-200 text-[11px] font-bold flex items-center gap-0.5 shadow-2xs"
+                className="p-1 text-[var(--accent)] bg-[var(--accent-subtle)] hover:bg-[var(--accent-subtle)] rounded-lg border border-[var(--accent)]/20 text-[11px] font-bold flex items-center gap-0.5 shadow-2xs"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Sub-task</span>
@@ -234,7 +234,7 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
                   setIsEditing(true);
                 }}
                 title="Edit Milestone Details"
-                className="p-1 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg border border-gray-200"
+                className="p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--canvas-bg)] rounded-lg border border-[var(--border)]"
               >
                 <Edit3 className="w-3.5 h-3.5" />
               </button>
@@ -258,7 +258,7 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
       </div>
 
       {isExpanded && hasChildren && (
-        <div className="space-y-1 pl-2 border-l border-gray-200/80 ml-4 pt-1">
+        <div className="space-y-1 pl-2 border-l border-[var(--border)] ml-4 pt-1">
           {node.children.map(child => (
             <NodeRow key={child.id} node={child} onSelectNode={onSelectNode} />
           ))}
