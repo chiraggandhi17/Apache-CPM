@@ -27,6 +27,19 @@
   border-color: var(--border-subtle, #F0ECE8) !important;
 }
 
+.fc .fc-col-header-cell {
+  background-color: var(--badge-bg, #F5F0EB) !important;
+  padding: 6px 0 !important;
+}
+
+.fc .fc-col-header-cell-cushion {
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  color: var(--text-secondary, #8C857C) !important;
+}
+
 .fc .fc-daygrid-day-number {
   font-size: 11px !important;
   font-weight: 700 !important;
@@ -39,7 +52,7 @@
 }
 
 .fc .fc-daygrid-event-harness {
-  margin-bottom: 2px !important;
+  margin-bottom: 3px !important;
 }
 
 .fc .fc-daygrid-event {
@@ -56,27 +69,39 @@
 
 .fc .fc-more-link {
   font-size: 10px !important;
-  font-weight: 700 !important;
+  font-weight: 800 !important;
   color: var(--accent, #C4704B) !important;
   background: var(--accent-subtle, rgba(196,112,75,0.1)) !important;
   border: 1px solid var(--border, #E8E4DF) !important;
   border-radius: 6px !important;
-  padding: 1px 6px !important;
+  padding: 2px 6px !important;
+  transition: all 0.15s ease !important;
+}
+
+.fc .fc-more-link:hover {
+  background: var(--accent, #C4704B) !important;
+  color: #ffffff !important;
 }
 
 .fc-popover {
   border-radius: 16px !important;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
   border: 1px solid var(--border, #E8E4DF) !important;
   overflow: hidden !important;
+  background: var(--card-bg, #FFFFFF) !important;
 }
 
 .fc-popover-header {
   background: var(--sidebar-bg, #2C2825) !important;
   color: var(--sidebar-text, #D4CDC4) !important;
-  padding: 6px 12px !important;
+  padding: 8px 12px !important;
   font-weight: 700 !important;
   font-size: 11px !important;
+}
+
+.fc-popover-body {
+  background: var(--card-bg, #FFFFFF) !important;
+  padding: 8px !important;
 }
 
 /* FullCalendar toolbar — theme-aware */
@@ -121,3 +146,4 @@
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary, #8C857C);
 }
+

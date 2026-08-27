@@ -428,121 +428,136 @@ export const NodeForm: React.FC<NodeFormProps> = ({
           </div>
 
           {/* TARGET DATE & RELATIVE TIMING BUILDER */}
-          <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-200 space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <label className="font-bold text-gray-900 flex items-center gap-1.5 text-xs">
-                <Calendar className="w-4 h-4 text-teal-600" /> Milestone Scheduling Panel
-              </label>
+          <div className="bg-slate-50/90 p-4 rounded-2xl border border-slate-200 space-y-3.5 shadow-2xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/80 pb-2.5">
+              <div>
+                <label className="font-extrabold text-gray-900 flex items-center gap-1.5 text-xs">
+                  <Calendar className="w-4 h-4 text-teal-600 shrink-0" />
+                  <span>Milestone Scheduling & Dates</span>
+                </label>
+                <span className="text-[11px] text-gray-500 block mt-0.5">Select how this milestone's date is calculated & tracked</span>
+              </div>
 
-              {/* 3-MODE DATE TYPE TABS */}
-              <div className="flex items-center bg-white p-0.5 rounded-xl border border-gray-300 shadow-2xs">
+              {/* 3-MODE DATE TYPE SEGMENTED SELECTOR */}
+              <div className="flex items-center bg-gray-200/70 p-1 rounded-xl border border-gray-300/60 shadow-2xs self-start sm:self-auto">
                 {parentId && (
                   <button
                     type="button"
                     onClick={() => setDateMode('offset')}
-                    className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors ${
+                    className={`px-3 py-1.5 rounded-lg font-extrabold text-[11px] transition-all flex items-center gap-1 ${
                       dateMode === 'offset' 
                         ? 'bg-teal-600 text-white shadow-xs' 
-                        : 'text-gray-600 hover:text-gray-900'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
                     }`}
                   >
-                    ⚡ Offset
+                    <span>⚡ Relative Offset</span>
                   </button>
                 )}
 
                 <button
                   type="button"
                   onClick={() => setDateMode('single')}
-                  className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors ${
+                  className={`px-3 py-1.5 rounded-lg font-extrabold text-[11px] transition-all flex items-center gap-1 ${
                     dateMode === 'single' 
                       ? 'bg-teal-600 text-white shadow-xs' 
-                      : 'text-gray-600 hover:text-gray-900'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
                   }`}
                 >
-                  📌 Single Date
+                  <span>📌 Fixed Date</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setDateMode('range')}
-                  className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors ${
+                  className={`px-3 py-1.5 rounded-lg font-extrabold text-[11px] transition-all flex items-center gap-1 ${
                     dateMode === 'range' 
                       ? 'bg-teal-600 text-white shadow-xs' 
-                      : 'text-gray-600 hover:text-gray-900'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
                   }`}
                 >
-                  🗓️ Date Range
+                  <span>🗓️ Date Range</span>
                 </button>
               </div>
             </div>
 
-            {/* MODE 1: RELATIVE OFFSET BUILDER */}
+            {/* MODE 1: RELATIVE OFFSET BUILDER (Dependent on Parent) */}
             {dateMode === 'offset' && parentId ? (
-              <div className="bg-white p-4 rounded-2xl border border-teal-200 space-y-3.5 shadow-2xs">
+              <div className="bg-white p-4 rounded-2xl border border-teal-200/80 space-y-3.5 shadow-2xs animate-in fade-in">
                 
                 {/* Immediate Parent Reference Banner */}
-                <div className="flex items-center justify-between text-xs bg-slate-100 p-2.5 rounded-xl border border-slate-200">
-                  <div className="flex items-center gap-1.5 truncate">
-                    <span className="text-gray-500 font-medium">Immediate Parent:</span>
-                    <span className="font-bold text-gray-900 truncate">"{parentNode?.title || 'Parent Task'}"</span>
+                <div className="flex items-center justify-between text-xs bg-teal-50/70 p-3 rounded-xl border border-teal-200">
+                  <div className="flex items-center gap-2 truncate">
+                    <Layers className="w-4 h-4 text-teal-700 shrink-0" />
+                    <span className="text-gray-600 font-medium shrink-0">Parent Milestone:</span>
+                    <span className="font-bold text-teal-950 truncate">"{parentNode?.title || 'Parent Task'}"</span>
                   </div>
-                  <span className="font-mono font-bold text-teal-800 bg-white px-2.5 py-0.5 rounded-md border border-slate-200 shrink-0 ml-2">
-                    {parentEffectiveDate ? formatLocalDate(parentEffectiveDate, 'MMM d, yyyy') : 'No target date'}
-                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                    <span className="text-[11px] font-bold text-teal-700">Deadline:</span>
+                    <span className="font-mono font-extrabold text-teal-900 bg-white px-2.5 py-1 rounded-md border border-teal-200 shadow-2xs">
+                      {parentEffectiveDate ? formatLocalDate(parentEffectiveDate, 'MMM d, yyyy') : 'No Target Date'}
+                    </span>
+                  </div>
                 </div>
 
-                {/* Timing Direction Tabs */}
+                {/* Timing Direction Cards */}
                 <div className="space-y-1.5">
-                  <label className="block text-[11px] font-bold text-gray-700">Schedule Timing Relative to Parent:</label>
+                  <label className="block text-[11px] font-extrabold text-gray-700">Timing Relative to Parent Milestone:</label>
                   <div className="grid grid-cols-3 gap-2">
                     <button
                       type="button"
                       onClick={() => setOffsetDirection('before')}
-                      className={`py-2 px-2 rounded-xl font-bold text-[11px] border flex items-center justify-center gap-1.5 transition-all ${
+                      className={`py-2.5 px-2 rounded-xl font-bold text-[11px] border flex items-center justify-center gap-1.5 transition-all ${
                         offsetDirection === 'before'
-                          ? 'bg-teal-50 border-teal-500 text-teal-900 ring-2 ring-teal-400/40 shadow-xs'
+                          ? 'bg-teal-50 border-teal-500 text-teal-950 ring-2 ring-teal-400/40 shadow-xs'
                           : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
                       }`}
                     >
-                      <ArrowLeft className="w-3.5 h-3.5 text-teal-600" />
+                      <ArrowLeft className="w-3.5 h-3.5 text-teal-600 shrink-0" />
                       <span>Before Parent</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => setOffsetDirection('same')}
-                      className={`py-2 px-2 rounded-xl font-bold text-[11px] border flex items-center justify-center gap-1.5 transition-all ${
+                      className={`py-2.5 px-2 rounded-xl font-bold text-[11px] border flex items-center justify-center gap-1.5 transition-all ${
                         offsetDirection === 'same'
-                          ? 'bg-teal-50 border-teal-500 text-teal-900 ring-2 ring-teal-400/40 shadow-xs'
+                          ? 'bg-teal-50 border-teal-500 text-teal-950 ring-2 ring-teal-400/40 shadow-xs'
                           : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
                       }`}
                     >
-                      <span>On Same Day</span>
+                      <span>● Same Day</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => setOffsetDirection('after')}
-                      className={`py-2 px-2 rounded-xl font-bold text-[11px] border flex items-center justify-center gap-1.5 transition-all ${
+                      className={`py-2.5 px-2 rounded-xl font-bold text-[11px] border flex items-center justify-center gap-1.5 transition-all ${
                         offsetDirection === 'after'
-                          ? 'bg-teal-50 border-teal-500 text-teal-900 ring-2 ring-teal-400/40 shadow-xs'
+                          ? 'bg-teal-50 border-teal-500 text-teal-950 ring-2 ring-teal-400/40 shadow-xs'
                           : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
                       }`}
                     >
                       <span>After Parent</span>
-                      <ArrowRight className="w-3.5 h-3.5 text-teal-600" />
+                      <ArrowRight className="w-3.5 h-3.5 text-teal-600 shrink-0" />
                     </button>
                   </div>
                 </div>
 
-                {/* Days Quantity Inputs */}
+                {/* Days Offset Stepper & Presets */}
                 {offsetDirection !== 'same' && (
-                  <div className="space-y-2 pt-1 border-t border-gray-100">
+                  <div className="space-y-2.5 pt-2 border-t border-gray-100">
                     <div className="flex items-center justify-between">
                       <label className="text-[11px] font-bold text-gray-700">
                         {offsetDirection === 'before' ? 'Days Before Parent Target:' : 'Days After Parent Target:'}
                       </label>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setOffsetDaysQty(Math.max(1, offsetDaysQty - 1))}
+                          className="w-7 h-7 rounded-lg bg-gray-100 border border-gray-300 font-bold text-gray-700 hover:bg-gray-200 flex items-center justify-center"
+                        >
+                          -
+                        </button>
                         <input
                           type="number"
                           min="1"
@@ -551,19 +566,26 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                           onChange={e => setOffsetDaysQty(Math.max(1, Number(e.target.value) || 1))}
                           className="w-16 h-8 text-center font-mono font-bold bg-gray-50 border border-gray-300 rounded-lg text-xs"
                         />
-                        <span className="text-xs font-bold text-gray-500">Days</span>
+                        <button
+                          type="button"
+                          onClick={() => setOffsetDaysQty(offsetDaysQty + 1)}
+                          className="w-7 h-7 rounded-lg bg-gray-100 border border-gray-300 font-bold text-gray-700 hover:bg-gray-200 flex items-center justify-center"
+                        >
+                          +
+                        </button>
+                        <span className="text-xs font-bold text-gray-500 ml-1">Days</span>
                       </div>
                     </div>
 
                     <div className="space-y-1">
-                      <span className="text-[10px] uppercase font-bold text-gray-400 block">Quick Presets:</span>
+                      <span className="text-[10px] uppercase font-bold text-gray-400 block">Quick Offset Presets:</span>
                       <div className="grid grid-cols-6 gap-1.5">
                         {[1, 3, 7, 14, 21, 30].map(d => (
                           <button
                             key={d}
                             type="button"
                             onClick={() => setOffsetDaysQty(d)}
-                            className={`py-1 rounded-lg text-[11px] font-bold border transition-colors text-center ${
+                            className={`py-1.5 rounded-lg text-[11px] font-bold border transition-all text-center ${
                               offsetDaysQty === d
                                 ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
                                 : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-100'
@@ -577,24 +599,24 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                   </div>
                 )}
 
-                {/* Live Calculated Date Preview Card */}
-                <div className="p-3 bg-teal-50 rounded-xl border border-teal-200 flex items-center justify-between">
+                {/* Resulting Milestone Target Date Preview */}
+                <div className="p-3 bg-teal-500 text-white rounded-xl border border-teal-600 flex items-center justify-between shadow-xs">
                   <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-teal-700 block">
-                      Resulting Milestone Target Date
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-teal-100 block">
+                      Calculated Target Date
                     </span>
-                    <span className="text-xs font-extrabold text-teal-950 font-mono">
+                    <span className="text-xs font-extrabold font-mono">
                       {calculatedTargetDate ? formatLocalDate(calculatedTargetDate, 'EEEE, MMMM d, yyyy') : 'Parent has no target date'}
                     </span>
                   </div>
-                  <span className="text-xs font-mono font-extrabold bg-teal-600 text-white px-2.5 py-1 rounded-lg shadow-2xs">
+                  <span className="text-xs font-mono font-extrabold bg-white text-teal-900 px-3 py-1 rounded-lg shadow-2xs border border-white/20">
                     {offsetDirection === 'same' ? '0 Days' : `${offsetDirection === 'before' ? '-' : '+'}${offsetDaysQty} Days`}
                   </span>
                 </div>
               </div>
             ) : dateMode === 'range' ? (
               /* MODE 2: DATE RANGE INPUT (Start Date -> Target End Date) */
-              <div className="bg-white p-4 rounded-2xl border border-indigo-200 space-y-3 shadow-2xs">
+              <div className="bg-white p-4 rounded-2xl border border-indigo-200 space-y-3.5 shadow-2xs animate-in fade-in">
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
                     <label className="block font-bold text-gray-700 mb-1">Start Date</label>
@@ -602,7 +624,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                       type="date"
                       value={startDate}
                       onChange={e => setStartDate(e.target.value)}
-                      className="w-full text-xs px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                      className="w-full text-xs px-3.5 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold transition-all"
                     />
                   </div>
 
@@ -612,15 +634,48 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                       type="date"
                       value={plannedDate}
                       onChange={e => setPlannedDate(e.target.value)}
-                      className="w-full text-xs px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                      className="w-full text-xs px-3.5 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold transition-all"
                     />
                   </div>
                 </div>
 
+                {/* Quick Add Duration Presets */}
+                <div className="space-y-1.5 pt-1 border-t border-gray-100">
+                  <span className="text-[10px] uppercase font-bold text-gray-400 block">Quick Duration Add:</span>
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {[
+                      { label: '+3 Days', days: 3 },
+                      { label: '+7 Days', days: 7 },
+                      { label: '+14 Days', days: 14 },
+                      { label: '+30 Days', days: 30 },
+                      { label: '+60 Days', days: 60 },
+                    ].map(preset => (
+                      <button
+                        key={preset.days}
+                        type="button"
+                        onClick={() => {
+                          const base = startDate ? new Date(startDate) : new Date();
+                          if (!startDate) {
+                            setStartDate(new Date().toISOString().substring(0, 10));
+                          }
+                          const target = addDays(base, preset.days);
+                          setPlannedDate(target.toISOString().substring(0, 10));
+                        }}
+                        className="py-1.5 px-1 rounded-lg text-[11px] font-bold border border-indigo-200 bg-indigo-50/60 hover:bg-indigo-600 hover:text-white text-indigo-900 transition-all text-center"
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 {startDate && plannedDate && new Date(startDate) <= new Date(plannedDate) && (
-                  <div className="p-2.5 bg-indigo-50 rounded-xl border border-indigo-200 text-indigo-950 text-xs flex items-center justify-between font-medium">
-                    <span>🗓️ Total Range Duration:</span>
-                    <span className="font-mono font-extrabold text-indigo-900 bg-white px-2 py-0.5 rounded-md border border-indigo-200">
+                  <div className="p-3 bg-indigo-50/90 rounded-xl border border-indigo-200 text-indigo-950 text-xs flex items-center justify-between font-medium">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-indigo-600" />
+                      <span>Range Span: <strong>{formatLocalDate(new Date(startDate).toISOString(), 'MMM d')}</strong> → <strong>{formatLocalDate(new Date(plannedDate).toISOString(), 'MMM d, yyyy')}</strong></span>
+                    </div>
+                    <span className="font-mono font-extrabold text-indigo-950 bg-white px-2.5 py-1 rounded-md border border-indigo-200 shadow-2xs">
                       {Math.ceil((new Date(plannedDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1} Days
                     </span>
                   </div>
@@ -628,17 +683,51 @@ export const NodeForm: React.FC<NodeFormProps> = ({
               </div>
             ) : (
               /* MODE 3: SINGLE FIXED CALENDAR DATE INPUT */
-              <div className="space-y-1.5">
-                <input
-                  type="date"
-                  value={plannedDate}
-                  onChange={e => setPlannedDate(e.target.value)}
-                  className="w-full text-xs px-3.5 py-2.5 bg-white border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
-                />
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-3 shadow-2xs animate-in fade-in">
+                <div>
+                  <label className="block font-bold text-gray-700 mb-1.5">Select Fixed Target Date</label>
+                  <input
+                    type="date"
+                    value={plannedDate}
+                    onChange={e => setPlannedDate(e.target.value)}
+                    className="w-full text-xs px-3.5 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold transition-all"
+                  />
+                </div>
+
+                {/* Quick Date Shortcuts */}
+                <div className="space-y-1.5 pt-1 border-t border-gray-100">
+                  <span className="text-[10px] uppercase font-bold text-gray-400 block">1-Click Date Shortcuts:</span>
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                    {[
+                      { label: 'Today', days: 0 },
+                      { label: 'Tomorrow', days: 1 },
+                      { label: '+3 Days', days: 3 },
+                      { label: '+7 Days', days: 7 },
+                      { label: '+14 Days', days: 14 },
+                      { label: '+30 Days', days: 30 },
+                    ].map(s => (
+                      <button
+                        key={s.label}
+                        type="button"
+                        onClick={() => {
+                          const target = addDays(new Date(), s.days);
+                          setPlannedDate(target.toISOString().substring(0, 10));
+                        }}
+                        className="py-1.5 px-1 rounded-lg text-[11px] font-bold border border-gray-200 bg-gray-50 hover:bg-teal-600 hover:text-white text-gray-700 transition-all text-center truncate"
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 {plannedDate && (
-                  <p className="text-[11px] text-gray-500 font-mono pl-1">
-                    Scheduled for: <strong>{formatLocalDate(new Date(plannedDate).toISOString(), 'EEEE, MMMM d, yyyy')}</strong>
-                  </p>
+                  <div className="p-3 bg-slate-100 rounded-xl border border-slate-200 text-xs font-medium text-slate-800 flex items-center justify-between">
+                    <span className="text-gray-600">Scheduled Target Date:</span>
+                    <span className="font-mono font-extrabold text-teal-800 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs">
+                      {formatLocalDate(new Date(plannedDate).toISOString(), 'EEEE, MMMM d, yyyy')}
+                    </span>
+                  </div>
                 )}
               </div>
             )}

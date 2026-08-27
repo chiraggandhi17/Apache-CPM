@@ -1,20 +1,7 @@
 import React, { useState } from 'react';
 import { Check, Palette, Sparkles, RefreshCw } from 'lucide-react';
+import { CURATED_SWATCHES } from '../../lib/color-resolver';
 
-export const CURATED_SWATCHES = [
-  { name: 'Teal', hex: '#0D9488' },
-  { name: 'Blue', hex: '#2563EB' },
-  { name: 'Orange', hex: '#F97316' },
-  { name: 'Purple', hex: '#8B5CF6' },
-  { name: 'Red', hex: '#EF4444' },
-  { name: 'Green', hex: '#22C55E' },
-  { name: 'Indigo', hex: '#6366F1' },
-  { name: 'Amber', hex: '#EAB308' },
-  { name: 'Sky', hex: '#0EA5E9' },
-  { name: 'Pink', hex: '#EC4899' },
-  { name: 'Rose', hex: '#F43F5E' },
-  { name: 'Slate', hex: '#64748B' },
-];
 
 interface ColorPickerProps {
   value: string | null;

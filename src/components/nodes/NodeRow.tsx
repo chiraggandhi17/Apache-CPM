@@ -133,10 +133,22 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
             </span>
           )}
 
-          {/* Type Icon (Dynamically tinted with node's level gradient color) */}
-          <span className="shrink-0 transition-colors" style={{ color: node.effective_color }}>
-            {getNodeIcon(node.type)}
-          </span>
+          {/* Type Icon & Level Depth Badge (Dynamically tinted with node's level gradient color) */}
+          <div className="flex items-center gap-1 shrink-0">
+            <span className="transition-colors" style={{ color: node.effective_color }}>
+              {getNodeIcon(node.type)}
+            </span>
+            <span 
+              style={{
+                backgroundColor: `${node.effective_color}15`,
+                color: node.effective_color,
+                borderColor: `${node.effective_color}40`,
+              }}
+              className="text-[9px] font-mono font-extrabold px-1 rounded border shadow-2xs"
+            >
+              L{node.depth + 1}
+            </span>
+          </div>
 
           {/* Title */}
           <span className={`font-semibold text-xs md:text-sm truncate ${

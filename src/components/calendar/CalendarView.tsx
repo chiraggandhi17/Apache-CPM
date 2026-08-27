@@ -1,14 +1,17 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { useNodes } from '../../context/NodeContext';
-import { NodeItem, ReminderItem } from '../../types/domain';
+import { NodeItem } from '../../types/domain';
 import { resolveColor } from '../../lib/color-resolver';
 import { SearchableParentSelect } from '../shared/SearchableParentSelect';
 import { addDays, parseISO } from 'date-fns';
-import { Filter, Calendar as CalendarIcon, Bell, CheckCircle2, Zap, Layers, FolderTree, XCircle } from 'lucide-react';
+import { 
+  Filter, Calendar as CalendarIcon, Bell, CheckCircle2, 
+  Layers, ChevronLeft, ChevronRight, MousePointer
+} from 'lucide-react';
 
 interface CalendarViewProps {
   onSelectNode: (node: NodeItem) => void;
@@ -16,10 +19,44 @@ interface CalendarViewProps {
 
 export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
   const { nodes, reminders } = useNodes();
+  const calendarRef = useRef<FullCalendar>(null);
+  const calendarContainerRef = useRef<HTMLDivElement>(null);
+  const lastScrollTime = useRef<number>(0);
+
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
   const [selectedLevels, setSelectedLevels] = useState<number[]>([1, 2, 3, 4, 5]);
   const [showCompleted, setShowCompleted] = useState(true);
   const [showAlertsOnCal, setShowAlertsOnCal] = useState(true);
+  const [currentMonthTitle, setCurrentMonthTitle] = useState<string>('');
+  const [activeView, setActiveView] = useState<'dayGridMonth' | 'timeGridWeek' | 'timeGridDay'>('dayGridMonth');
+
+  // Mouse wheel scroll to move between months / weeks / days
+  useEffect(() => {
+    const container = calendarContainerRef.current;
+    if (!container) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      const api = calendarRef.current?.getApi();
+      if (!api) return;
+
+      const now = Date.now();
+      if (now - lastScrollTime.current < 260) return;
+
+      if (Math.abs(e.deltaY) > 25 || Math.abs(e.deltaX) > 25) {
+        if (e.deltaY > 0 || e.deltaX > 0) {
+          api.next();
+        } else {
+          api.prev();
+        }
+        lastScrollTime.current = now;
+      }
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: true });
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+    };
+  }, []);
 
   const toggleLevel = (lvl: number) => {
     setSelectedLevels(prev =>
@@ -94,6 +131,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
         }
 
         const color = resolveColor(n.color, ancestorColors);
+        const level = getNodeLevel(n);
         const isDone = n.status === 'done';
         const plannedDateStr = n.planned_date!.length >= 10 ? n.planned_date!.slice(0, 10) : n.planned_date!;
         const startDateStr = n.start_date && n.start_date.length >= 10 ? n.start_date.slice(0, 10) : plannedDateStr;
@@ -116,7 +154,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
           allDay: true,
           backgroundColor: isDone ? '#94a3b8' : color,
           borderColor: isDone ? '#64748b' : color,
-          textColor: '#ffffff',
+          textColor: level >= 3 && !isDone ? '#0f172a' : '#ffffff',
           extendedProps: { 
             node: n, 
             isReminder: false, 
@@ -124,12 +162,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
             isDone, 
             isCritical: n.is_critical, 
             color,
+            level,
             department: n.department 
           },
         };
       });
 
-    // 2. Active Alerts & Reminders Events (Strictly bound to user authorized nodes, level filter, & parent subtree)
+    // 2. Active Alerts & Reminders Events
     const reminderEvents = showAlertsOnCal
       ? reminders
           .filter(r => {
@@ -137,7 +176,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
             const parentNode = nodes.find(n => n.id === r.node_id);
             if (!parentNode) return false;
 
-            // Level Matrix Filter for Reminders
             const parentLevel = getNodeLevel(parentNode);
             if (!selectedLevels.includes(parentLevel)) return false;
 
@@ -146,8 +184,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
           })
           .map(r => {
             const parentNode = nodes.find(n => n.id === r.node_id)!;
-            let color = '#f59e0b'; // Default fallback amber
+            let color = '#f59e0b';
+            let parentLevel = 1;
             if (parentNode) {
+              parentLevel = getNodeLevel(parentNode);
               const ancestorColors: string[] = [];
               let curr: NodeItem | undefined = parentNode;
               while (curr) {
@@ -164,9 +204,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
               title: r.message,
               start: dateStr,
               allDay: true,
-              backgroundColor: color,
-              borderColor: color,
-              textColor: '#ffffff',
+              backgroundColor: '#fffbe6',
+              borderColor: '#f59e0b',
+              textColor: '#92400e',
               extendedProps: { 
                 reminder: r, 
                 isReminder: true, 
@@ -174,6 +214,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
                 isDone: false, 
                 isCritical: false, 
                 color,
+                level: parentLevel,
                 department: parentNode?.department || null 
               },
             };
@@ -183,103 +224,177 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
     return [...nodeEvents, ...reminderEvents];
   }, [nodes, reminders, showCompleted, showAlertsOnCal, allowedSubtreeNodeIds, selectedLevels]);
 
+  const handlePrev = () => calendarRef.current?.getApi().prev();
+  const handleNext = () => calendarRef.current?.getApi().next();
+  const handleToday = () => calendarRef.current?.getApi().today();
+
+  const handleViewChange = (view: 'dayGridMonth' | 'timeGridWeek' | 'timeGridDay') => {
+    setActiveView(view);
+    calendarRef.current?.getApi().changeView(view);
+  };
+
   return (
     <div className="space-y-4">
-      {/* Calendar Top Control Header (Single-Row Balanced Layout) */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-[var(--card-bg)]/90 p-3.5 rounded-2xl border border-[var(--border)] shadow-2xs">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-[var(--accent-subtle)] text-[var(--accent)] flex items-center justify-center border border-[var(--accent)]/20 shrink-0">
-            <CalendarIcon className="w-4 h-4" />
+      {/* REORGANIZED UNIFIED CALENDAR CONTROL CENTER */}
+      <div className="bg-[var(--card-bg)] p-4 rounded-3xl border border-[var(--border)] shadow-2xs space-y-3.5">
+        
+        {/* TOP ROW: Title & Month Navigation + View Mode Controls */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[var(--border)] pb-3">
+          
+          {/* Title & Active Month Indicator */}
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-[var(--accent-subtle)] text-[var(--accent)] flex items-center justify-center border border-[var(--accent)]/20 shrink-0 shadow-2xs">
+              <CalendarIcon className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-extrabold text-[var(--text-primary)] tracking-tight">
+                  {currentMonthTitle || 'Master Execution Calendar'}
+                </h2>
+                <span className="text-[10px] font-mono font-extrabold bg-[var(--accent-subtle)] text-[var(--accent)] px-2 py-0.5 rounded-md border border-[var(--accent)]/20 shadow-2xs">
+                  {events.length} Events
+                </span>
+              </div>
+              <p className="text-[11px] text-[var(--text-secondary)] font-medium flex items-center gap-1 mt-0.5">
+                <MousePointer className="w-3 h-3 text-[var(--accent)]" />
+                <span>Scroll mouse wheel over calendar grid to switch months naturally</span>
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-sm font-extrabold text-[var(--text-primary)] tracking-tight flex items-center gap-2">
-              <span>Master Execution Calendar</span>
-              <span className="text-[10px] font-mono font-bold bg-[var(--accent-subtle)] text-[var(--accent)] px-2 py-0.5 rounded-md border border-[var(--accent)]/20">
-                {events.length} Events
-              </span>
-            </h2>
-          </div>
-        </div>
 
-        {/* Unified Single-Row Control Action Bar */}
-        <div className="flex items-center flex-wrap gap-2">
-          {/* SEARCHABLE PARENT TASK / MODEL SUBTREE SELECTOR */}
-          <SearchableParentSelect
-            nodes={nodes}
-            selectedParentId={selectedParentId}
-            onSelectParent={setSelectedParentId}
-          />
-
-          {/* Toggle Alerts */}
-          <button
-            type="button"
-            onClick={() => setShowAlertsOnCal(!showAlertsOnCal)}
-            className={`h-9 px-3 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-all shadow-2xs ${
-              showAlertsOnCal
-                ? 'bg-amber-50 text-amber-900 border-amber-300 ring-1 ring-amber-200/60'
-                : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--badge-bg)]'
-            }`}
-          >
-            <Bell className="w-3.5 h-3.5 text-amber-600" />
-            <span>Alerts {showAlertsOnCal ? 'On' : 'Off'}</span>
-          </button>
-
-          {/* Toggle Completed Strikethrough Tasks */}
-          <button
-            type="button"
-            onClick={() => setShowCompleted(!showCompleted)}
-            className={`h-9 px-3 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-all shadow-2xs ${
-              showCompleted
-                ? 'bg-emerald-50 text-emerald-900 border-emerald-300 ring-1 ring-emerald-200/60'
-                : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--badge-bg)]'
-            }`}
-          >
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Completed ({showCompleted ? 'Shown' : 'Hidden'})</span>
-          </button>
-        </div>
-      </div>
-
-      {/* MELLOW EYE-SOOTHING HIERARCHY LEVEL MATRIX FILTER BAR */}
-      <div className="bg-[var(--badge-bg)] backdrop-blur-xs px-3.5 py-2.5 rounded-2xl border border-[var(--border)] shadow-2xs flex items-center flex-wrap justify-between gap-2.5 text-xs">
-        <div className="flex items-center gap-2">
-          <Filter className="w-3.5 h-3.5 text-[var(--text-secondary)] shrink-0" />
-          <span className="text-[var(--text-secondary)] font-extrabold uppercase tracking-wider text-[11px]">Filter Hierarchy Levels:</span>
-        </div>
-
-        <div className="flex items-center flex-wrap gap-1.5">
-          {[
-            { lvl: 1, label: 'L1 Dept' },
-            { lvl: 2, label: 'L2 Season' },
-            { lvl: 3, label: 'L3 Model' },
-            { lvl: 4, label: 'L4 Task' },
-            { lvl: 5, label: 'L5 Subtask' },
-          ].map(item => {
-            const active = selectedLevels.includes(item.lvl);
-            return (
+          {/* Month Navigation & View Modes */}
+          <div className="flex items-center flex-wrap gap-2">
+            
+            {/* Prev / Today / Next Controls */}
+            <div className="flex items-center bg-[var(--badge-bg)] p-1 rounded-xl border border-[var(--border)] shadow-2xs">
               <button
-                key={item.lvl}
                 type="button"
-                onClick={() => toggleLevel(item.lvl)}
-                className={`px-2.5 py-1 rounded-lg border text-xs transition-all flex items-center gap-1 ${
-                  active
-                    ? 'bg-[var(--accent)] text-white border-[var(--accent)] shadow-2xs font-semibold ring-1 ring-[var(--accent)]/30'
-                    : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--badge-bg)] font-medium'
-                }`}
+                onClick={handlePrev}
+                title="Previous Month/Week (Or Scroll Up)"
+                className="p-1.5 rounded-lg text-[var(--text-primary)] hover:bg-[var(--card-bg)] transition-colors"
               >
-                <span className="text-[10px]">{active ? '✓' : '+'}</span>
-                <span>{item.label}</span>
+                <ChevronLeft className="w-4 h-4" />
               </button>
-            );
-          })}
 
-          <button
-            type="button"
-            onClick={() => setSelectedLevels(selectedLevels.length === 5 ? [] : [1, 2, 3, 4, 5])}
-            className="text-[11px] font-extrabold text-[var(--accent)] hover:text-[var(--text-primary)] underline ml-2 cursor-pointer transition-colors"
-          >
-            {selectedLevels.length === 5 ? 'Deselect All' : 'Select All'}
-          </button>
+              <button
+                type="button"
+                onClick={handleToday}
+                className="px-3 py-1 text-xs font-bold text-[var(--text-primary)] hover:bg-[var(--card-bg)] rounded-lg transition-colors"
+              >
+                Today
+              </button>
+
+              <button
+                type="button"
+                onClick={handleNext}
+                title="Next Month/Week (Or Scroll Down)"
+                className="p-1.5 rounded-lg text-[var(--text-primary)] hover:bg-[var(--card-bg)] transition-colors"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* View Switcher Tabs (Month / Week / Day) */}
+            <div className="flex items-center bg-[var(--badge-bg)] p-1 rounded-xl border border-[var(--border)] shadow-2xs">
+              {[
+                { view: 'dayGridMonth' as const, label: 'Month' },
+                { view: 'timeGridWeek' as const, label: 'Week' },
+                { view: 'timeGridDay' as const, label: 'Day' },
+              ].map(v => (
+                <button
+                  key={v.view}
+                  type="button"
+                  onClick={() => handleViewChange(v.view)}
+                  className={`px-3 py-1 text-xs font-extrabold rounded-lg transition-all ${
+                    activeView === v.view
+                      ? 'bg-[var(--accent)] text-white shadow-2xs'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* BOTTOM ROW: Filters & Toggles Action Bar */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          
+          {/* Searchable Subtree Filter & Display Toggles */}
+          <div className="flex items-center flex-wrap gap-2">
+            <SearchableParentSelect
+              nodes={nodes}
+              selectedParentId={selectedParentId}
+              onSelectParent={setSelectedParentId}
+            />
+
+            <button
+              type="button"
+              onClick={() => setShowAlertsOnCal(!showAlertsOnCal)}
+              className={`h-9 px-3 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-all shadow-2xs ${
+                showAlertsOnCal
+                  ? 'bg-amber-50 text-amber-900 border-amber-300 ring-1 ring-amber-200/60'
+                  : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--badge-bg)]'
+              }`}
+            >
+              <Bell className="w-3.5 h-3.5 text-amber-600" />
+              <span>Alerts {showAlertsOnCal ? 'On' : 'Off'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowCompleted(!showCompleted)}
+              className={`h-9 px-3 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-all shadow-2xs ${
+                showCompleted
+                  ? 'bg-emerald-50 text-emerald-900 border-emerald-300 ring-1 ring-emerald-200/60'
+                  : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--badge-bg)]'
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Completed ({showCompleted ? 'Shown' : 'Hidden'})</span>
+            </button>
+          </div>
+
+          {/* Hierarchy Level Matrix Pills */}
+          <div className="flex items-center flex-wrap gap-1.5">
+            <span className="text-[11px] font-extrabold uppercase tracking-wider text-[var(--text-secondary)] mr-1 flex items-center gap-1">
+              <Filter className="w-3 h-3 text-[var(--accent)]" /> Levels:
+            </span>
+
+            {[
+              { lvl: 1, label: 'L1 Dept' },
+              { lvl: 2, label: 'L2 Season' },
+              { lvl: 3, label: 'L3 Model' },
+              { lvl: 4, label: 'L4 Task' },
+              { lvl: 5, label: 'L5 Subtask' },
+            ].map(item => {
+              const active = selectedLevels.includes(item.lvl);
+              return (
+                <button
+                  key={item.lvl}
+                  type="button"
+                  onClick={() => toggleLevel(item.lvl)}
+                  className={`px-2.5 py-1 rounded-lg border text-xs transition-all flex items-center gap-1 ${
+                    active
+                      ? 'bg-[var(--accent)] text-white border-[var(--accent)] shadow-2xs font-bold ring-1 ring-[var(--accent)]/30'
+                      : 'bg-[var(--badge-bg)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--card-bg)] font-medium'
+                  }`}
+                >
+                  <span className="text-[10px]">{active ? '✓' : '+'}</span>
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+
+            <button
+              type="button"
+              onClick={() => setSelectedLevels(selectedLevels.length === 5 ? [] : [1, 2, 3, 4, 5])}
+              className="text-[11px] font-extrabold text-[var(--accent)] hover:text-[var(--text-primary)] underline ml-1 cursor-pointer transition-colors"
+            >
+              {selectedLevels.length === 5 ? 'Clear' : 'All'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -302,17 +417,20 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
         </div>
       )}
 
-      {/* Calendar Grid Container with Dense Multi-Event Handling */}
-      <div className="bg-[var(--card-bg)] p-4 rounded-3xl border border-[var(--border)] shadow-2xs font-sans text-xs">
+      {/* Calendar Grid Container with Wheel Scroll Listener */}
+      <div 
+        ref={calendarContainerRef} 
+        className="bg-[var(--card-bg)] p-4 rounded-3xl border border-[var(--border)] shadow-2xs font-sans text-xs select-none"
+      >
         <FullCalendar
+          ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
           initialView="dayGridMonth"
           dayMaxEvents={3}
           moreLinkClick="popover"
-          headerToolbar={{
-            left: 'prev,next today',
-            center: 'title',
-            right: 'dayGridMonth,timeGridWeek,timeGridDay',
+          headerToolbar={false}
+          datesSet={dateInfo => {
+            setCurrentMonthTitle(dateInfo.view.title);
           }}
           events={events}
           eventClick={info => {
@@ -325,60 +443,77 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
             const isRange = eventInfo.event.extendedProps.isRange;
             const isCritical = eventInfo.event.extendedProps.isCritical;
             const color = eventInfo.event.extendedProps.color || '#0d9488';
+            const level = eventInfo.event.extendedProps.level || 1;
 
             if (isReminder) {
               return (
                 <div
                   title={`🔔 Alert: ${eventInfo.event.title} (for "${eventInfo.event.extendedProps.parentTitle}")`}
-                  style={{
-                    backgroundColor: color,
-                    borderColor: color,
-                  }}
-                  className="w-full px-2 py-0.5 rounded-md text-white text-[11px] font-bold truncate flex items-center gap-1 shadow-2xs cursor-pointer transition-all hover:brightness-110 border"
+                  className="w-full px-2 py-1 rounded-lg bg-amber-50 border-l-4 border-l-amber-500 border border-amber-200 text-amber-950 text-[11px] font-extrabold truncate flex items-center gap-1.5 shadow-2xs cursor-pointer transition-all hover:scale-[1.01]"
                 >
-                  <span className="text-[11px] shrink-0">🔔</span>
+                  <span className="text-[11px] shrink-0 animate-pulse">🔔</span>
                   <span className="truncate">{eventInfo.event.title}</span>
                 </div>
               );
             }
 
-            // Sleek Dashed Rendering for Multi-Day Date Range Spans
+            // Sleek Rendering for Multi-Day Date Range Spans
             if (isRange) {
+              const isLightBackground = level >= 3 && !isDone;
               return (
                 <div
-                  title={`🗓️ Date Range: ${eventInfo.event.title}`}
+                  title={`🗓️ Range [L${level}]: ${eventInfo.event.title}`}
                   style={{
+                    backgroundColor: isDone ? '#f1f5f9' : color,
                     borderColor: isDone ? '#94a3b8' : color,
-                    backgroundColor: isDone ? '#f1f5f9' : `${color}20`,
-                    color: isDone ? '#64748b' : color,
+                    color: isDone ? '#64748b' : isLightBackground ? '#0f172a' : '#ffffff',
                   }}
-                  className={`w-full px-2 py-0.5 rounded-md text-[11px] font-extrabold truncate flex items-center gap-1 shadow-2xs border-2 border-dashed transition-all hover:brightness-105 cursor-pointer ${
-                    isDone ? 'line-through opacity-70 italic' : ''
+                  className={`w-full px-2 py-1 rounded-lg text-[11px] font-extrabold truncate flex items-center justify-between gap-1 shadow-2xs border-l-4 transition-all hover:scale-[1.01] cursor-pointer ${
+                    isDone ? 'line-through opacity-70 italic border-l-slate-400 border' : ''
                   }`}
                 >
-                  <span className="shrink-0 text-[10px]">🗓️</span>
-                  <span className="truncate">{eventInfo.event.title}</span>
+                  <div className="flex items-center gap-1 truncate">
+                    <span className="shrink-0 text-[10px]">🗓️</span>
+                    <span className="truncate">{eventInfo.event.title}</span>
+                  </div>
+                  <span className={`text-[9px] font-mono px-1 rounded shrink-0 ${isLightBackground ? 'bg-black/10 text-slate-900 font-bold' : 'bg-white/25 text-white font-bold'}`}>
+                    L{level}
+                  </span>
                 </div>
               );
             }
+
+            // Standard Task Event Card with Shaded Level Gradient Pill
+            const isLightBackground = level >= 3 && !isDone;
+            const textColor = isDone ? '#64748b' : isLightBackground ? '#0f172a' : '#ffffff';
 
             return (
               <div
-                title={eventInfo.event.title}
+                title={`[L${level}] ${eventInfo.event.title}`}
                 style={{
-                  backgroundColor: isDone ? '#94a3b8' : color,
-                  borderColor: isDone ? '#64748b' : color,
+                  backgroundColor: isDone ? '#f1f5f9' : color,
+                  borderColor: isDone ? '#cbd5e1' : color,
+                  color: textColor,
                 }}
-                className={`w-full px-2 py-0.5 rounded-md text-white text-[11px] font-bold truncate flex items-center gap-1 shadow-2xs border transition-all hover:brightness-110 cursor-pointer ${
-                  isDone ? 'line-through opacity-70 italic' : ''
+                className={`w-full px-2 py-1 rounded-lg text-[11px] font-extrabold truncate flex items-center justify-between gap-1 shadow-2xs border transition-all hover:scale-[1.01] cursor-pointer ${
+                  isDone ? 'line-through opacity-75 italic' : ''
                 }`}
               >
-                {isDone ? (
-                  <span className="shrink-0 text-[10px] font-extrabold">✓</span>
-                ) : isCritical ? (
-                  <span className="shrink-0 text-amber-300 font-bold text-[10px]">⚡</span>
-                ) : null}
-                <span className="truncate">{eventInfo.event.title}</span>
+                <div className="flex items-center gap-1 truncate">
+                  {isDone ? (
+                    <span className="shrink-0 text-[10px] font-extrabold text-emerald-600">✓</span>
+                  ) : isCritical ? (
+                    <span className="shrink-0 text-amber-300 font-bold text-[10px]">⚡</span>
+                  ) : null}
+                  <span className="truncate">{eventInfo.event.title}</span>
+                </div>
+                <span 
+                  className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-extrabold shrink-0 ${
+                    isLightBackground ? 'bg-slate-900/10 text-slate-900 border border-slate-900/10' : 'bg-white/25 text-white'
+                  }`}
+                >
+                  L{level}
+                </span>
               </div>
             );
           }}
@@ -389,3 +524,4 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
     </div>
   );
 };
+

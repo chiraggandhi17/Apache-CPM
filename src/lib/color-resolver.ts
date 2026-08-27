@@ -1,24 +1,24 @@
 import { NodeItem } from '../types/domain';
 
-export const DEFAULT_FALLBACK_COLOR = '#6B7280'; // gray-500
+export const DEFAULT_FALLBACK_COLOR = '#0D9488'; // Vibrant Emerald Teal
 
 export const CURATED_SWATCHES = [
-  { name: 'Teal', hex: '#0D9488' },
-  { name: 'Indigo', hex: '#4F46E5' },
-  { name: 'Blue', hex: '#2563EB' },
-  { name: 'Emerald', hex: '#059669' },
-  { name: 'Violet', hex: '#7C3AED' },
-  { name: 'Rose', hex: '#E11D48' },
-  { name: 'Amber', hex: '#D97706' },
-  { name: 'Orange', hex: '#EA580C' },
-  { name: 'Magenta', hex: '#C026D3' },
-  { name: 'Cyan', hex: '#0891B2' },
-  { name: 'Purple', hex: '#9333EA' },
-  { name: 'Sky', hex: '#0284C7' },
+  { name: 'Emerald Teal', hex: '#0D9488' },
+  { name: 'Royal Sapphire', hex: '#2563EB' },
+  { name: 'Vivid Amber', hex: '#D97706' },
+  { name: 'Electric Violet', hex: '#7C3AED' },
+  { name: 'Ruby Crimson', hex: '#E11D48' },
+  { name: 'Lush Emerald', hex: '#059669' },
+  { name: 'Sunset Orange', hex: '#EA580C' },
+  { name: 'Ocean Cyan', hex: '#0891B2' },
+  { name: 'Deep Purple', hex: '#9333EA' },
+  { name: 'Sky Cerulean', hex: '#0284C7' },
+  { name: 'Berry Magenta', hex: '#C026D3' },
+  { name: 'Coral Flame', hex: '#F43F5E' },
 ];
 
 /**
- * Lightens a HEX color by a given percentage (0 to 100)
+ * Lightens a HEX color by a given percentage (0 to 100) while keeping color clean and vibrant
  */
 export function lightenColor(hex: string, percent: number): string {
   if (!hex || !hex.startsWith('#') || percent <= 0) return hex || DEFAULT_FALLBACK_COLOR;
@@ -35,13 +35,29 @@ export function lightenColor(hex: string, percent: number): string {
   let b = num & 0xff;
 
   // Mix with white (#ffffff)
-  const factor = Math.min(0.6, Math.max(0, percent / 100));
+  const factor = Math.min(0.78, Math.max(0, percent / 100));
   r = Math.round(r + (255 - r) * factor);
   g = Math.round(g + (255 - g) * factor);
   b = Math.round(b + (255 - b) * factor);
 
   const toHex = (c: number) => c.toString(16).padStart(2, '0');
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+/**
+ * Calculates level lighten percentage:
+ * Level 1 (distance 0): 0% (full vibrant tone)
+ * Level 2 (distance 1): 20% lighter
+ * Level 3 (distance 2): 38% lighter
+ * Level 4 (distance 3): 54% lighter
+ * Level 5+ (distance 4+): 68% lighter
+ */
+export function getLevelLightenPercent(distance: number): number {
+  if (distance <= 0) return 0;
+  if (distance === 1) return 20;
+  if (distance === 2) return 38;
+  if (distance === 3) return 54;
+  return Math.min(75, 54 + (distance - 3) * 12);
 }
 
 /**
@@ -61,7 +77,8 @@ export function resolveColor(
     const color = ancestorColors[i];
     if (color && color.trim() !== '') {
       const distance = ancestorColors.length - i; // 1 for child, 2 for subchild...
-      return lightenColor(color, distance * 12);
+      const percent = getLevelLightenPercent(distance);
+      return lightenColor(color, percent);
     }
   }
 
@@ -88,6 +105,7 @@ export function getUnusedProjectColor(existingNodes: NodeItem[]): string {
     }
   }
 
-  // Fallback to random swatch if all 12 are used
+  // Fallback to random swatch if all swatches are used
   return CURATED_SWATCHES[Math.floor(Math.random() * CURATED_SWATCHES.length)].hex;
 }
+
