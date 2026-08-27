@@ -4,19 +4,26 @@ export const DEFAULT_FALLBACK_COLOR = '#0D9488'; // Vibrant Emerald Teal
 
 // Curated palette — kept saturated & clean (zen-friendly, not neon) so that
 // every level-gradient derived from them still reads clearly on the calendar.
+// NOTE: These hex values intentionally match the palette that has always
+// shipped in this app. Existing nodes in the database store one of these
+// exact hex strings in their `color` column, and getUnusedProjectColor()
+// below decides "is this swatch already used?" by exact hex match — so
+// changing these values breaks auto-color-assignment for every new
+// Level-1 node (it silently falls back to swatch #1 for everyone). If the
+// palette ever needs to change, migrate stored node colors at the same time.
 export const CURATED_SWATCHES = [
-  { name: 'Emerald Teal', hex: '#0EA5A0' },
-  { name: 'Royal Sapphire', hex: '#3B6FED' },
-  { name: 'Vivid Amber', hex: '#E08A0E' },
-  { name: 'Electric Violet', hex: '#8B5CF6' },
-  { name: 'Ruby Crimson', hex: '#EF4468' },
-  { name: 'Lush Emerald', hex: '#22A866' },
-  { name: 'Sunset Orange', hex: '#F2650F' },
-  { name: 'Ocean Cyan', hex: '#0EA5C4' },
-  { name: 'Deep Purple', hex: '#A64BF0' },
-  { name: 'Sky Cerulean', hex: '#2E9AE8' },
-  { name: 'Berry Magenta', hex: '#D63AE0' },
-  { name: 'Coral Flame', hex: '#F14F72' },
+  { name: 'Emerald Teal', hex: '#0D9488' },
+  { name: 'Royal Sapphire', hex: '#2563EB' },
+  { name: 'Vivid Amber', hex: '#D97706' },
+  { name: 'Electric Violet', hex: '#7C3AED' },
+  { name: 'Ruby Crimson', hex: '#E11D48' },
+  { name: 'Lush Emerald', hex: '#059669' },
+  { name: 'Sunset Orange', hex: '#EA580C' },
+  { name: 'Ocean Cyan', hex: '#0891B2' },
+  { name: 'Deep Purple', hex: '#9333EA' },
+  { name: 'Sky Cerulean', hex: '#0284C7' },
+  { name: 'Berry Magenta', hex: '#C026D3' },
+  { name: 'Coral Flame', hex: '#F43F5E' },
 ];
 
 // ── HEX <-> HSL helpers ─────────────────────────────────────────────
