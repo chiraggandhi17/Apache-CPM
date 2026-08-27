@@ -19,6 +19,7 @@ export interface NodeItem {
   status: NodeStatus;
   is_critical: boolean;
   assignee: string | null;
+  assignee_user_id?: string | null;
   vendor_contact: string | null;
   department: string | null;
   season: string | null;

@@ -298,6 +298,9 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const userFullName = (profile.full_name || '').toLowerCase();
 
     const assignedNodes = nodes.filter(n => {
+      // Prefer the reliable FK-based assignment; only fall back to fuzzy
+      // text-matching for legacy nodes assigned before assignee_user_id existed.
+      if (n.assignee_user_id) return n.assignee_user_id === profile.id;
       if (!n.assignee) return false;
       const a = n.assignee.toLowerCase();
       return a.includes(userEmail) || (userFullName && a.includes(userFullName));
@@ -341,6 +344,9 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const userFullName = (profile.full_name || '').toLowerCase();
 
     const assignedNodes = nodes.filter(n => {
+      // Prefer the reliable FK-based assignment; only fall back to fuzzy
+      // text-matching for legacy nodes assigned before assignee_user_id existed.
+      if (n.assignee_user_id) return n.assignee_user_id === profile.id;
       if (!n.assignee) return false;
       const a = n.assignee.toLowerCase();
       return a.includes(userEmail) || (userFullName && a.includes(userFullName));
@@ -707,6 +713,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       status: data.status || 'not_started',
       is_critical: data.is_critical || false,
       assignee: data.assignee || null,
+      assignee_user_id: data.assignee_user_id || null,
       vendor_contact: data.vendor_contact || null,
       department: data.department || profile?.department || (isIndividual ? 'Personal' : 'Production'),
       season: data.season || 'SS26',

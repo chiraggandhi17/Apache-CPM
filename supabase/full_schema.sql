@@ -134,6 +134,8 @@ ALTER TABLE public.nodes ADD COLUMN IF NOT EXISTS org_id UUID REFERENCES public.
 ALTER TABLE public.nodes ADD COLUMN IF NOT EXISTS team_id UUID REFERENCES public.teams(id) ON DELETE SET NULL;
 ALTER TABLE public.nodes ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
 ALTER TABLE public.nodes ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+ALTER TABLE public.nodes ADD COLUMN IF NOT EXISTS assignee_user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_nodes_assignee_user_id ON public.nodes(assignee_user_id);
 ALTER TABLE public.nodes ADD COLUMN IF NOT EXISTS start_date TIMESTAMPTZ;
 
 -- 7. Node Activity Audit Logs Table

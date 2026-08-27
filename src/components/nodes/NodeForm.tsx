@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NodeItem, NodeType, NodeStatus } from '../../types/domain';
 import { useNodes } from '../../context/NodeContext';
+import { useAuth, UserProfile } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
 import { ColorPicker } from '../shared/ColorPicker';
 import { InlineCalendar } from '../shared/InlineCalendar';
 import { CriticalFlag } from '../shared/CriticalFlag';
@@ -29,6 +31,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
   onClose,
 }) => {
   const { addNode, updateNode, nodes, reminders, addReminder, dismissReminder } = useNodes();
+  const { isIndividual, profile } = useAuth();
   const isEditing = Boolean(initialNode);
 
   const getSuggestedType = (): NodeType => {
@@ -94,6 +97,46 @@ export const NodeForm: React.FC<NodeFormProps> = ({
   const [isCritical, setIsCritical] = useState<boolean>(initialNode?.is_critical || false);
   const [status, setStatus] = useState<NodeStatus>(initialNode?.status || 'not_started');
   const [assignee, setAssignee] = useState(initialNode?.assignee || '');
+  const [assigneeUserId, setAssigneeUserId] = useState<string | null>(initialNode?.assignee_user_id || null);
+  const [orgMembers, setOrgMembers] = useState<UserProfile[]>([]);
+  const [loadingOrgMembers, setLoadingOrgMembers] = useState(false);
+
+  // For organization accounts, load real team members to assign the task to
+  // (drives real access control — see NodeContext.canUserEditNode). Individual
+  // accounts keep a free-text assignee field with no permission meaning.
+  useEffect(() => {
+    if (isIndividual || !profile?.org_id) return;
+    let cancelled = false;
+    setLoadingOrgMembers(true);
+    supabase
+      .from('profiles')
+      .select('id, email, full_name, role, status')
+      .eq('org_id', profile.org_id)
+      .eq('status', 'approved')
+      .order('full_name', { ascending: true })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.error('Failed to load org members for assignee picker:', error);
+        } else {
+          setOrgMembers((data as UserProfile[]) || []);
+        }
+        setLoadingOrgMembers(false);
+      });
+    return () => { cancelled = true; };
+  }, [isIndividual, profile?.org_id]);
+
+  const handleSelectAssignee = (memberId: string) => {
+    if (!memberId) {
+      setAssigneeUserId(null);
+      setAssignee('');
+      return;
+    }
+    const member = orgMembers.find(m => m.id === memberId);
+    setAssigneeUserId(memberId);
+    setAssignee(member ? (member.full_name || member.email) : '');
+  };
+
   const [vendorContact, setVendorContact] = useState(initialNode?.vendor_contact || '');
   const [description, setDescription] = useState(initialNode?.description || '');
 
@@ -235,6 +278,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
           is_critical: isCritical,
           status,
           assignee: assignee || null,
+          assignee_user_id: isIndividual ? null : assigneeUserId,
           vendor_contact: vendorContact || null,
           description: description || null,
         });
@@ -252,6 +296,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
           is_critical: isCritical,
           status,
           assignee: assignee || null,
+          assignee_user_id: isIndividual ? null : assigneeUserId,
           vendor_contact: vendorContact || null,
           description: description || null,
         });
@@ -913,15 +958,32 @@ export const NodeForm: React.FC<NodeFormProps> = ({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-bold text-[var(--text-secondary)] mb-1.5 flex items-center gap-1">
-                <User className="w-3.5 h-3.5 text-[var(--text-muted)]" /> Assignee
+                <User className="w-3.5 h-3.5 text-[var(--text-muted)]" /> {isIndividual ? 'Assigned To' : 'Assignee'}
               </label>
-              <input
-                type="text"
-                value={assignee}
-                onChange={e => setAssignee(e.target.value)}
-                placeholder="e.g. Alex J. (alex@company.com)"
-                className="w-full text-xs px-3 py-2 bg-[var(--input-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-[var(--accent)]"
-              />
+              {isIndividual ? (
+                <>
+                  <input
+                    type="text"
+                    value={assignee}
+                    onChange={e => setAssignee(e.target.value)}
+                    placeholder="e.g. Contractor, spouse, client..."
+                    className="w-full text-xs px-3 py-2 bg-[var(--input-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-[var(--accent)]"
+                  />
+                  <p className="text-[10px] text-[var(--text-muted)] mt-1">Just a note to yourself — who to check with for updates.</p>
+                </>
+              ) : (
+                <select
+                  value={assigneeUserId || ''}
+                  onChange={e => handleSelectAssignee(e.target.value)}
+                  disabled={loadingOrgMembers}
+                  className="w-full text-xs px-3 py-2 bg-[var(--input-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-[var(--accent)] disabled:opacity-60"
+                >
+                  <option value="">{loadingOrgMembers ? 'Loading team members...' : 'Unassigned'}</option>
+                  {orgMembers.map(m => (
+                    <option key={m.id} value={m.id}>{m.full_name || m.email}</option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div>
