@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Organization, UserProfile } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { useDialog } from '../../context/DialogContext';
 import { 
   Building2, Plus, ShieldCheck, ToggleLeft, ToggleRight, Sparkles, 
   Layers, Palette, Download, Trash2, Activity, Server, Database, 
@@ -58,6 +60,8 @@ interface SuperAdminDashboardProps {
 }
 
 export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ currentSection = 'organizations' }) => {
+  const toast = useToast();
+  const { confirm, showInfo } = useDialog();
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [upgradeRequests, setUpgradeRequests] = useState<TierUpgradeRequest[]>([]);
@@ -132,7 +136,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
 
       if (profErr) {
         console.error('Profiles fetch error:', profErr);
-        alert(`Profiles Fetch Error: ${profErr.message}`);
+        toast.error(`Profiles Fetch Error: ${profErr.message}`);
         setAllUsers([]);
       } else {
         setAllUsers((profs as UserProfile[]) || []);
@@ -260,7 +264,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
 
       await loadData();
     } catch (err: any) {
-      alert('Failed to provision client organization: ' + err.message);
+      toast.error('Failed to provision client organization: ' + err.message);
     }
   };
 
@@ -300,7 +304,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
       setEditingOrg(null);
       await loadData();
     } catch (err: any) {
-      alert('Error saving organization changes: ' + err.message);
+      toast.error('Error saving organization changes: ' + err.message);
     }
   };
 
@@ -309,31 +313,40 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
       await supabase.from('profiles').update({ tier: newTier, updated_at: new Date().toISOString() }).eq('id', userId);
       await loadData();
     } catch (err: any) {
-      alert('Error updating user tier: ' + err.message);
+      toast.error('Error updating user tier: ' + err.message);
     }
   };
 
   const handleDeleteUser = async (userId: string, userEmail: string) => {
-    if (!confirm(`Are you sure you want to permanently delete user account "${userEmail}"?\n\nThis will remove their profile and workspace access.`)) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Delete User Account',
+      message: `Are you sure you want to permanently delete user account "${userEmail}"?\n\nThis will remove their profile and workspace access.`,
+      destructive: true,
+      confirmLabel: 'Delete Account',
+    });
+    if (!ok) return;
 
     try {
       const { error } = await supabase.from('profiles').delete().eq('id', userId);
       if (error) throw error;
-      alert(`User account "${userEmail}" deleted successfully.`);
+      toast.success(`User account "${userEmail}" deleted successfully.`);
       await loadData();
     } catch (err: any) {
       console.error('Delete user error:', err);
-      alert(`Failed to delete user: ${err.message}`);
+      toast.error(`Failed to delete user: ${err.message}`);
     }
   };
 
   // Complete Cascade Deletion of Organization & All Associated Member Accounts
   const handleDeleteOrganization = async (orgId: string, orgName: string) => {
-    const confirmName = prompt(`⚠️ CAUTION: Deleting "${orgName}" will permanently purge the organization, all member user accounts, teams, and critical path nodes.\n\nType "${orgName}" to confirm deletion:`);
-    if (confirmName !== orgName) {
-      if (confirmName !== null) alert('Deletion cancelled: Name did not match.');
+    const ok = await confirm({
+      title: 'Delete Organization',
+      message: `CAUTION: Deleting "${orgName}" will permanently purge the organization, all member user accounts, teams, and critical path nodes. Type "${orgName}" to confirm deletion.`,
+      destructive: true,
+      confirmLabel: 'Permanently Delete',
+      requireTypedText: orgName,
+    });
+    if (!ok) {
       return;
     }
 
@@ -362,11 +375,11 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
       const { error: orgDelErr } = await supabase.from('organizations').delete().eq('id', orgId);
       if (orgDelErr) throw orgDelErr;
 
-      alert(`Organization "${orgName}" and all associated member accounts have been permanently purged from Supabase.`);
+      toast.success(`Organization "${orgName}" and all associated member accounts have been permanently purged from Supabase.`);
       await loadData();
     } catch (err: any) {
       console.error('Error deleting organization:', err);
-      alert('Error deleting organization: ' + err.message);
+      toast.error('Error deleting organization: ' + err.message);
     }
   };
 
@@ -383,7 +396,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
       setCopiedOrgId(org.id);
       setTimeout(() => setCopiedOrgId(null), 3000);
     } else {
-      prompt('Copy organization workspace info below:', cleanInvite);
+      showInfo({ title: 'Organization Workspace Info', message: 'Copy the details below:', copyText: cleanInvite });
     }
   };
 
@@ -404,7 +417,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
   return (
     <div className="space-y-6">
       {/* Super Admin Control Banner */}
-      <div className="bg-slate-900 text-white p-6 rounded-3xl border border-slate-800 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+      <div className="bg-[var(--sidebar-bg)] text-white p-6 rounded-3xl border border-[var(--sidebar-border)] shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
         <div className="max-w-2xl">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30 mb-2">
             <ShieldCheck className="w-3.5 h-3.5" /> Platform Super Administrator
@@ -427,7 +440,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
           <button
             type="button"
             onClick={loadData}
-            className="w-full h-9 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl font-semibold text-xs transition-colors flex items-center justify-center gap-2"
+            className="w-full h-9 px-3 bg-[var(--sidebar-hover)] hover:bg-[var(--sidebar-active)]/20 text-[var(--sidebar-text)] border border-[var(--sidebar-border)] rounded-xl font-semibold text-xs transition-colors flex items-center justify-center gap-2"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh Telemetry
           </button>
@@ -436,36 +449,36 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
 
       {/* Telemetry Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
-        <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-2xs">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block">Organizations</span>
-          <span className="text-lg font-black text-gray-900 font-mono mt-0.5 block">{stats.organizations}</span>
+        <div className="bg-[var(--card-bg)] p-3.5 rounded-2xl border border-[var(--border)] shadow-2xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] block">Organizations</span>
+          <span className="text-lg font-black text-[var(--text-primary)] font-mono mt-0.5 block">{stats.organizations}</span>
         </div>
-        <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-2xs">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block">Registered Users</span>
-          <span className="text-lg font-black text-gray-900 font-mono mt-0.5 block">{allUsers.length}</span>
+        <div className="bg-[var(--card-bg)] p-3.5 rounded-2xl border border-[var(--border)] shadow-2xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] block">Registered Users</span>
+          <span className="text-lg font-black text-[var(--text-primary)] font-mono mt-0.5 block">{allUsers.length}</span>
         </div>
-        <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-2xs">
+        <div className="bg-[var(--card-bg)] p-3.5 rounded-2xl border border-[var(--border)] shadow-2xs">
           <span className="text-[10px] font-bold uppercase tracking-wider text-teal-600 block">Personal Free Users</span>
           <span className="text-lg font-black text-teal-700 font-mono mt-0.5 block">{stats.individualUsers}</span>
         </div>
-        <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-2xs">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block">Active Milestones</span>
-          <span className="text-lg font-black text-gray-900 font-mono mt-0.5 block">{stats.nodes}</span>
+        <div className="bg-[var(--card-bg)] p-3.5 rounded-2xl border border-[var(--border)] shadow-2xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] block">Active Milestones</span>
+          <span className="text-lg font-black text-[var(--text-primary)] font-mono mt-0.5 block">{stats.nodes}</span>
         </div>
-        <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-2xs">
+        <div className="bg-[var(--card-bg)] p-3.5 rounded-2xl border border-[var(--border)] shadow-2xs">
           <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 block">Active Alerts</span>
           <span className="text-lg font-black text-amber-700 font-mono mt-0.5 block">{stats.reminders}</span>
         </div>
-        <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-2xs">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block">DB Latency</span>
+        <div className="bg-[var(--card-bg)] p-3.5 rounded-2xl border border-[var(--border)] shadow-2xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] block">DB Latency</span>
           <span className="text-lg font-black text-emerald-600 font-mono mt-0.5 block">{dbLatencyMs} ms</span>
         </div>
       </div>
 
       {/* SECTION: CLIENT ORGANIZATIONS DIRECTORY */}
-      <div className="bg-white rounded-3xl border border-gray-200 shadow-2xs overflow-hidden">
-        <div className="p-4 bg-gray-50/50 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
+      <div className="bg-[var(--card-bg)] rounded-3xl border border-[var(--border)] shadow-2xs overflow-hidden">
+        <div className="p-4 bg-[var(--badge-bg)] border-b border-[var(--border-subtle)] flex items-center justify-between">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] flex items-center gap-1.5">
             <Building2 className="w-4 h-4 text-teal-600" /> Provisioned Client Organizations ({organizations.length})
           </h2>
           <button
@@ -479,7 +492,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 font-bold uppercase tracking-wider text-[10px]">
+            <thead className="bg-[var(--badge-bg)] border-b border-[var(--border)] text-[var(--text-secondary)] font-bold uppercase tracking-wider text-[10px]">
               <tr>
                 <th className="px-4 py-3">Organization Name</th>
                 <th className="px-4 py-3">Workspace Code</th>
@@ -492,7 +505,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
             <tbody className="divide-y divide-gray-100">
               {organizations.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-gray-400 italic">
+                  <td colSpan={6} className="p-8 text-center text-[var(--text-muted)] italic">
                     No client organizations provisioned in database yet. Click "Provision Client Org" above to add your first tenant.
                   </td>
                 </tr>
@@ -501,7 +514,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                   const isCopied = copiedOrgId === org.id;
 
                   return (
-                    <tr key={org.id} className="hover:bg-gray-50/60 transition-colors">
+                    <tr key={org.id} className="hover:bg-[var(--badge-bg)] transition-colors">
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-2.5">
                           <div 
@@ -511,19 +524,19 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                             {org.name.charAt(0)}
                           </div>
                           <div>
-                            <div className="font-bold text-gray-900">{org.name}</div>
-                            <div className="text-[11px] text-gray-500 truncate max-w-xs">{org.brand_tagline || 'Ex-Factory CPM'}</div>
+                            <div className="font-bold text-[var(--text-primary)]">{org.name}</div>
+                            <div className="text-[11px] text-[var(--text-muted)] truncate max-w-xs">{org.brand_tagline || 'Ex-Factory CPM'}</div>
                           </div>
                         </div>
                       </td>
 
                       <td className="px-4 py-3.5">
-                        <span className="font-mono bg-slate-900 text-teal-300 font-bold px-2 py-1 rounded-md text-[11px]">
+                        <span className="font-mono bg-[var(--sidebar-bg)] text-teal-300 font-bold px-2 py-1 rounded-md text-[11px]">
                           {org.org_code}
                         </span>
                       </td>
 
-                      <td className="px-4 py-3.5 font-mono text-gray-700">
+                      <td className="px-4 py-3.5 font-mono text-[var(--text-secondary)]">
                         {org.primary_admin_email}
                       </td>
 
@@ -558,7 +571,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                             type="button"
                             onClick={() => handleOpenEditOrg(org)}
                             title="Edit Organization & Tier"
-                            className="h-8 w-8 flex items-center justify-center rounded-xl border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 transition-colors shadow-2xs"
+                            className="h-8 w-8 flex items-center justify-center rounded-xl border border-[var(--border)] text-[var(--text-secondary)] bg-[var(--card-bg)] hover:bg-[var(--badge-bg)] transition-colors shadow-2xs"
                           >
                             <Edit3 className="w-4 h-4" />
                           </button>
@@ -583,13 +596,13 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
       </div>
 
       {/* SECTION: ALL REGISTERED PLATFORM USERS DIRECTORY */}
-      <div className="bg-white rounded-3xl border border-gray-200 shadow-2xs overflow-hidden space-y-3 p-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-gray-100">
+      <div className="bg-[var(--card-bg)] rounded-3xl border border-[var(--border)] shadow-2xs overflow-hidden space-y-3 p-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-[var(--border-subtle)]">
           <div className="flex items-center gap-2">
             <User className="w-5 h-5 text-teal-600" />
             <div>
-              <h2 className="text-xs font-bold uppercase tracking-wider text-gray-900">All Registered User Accounts ({filteredUsers.length})</h2>
-              <p className="text-[11px] text-gray-500">Overview of all individual personal accounts and organization members</p>
+              <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--text-primary)]">All Registered User Accounts ({filteredUsers.length})</h2>
+              <p className="text-[11px] text-[var(--text-muted)]">Overview of all individual personal accounts and organization members</p>
             </div>
           </div>
 
@@ -601,16 +614,16 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                 value={userSearch}
                 onChange={e => setUserSearch(e.target.value)}
                 placeholder="Search email or name..."
-                className="text-xs pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-medium"
+                className="text-xs pl-8 pr-3 py-1.5 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500 font-medium"
               />
-              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2" />
+              <Search className="w-3.5 h-3.5 text-[var(--text-muted)] absolute left-2.5 top-2" />
             </div>
 
             {/* Filter */}
             <select
               value={userTypeFilter}
               onChange={e => setUserTypeFilter(e.target.value as any)}
-              className="text-xs px-3 py-1.5 bg-gray-50 border border-gray-300 rounded-xl font-semibold outline-none focus:border-teal-500"
+              className="text-xs px-3 py-1.5 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl font-semibold outline-none focus:border-teal-500"
             >
               <option value="all">All User Types</option>
               <option value="individual">Personal (Individual)</option>
@@ -621,7 +634,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 font-bold uppercase tracking-wider text-[10px]">
+            <thead className="bg-[var(--badge-bg)] border-b border-[var(--border)] text-[var(--text-secondary)] font-bold uppercase tracking-wider text-[10px]">
               <tr>
                 <th className="px-4 py-3">User Profile</th>
                 <th className="px-4 py-3">Workspace Type</th>
@@ -633,7 +646,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
             <tbody className="divide-y divide-gray-100">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-gray-400 italic">
+                  <td colSpan={5} className="p-8 text-center text-[var(--text-muted)] italic">
                     No registered user accounts matching search filter.
                   </td>
                 </tr>
@@ -643,16 +656,16 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                   const orgName = u.org_id ? organizations.find(o => o.id === u.org_id)?.name || 'Company Workspace' : 'Personal Workspace';
 
                   return (
-                    <tr key={u.id} className="hover:bg-gray-50/60 transition-colors">
+                    <tr key={u.id} className="hover:bg-[var(--badge-bg)] transition-colors">
                       <td className="px-4 py-3.5">
-                        <div className="font-bold text-gray-900">{u.full_name || 'Registered User'}</div>
-                        <div className="text-[11px] text-gray-500 font-mono">{u.email}</div>
+                        <div className="font-bold text-[var(--text-primary)]">{u.full_name || 'Registered User'}</div>
+                        <div className="text-[11px] text-[var(--text-muted)] font-mono">{u.email}</div>
                       </td>
 
                       <td className="px-4 py-3.5">
                         <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold ${
                           isPersonal 
-                            ? 'bg-slate-100 text-slate-700 border border-slate-200' 
+                            ? 'bg-[var(--badge-bg)] text-[var(--text-secondary)] border border-[var(--border)]' 
                             : 'bg-teal-50 text-teal-800 border border-teal-200'
                         }`}>
                           {isPersonal ? '👤 Personal Free' : `🏢 ${orgName}`}
@@ -660,7 +673,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                       </td>
 
                       <td className="px-4 py-3.5">
-                        <span className="text-[11px] font-bold text-gray-800 capitalize font-mono">
+                        <span className="text-[11px] font-bold text-[var(--text-primary)] capitalize font-mono">
                           {u.role.replace(/_/g, ' ')}
                         </span>
                       </td>
@@ -683,7 +696,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                             <select
                               value={(u as any).tier || 'tier_1'}
                               onChange={e => handleUpdateIndividualTier(u.id, e.target.value as any)}
-                              className="h-8 px-2 bg-white border border-gray-300 rounded-xl text-xs font-semibold outline-none focus:border-teal-500"
+                              className="h-8 px-2 bg-[var(--card-bg)] border border-[var(--border)] rounded-xl text-xs font-semibold outline-none focus:border-teal-500"
                             >
                               <option value="tier_1">Tier 1: Personal</option>
                               <option value="tier_2">Tier 2: Pro</option>
@@ -714,55 +727,55 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
       {/* CREATE NEW CLIENT ORG MODAL */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-200 space-y-4">
-            <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+          <div className="bg-[var(--card-bg)] rounded-3xl p-6 max-w-md w-full shadow-2xl border border-[var(--border)] space-y-4">
+            <h2 className="text-base font-bold text-[var(--text-primary)] flex items-center gap-2">
               <Plus className="w-5 h-5 text-teal-600" />
               <span>Provision Client Organization</span>
             </h2>
 
             <form onSubmit={handleCreateOrganization} className="space-y-3 text-xs">
               <div>
-                <label className="block font-bold text-gray-700 mb-1">Company / Organization Name</label>
+                <label className="block font-bold text-[var(--text-secondary)] mb-1">Company / Organization Name</label>
                 <input
                   type="text"
                   required
                   value={newOrgName}
                   onChange={e => setNewOrgName(e.target.value)}
                   placeholder="e.g. Apache Footwear Tier 1"
-                  className="w-full text-xs p-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                  className="w-full text-xs p-2.5 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500 font-semibold"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-gray-700 mb-1">Workspace Code (Unique ID)</label>
+                <label className="block font-bold text-[var(--text-secondary)] mb-1">Workspace Code (Unique ID)</label>
                 <input
                   type="text"
                   required
                   value={newOrgCode}
                   onChange={e => setNewOrgCode(e.target.value.toUpperCase())}
                   placeholder="e.g. APACHE"
-                  className="w-full text-xs p-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-mono uppercase font-bold"
+                  className="w-full text-xs p-2.5 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500 font-mono uppercase font-bold"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-gray-700 mb-1">Primary Org Admin Email</label>
+                <label className="block font-bold text-[var(--text-secondary)] mb-1">Primary Org Admin Email</label>
                 <input
                   type="email"
                   required
                   value={newAdminEmail}
                   onChange={e => setNewAdminEmail(e.target.value)}
                   placeholder="admin@apache.com"
-                  className="w-full text-xs p-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-mono"
+                  className="w-full text-xs p-2.5 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500 font-mono"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-gray-700 mb-1">Subscription Tier</label>
+                <label className="block font-bold text-[var(--text-secondary)] mb-1">Subscription Tier</label>
                 <select
                   value={newOrgTier}
                   onChange={e => setNewOrgTier(e.target.value as any)}
-                  className="w-full text-xs p-2.5 bg-gray-50 border border-gray-300 rounded-xl font-bold outline-none focus:border-teal-500"
+                  className="w-full text-xs p-2.5 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl font-bold outline-none focus:border-teal-500"
                 >
                   <option value="enterprise">Tier 3: Enterprise Ex-Factory</option>
                   <option value="pro">Tier 2: Pro Power User</option>
@@ -770,11 +783,11 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
                 </select>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border-subtle)]">
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-gray-600 font-semibold rounded-xl hover:bg-gray-100"
+                  className="px-4 py-2 text-[var(--text-secondary)] font-semibold rounded-xl hover:bg-[var(--badge-bg)]"
                 >
                   Cancel
                 </button>
@@ -793,64 +806,64 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ curren
       {/* EDIT ORGANIZATION MODAL */}
       {editingOrg && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-gray-200 space-y-4 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+          <div className="bg-[var(--card-bg)] rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-[var(--border)] space-y-4 max-h-[90vh] overflow-y-auto">
+            <h2 className="text-base font-bold text-[var(--text-primary)] flex items-center gap-2">
               <Edit3 className="w-5 h-5 text-teal-600" />
               <span>Edit Organization: {editingOrg.name}</span>
             </h2>
 
             <form onSubmit={handleSaveEditOrganization} className="space-y-3 text-xs">
               <div>
-                <label className="block font-bold text-gray-700 mb-1">Organization Name</label>
+                <label className="block font-bold text-[var(--text-secondary)] mb-1">Organization Name</label>
                 <input
                   type="text"
                   required
                   value={editName}
                   onChange={e => setEditName(e.target.value)}
-                  className="w-full text-xs p-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                  className="w-full text-xs p-2.5 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500 font-semibold"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-gray-700 mb-1">Workspace Code</label>
+                  <label className="block font-bold text-[var(--text-secondary)] mb-1">Workspace Code</label>
                   <input
                     type="text"
                     required
                     value={editOrgCode}
                     onChange={e => setEditOrgCode(e.target.value.toUpperCase())}
-                    className="w-full text-xs p-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-mono font-bold uppercase"
+                    className="w-full text-xs p-2.5 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500 font-mono font-bold uppercase"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-bold text-gray-700 mb-1">Primary Admin Email</label>
+                  <label className="block font-bold text-[var(--text-secondary)] mb-1">Primary Admin Email</label>
                   <input
                     type="email"
                     required
                     value={editAdminEmail}
                     onChange={e => setEditAdminEmail(e.target.value)}
-                    className="w-full text-xs p-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-mono"
+                    className="w-full text-xs p-2.5 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500 font-mono"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block font-bold text-gray-700 mb-1">Brand Title Header</label>
+                <label className="block font-bold text-[var(--text-secondary)] mb-1">Brand Title Header</label>
                 <input
                   type="text"
                   value={editBrandTitle}
                   onChange={e => setEditBrandTitle(e.target.value)}
                   placeholder="e.g. Cadence - Apache Footwear"
-                  className="w-full text-xs p-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                  className="w-full text-xs p-2.5 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500 font-semibold"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border-subtle)]">
                 <button
                   type="button"
                   onClick={() => setEditingOrg(null)}
-                  className="px-4 py-2 text-gray-600 font-semibold rounded-xl hover:bg-gray-100"
+                  className="px-4 py-2 text-[var(--text-secondary)] font-semibold rounded-xl hover:bg-[var(--badge-bg)]"
                 >
                   Cancel
                 </button>

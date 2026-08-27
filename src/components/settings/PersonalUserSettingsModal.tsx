@@ -5,6 +5,9 @@ import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../lib/supabase';
 import { themes, THEME_IDS, type ThemeId } from '../../lib/theme';
 import { playNotificationSound } from '../../utils/sound';
+import { isNotificationSupported, getNotificationPermission, requestNotificationPermission } from '../../utils/notifications';
+import { useToast } from '../../context/ToastContext';
+import { useDialog } from '../../context/DialogContext';
 import { 
   Settings, User, Bell, Volume2, Download, Upload, Trash2, 
   RefreshCw, Check, AlertTriangle, X, Shield, Sparkles, Sliders, Palette
@@ -17,6 +20,8 @@ interface PersonalUserSettingsModalProps {
 export const PersonalUserSettingsModal: React.FC<PersonalUserSettingsModalProps> = ({ onClose }) => {
   const { profile, refreshProfile, tier } = useAuth();
   const { nodes, reminders, deleteNode } = useNodes();
+  const toast = useToast();
+  const { confirm } = useDialog();
   const { themeId, setTheme } = useTheme();
 
   const [fullName, setFullName] = useState(profile?.full_name || '');
@@ -26,6 +31,10 @@ export const PersonalUserSettingsModal: React.FC<PersonalUserSettingsModalProps>
   const [defaultSnooze, setDefaultSnooze] = useState(() => {
     return localStorage.getItem('cadence_default_snooze') || '1d';
   });
+  const [pushEnabled, setPushEnabled] = useState(() => {
+    return localStorage.getItem('cadence_push_enabled') === 'true' && getNotificationPermission() === 'granted';
+  });
+  const [pushPermission, setPushPermission] = useState(getNotificationPermission());
 
   const [savingProfile, setSavingProfile] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -47,12 +56,13 @@ export const PersonalUserSettingsModal: React.FC<PersonalUserSettingsModalProps>
 
       localStorage.setItem('cadence_sound_enabled', soundEnabled ? 'true' : 'false');
       localStorage.setItem('cadence_default_snooze', defaultSnooze);
+      localStorage.setItem('cadence_push_enabled', pushEnabled ? 'true' : 'false');
 
       await refreshProfile();
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2500);
     } catch (err: any) {
-      alert('Failed to save settings: ' + err.message);
+      toast.error('Failed to save settings: ' + err.message);
     } finally {
       setSavingProfile(false);
     }
@@ -60,6 +70,25 @@ export const PersonalUserSettingsModal: React.FC<PersonalUserSettingsModalProps>
 
   const handleTestChime = () => {
     playNotificationSound();
+  };
+
+  const handleTogglePush = async () => {
+    if (pushEnabled) {
+      setPushEnabled(false);
+      return;
+    }
+    if (getNotificationPermission() === 'granted') {
+      setPushEnabled(true);
+      return;
+    }
+    const result = await requestNotificationPermission();
+    setPushPermission(result);
+    if (result === 'granted') {
+      setPushEnabled(true);
+      toast.success('Browser notifications enabled.');
+    } else if (result === 'denied') {
+      toast.error('Notifications were blocked. Enable them in your browser\'s site settings to use this feature.');
+    }
   };
 
   const handleExportData = () => {
@@ -89,14 +118,14 @@ export const PersonalUserSettingsModal: React.FC<PersonalUserSettingsModalProps>
   };
 
   const handleClearAllData = async () => {
-    const confirmation = prompt(
-      `⚠️ CAUTION: This will permanently delete ALL ${nodes.length} tasks and ${reminders.length} alerts from your personal workspace.\n\nType "RESET" to confirm permanent deletion:`
-    );
-
-    if (confirmation !== 'RESET') {
-      if (confirmation !== null) alert('Reset cancelled: You did not type "RESET".');
-      return;
-    }
+    const confirmed = await confirm({
+      title: 'Reset Personal Workspace',
+      message: `This will permanently delete ALL ${nodes.length} tasks and ${reminders.length} alerts from your personal workspace. This cannot be undone.`,
+      requireTypedText: 'RESET',
+      confirmLabel: 'Delete Everything',
+      destructive: true,
+    });
+    if (!confirmed) return;
 
     setClearingData(true);
     try {
@@ -112,7 +141,7 @@ export const PersonalUserSettingsModal: React.FC<PersonalUserSettingsModalProps>
 
       window.location.reload();
     } catch (err: any) {
-      alert('Error resetting data: ' + err.message);
+      toast.error('Error resetting data: ' + err.message);
       setClearingData(false);
     }
   };
@@ -122,18 +151,18 @@ export const PersonalUserSettingsModal: React.FC<PersonalUserSettingsModalProps>
       <div className="rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto text-xs" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border)', border: '1px solid var(--border)' }}>
         
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+        <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center border border-teal-200">
               <Settings className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-gray-900">Personal Workspace Settings</h2>
-              <p className="text-[11px] text-gray-500">{profile?.email}</p>
+              <h2 className="text-base font-bold text-[var(--text-primary)]">Personal Workspace Settings</h2>
+              <p className="text-[11px] text-[var(--text-muted)]">{profile?.email}</p>
             </div>
           </div>
 
-          <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-700 rounded-xl hover:bg-gray-100">
+          <button onClick={onClose} className="p-1.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] rounded-xl hover:bg-[var(--badge-bg)]">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -203,50 +232,50 @@ export const PersonalUserSettingsModal: React.FC<PersonalUserSettingsModalProps>
         {/* Profile Settings Form */}
         <form onSubmit={handleSaveProfile} className="space-y-4">
           <div className="space-y-3">
-            <h3 className="font-bold text-gray-800 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+            <h3 className="font-bold text-[var(--text-primary)] uppercase tracking-wider text-[10px] flex items-center gap-1.5">
               <User className="w-3.5 h-3.5 text-teal-600" /> Account & Profile
             </h3>
 
             <div>
-              <label className="block font-bold text-gray-700 mb-1">Your Display Name</label>
+              <label className="block font-bold text-[var(--text-secondary)] mb-1">Your Display Name</label>
               <input
                 type="text"
                 required
                 value={fullName}
                 onChange={e => setFullName(e.target.value)}
                 placeholder="e.g. Alex Johnson"
-                className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                className="w-full h-9 px-3 bg-[var(--input-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500 font-semibold"
               />
             </div>
 
             <div>
-              <label className="block font-bold text-gray-700 mb-1">Registered Email (Read-Only)</label>
+              <label className="block font-bold text-[var(--text-secondary)] mb-1">Registered Email (Read-Only)</label>
               <input
                 type="email"
                 disabled
                 value={profile?.email || ''}
-                className="w-full h-9 px-3 bg-gray-100 border border-gray-200 rounded-xl font-mono text-gray-500 cursor-not-allowed"
+                className="w-full h-9 px-3 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl font-mono text-[var(--text-muted)] cursor-not-allowed"
               />
             </div>
           </div>
 
           {/* Sound & Alert Preferences */}
-          <div className="space-y-3 pt-3 border-t border-gray-100">
-            <h3 className="font-bold text-gray-800 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+          <div className="space-y-3 pt-3 border-t border-[var(--border-subtle)]">
+            <h3 className="font-bold text-[var(--text-primary)] uppercase tracking-wider text-[10px] flex items-center gap-1.5">
               <Bell className="w-3.5 h-3.5 text-amber-500" /> Audio Chimes & Alert Defaults
             </h3>
 
-            <div className="p-3.5 bg-gray-50 rounded-2xl border border-gray-200 flex items-center justify-between">
+            <div className="p-3.5 bg-[var(--input-bg)] rounded-2xl border border-[var(--border)] flex items-center justify-between">
               <div>
-                <span className="font-bold text-gray-900 block">Milestone Audio Chimes</span>
-                <span className="text-[11px] text-gray-500 block">Play sound alert when reminders and milestones are due</span>
+                <span className="font-bold text-[var(--text-primary)] block">Milestone Audio Chimes</span>
+                <span className="text-[11px] text-[var(--text-muted)] block">Play sound alert when reminders and milestones are due</span>
               </div>
 
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={handleTestChime}
-                  className="px-2.5 py-1 bg-white border border-gray-300 hover:bg-gray-100 rounded-lg text-[11px] font-bold text-gray-700 flex items-center gap-1 shadow-2xs"
+                  className="px-2.5 py-1 bg-[var(--card-bg)] border border-[var(--border)] hover:bg-[var(--badge-bg)] rounded-lg text-[11px] font-bold text-[var(--text-secondary)] flex items-center gap-1 shadow-2xs"
                 >
                   <Volume2 className="w-3.5 h-3.5 text-teal-600" /> Test Chime
                 </button>
@@ -255,20 +284,43 @@ export const PersonalUserSettingsModal: React.FC<PersonalUserSettingsModalProps>
                   type="button"
                   onClick={() => setSoundEnabled(!soundEnabled)}
                   className={`w-11 h-6 rounded-full transition-colors flex items-center px-0.5 ${
-                    soundEnabled ? 'bg-teal-600 justify-end' : 'bg-gray-300 justify-start'
+                    soundEnabled ? 'bg-teal-600 justify-end' : 'bg-[var(--border)] justify-start'
                   }`}
                 >
-                  <span className="w-5 h-5 rounded-full bg-white shadow-sm block" />
+                  <span className="w-5 h-5 rounded-full bg-[var(--card-bg)] shadow-sm block" />
                 </button>
               </div>
             </div>
 
+            {isNotificationSupported() && (
+              <div className="p-3.5 bg-[var(--input-bg)] rounded-2xl border border-[var(--border)] flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-[var(--text-primary)] block">Browser Push Notifications</span>
+                  <span className="text-[11px] text-[var(--text-muted)] block">
+                    {pushPermission === 'denied'
+                      ? 'Blocked by your browser — enable in site settings to use this.'
+                      : 'Get an OS notification when a reminder is due while this tab is open.'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleTogglePush}
+                  disabled={pushPermission === 'denied'}
+                  className={`w-11 h-6 rounded-full transition-colors flex items-center px-0.5 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
+                    pushEnabled ? 'bg-teal-600 justify-end' : 'bg-[var(--border)] justify-start'
+                  }`}
+                >
+                  <span className="w-5 h-5 rounded-full bg-[var(--card-bg)] shadow-sm block" />
+                </button>
+              </div>
+            )}
+
             <div>
-              <label className="block font-bold text-gray-700 mb-1">Default Reminder Snooze Interval</label>
+              <label className="block font-bold text-[var(--text-secondary)] mb-1">Default Reminder Snooze Interval</label>
               <select
                 value={defaultSnooze}
                 onChange={e => setDefaultSnooze(e.target.value)}
-                className="w-full h-9 px-3 bg-white border border-gray-300 rounded-xl font-semibold outline-none focus:border-teal-500"
+                className="w-full h-9 px-3 bg-[var(--card-bg)] border border-[var(--border)] rounded-xl font-semibold outline-none focus:border-teal-500"
               >
                 <option value="1h">1 Hour</option>
                 <option value="1d">1 Day (Default)</option>
@@ -290,8 +342,8 @@ export const PersonalUserSettingsModal: React.FC<PersonalUserSettingsModalProps>
         </form>
 
         {/* Data Backup & Reset */}
-        <div className="space-y-3 pt-3 border-t border-gray-100">
-          <h3 className="font-bold text-gray-800 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+        <div className="space-y-3 pt-3 border-t border-[var(--border-subtle)]">
+          <h3 className="font-bold text-[var(--text-primary)] uppercase tracking-wider text-[10px] flex items-center gap-1.5">
             <Download className="w-3.5 h-3.5 text-indigo-600" /> Data Backup & Workspace Reset
           </h3>
 
@@ -299,11 +351,11 @@ export const PersonalUserSettingsModal: React.FC<PersonalUserSettingsModalProps>
             <button
               type="button"
               onClick={handleExportData}
-              className="p-3 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-2xl flex items-center justify-between text-left transition-colors"
+              className="p-3 bg-[var(--input-bg)] hover:bg-[var(--badge-bg)] border border-[var(--border)] rounded-2xl flex items-center justify-between text-left transition-colors"
             >
               <div>
-                <span className="font-bold text-gray-900 block">Export JSON Backup</span>
-                <span className="text-[10px] text-gray-500">{nodes.length} tasks & alerts</span>
+                <span className="font-bold text-[var(--text-primary)] block">Export JSON Backup</span>
+                <span className="text-[10px] text-[var(--text-muted)]">{nodes.length} tasks & alerts</span>
               </div>
               <Download className="w-4 h-4 text-teal-600" />
             </button>

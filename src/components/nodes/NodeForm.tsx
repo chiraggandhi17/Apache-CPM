@@ -86,6 +86,11 @@ export const NodeForm: React.FC<NodeFormProps> = ({
   );
   const [offsetDaysQty, setOffsetDaysQty] = useState<number>(Math.abs(initialOffset) || 7);
 
+  // Calendar pickers default open only when no date is set yet (new task);
+  // once a date exists they collapse to a compact summary chip to reduce clutter.
+  const [showFixedCalendar, setShowFixedCalendar] = useState<boolean>(!plannedDate);
+  const [showRangeCalendar, setShowRangeCalendar] = useState<boolean>(!(startDate && plannedDate));
+
   const [isCritical, setIsCritical] = useState<boolean>(initialNode?.is_critical || false);
   const [status, setStatus] = useState<NodeStatus>(initialNode?.status || 'not_started');
   const [assignee, setAssignee] = useState(initialNode?.assignee || '');
@@ -282,11 +287,11 @@ export const NodeForm: React.FC<NodeFormProps> = ({
 
   return (
     <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden border border-gray-200 max-h-[90vh] flex flex-col">
+      <div className="bg-[var(--card-bg)] rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden border border-[var(--border)] max-h-[90vh] flex flex-col">
         
         {/* Modal Header with Dynamic Parent Color Theme Accent */}
         <div 
-          className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-slate-50/80 shrink-0"
+          className="px-6 py-4 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--badge-bg)] shrink-0"
           style={{ borderTop: `6px solid ${parentResolvedColor}` }}
         >
           <div className="flex items-center gap-2.5">
@@ -298,7 +303,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-gray-900 leading-tight">
+                <h2 className="text-sm font-bold text-[var(--text-primary)] leading-tight">
                   {isEditing ? 'Edit Milestone' : `Add ${type.charAt(0).toUpperCase() + type.slice(1)}`}
                 </h2>
                 {parentNode && (
@@ -313,15 +318,15 @@ export const NodeForm: React.FC<NodeFormProps> = ({
               
               {/* Ancestor Breadcrumb Path */}
               {ancestorPath.length > 0 && (
-                <div className="flex items-center flex-wrap gap-1 text-[11px] text-gray-500 leading-tight mt-0.5 font-medium">
+                <div className="flex items-center flex-wrap gap-1 text-[11px] text-[var(--text-muted)] leading-tight mt-0.5 font-medium">
                   <span>In:</span>
                   {ancestorPath.map((step, idx) => (
                     <React.Fragment key={step.id}>
-                      <span className={idx === ancestorPath.length - 1 ? 'font-bold text-gray-900' : 'text-gray-600'}>
+                      <span className={idx === ancestorPath.length - 1 ? 'font-bold text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}>
                         {step.title}
                       </span>
                       {idx < ancestorPath.length - 1 && (
-                        <ChevronRight className="w-3 h-3 text-gray-400 shrink-0 inline" />
+                        <ChevronRight className="w-3 h-3 text-[var(--text-muted)] shrink-0 inline" />
                       )}
                     </React.Fragment>
                   ))}
@@ -333,7 +338,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-200/60 transition-colors"
+            className="p-1.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--badge-bg)] transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -362,7 +367,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
 
           {/* Milestone Title */}
           <div>
-            <label className="block font-bold text-gray-800 mb-1.5">
+            <label className="block font-bold text-[var(--text-primary)] mb-1.5">
               Milestone / Task Name <span className="text-rose-500">*</span>
             </label>
             <input
@@ -372,18 +377,18 @@ export const NodeForm: React.FC<NodeFormProps> = ({
               value={title}
               onChange={e => setTitle(e.target.value)}
               placeholder="e.g. 2D/3D Pattern Review, Tooling Opening, Material Test..."
-              className="w-full text-xs px-3.5 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 focus:bg-white font-semibold transition-all shadow-2xs"
+              className="w-full text-xs px-3.5 py-2.5 bg-[var(--input-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-[var(--accent)] focus:bg-[var(--card-bg)] font-semibold transition-all shadow-2xs"
             />
           </div>
 
           {/* Hierarchy Type & Color Customization */}
           <div className="space-y-3">
             <div>
-              <label className="block font-bold text-gray-700 mb-1.5">Node Type / Category</label>
+              <label className="block font-bold text-[var(--text-secondary)] mb-1.5">Node Type / Category</label>
               <select
                 value={type}
                 onChange={e => setType(e.target.value as NodeType)}
-                className="w-full text-xs px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl font-semibold outline-none focus:border-teal-500 focus:bg-white"
+                className="w-full text-xs px-3 py-2 bg-[var(--input-bg)] border border-[var(--border)] rounded-xl font-semibold outline-none focus:border-[var(--accent)] focus:bg-[var(--card-bg)]"
               >
                 <option value="department">Department / Stream (Level 1)</option>
                 <option value="season">Season / Group (Level 2)</option>
@@ -394,8 +399,8 @@ export const NodeForm: React.FC<NodeFormProps> = ({
             </div>
 
             {/* De-cluttered Optional Color Swatch Override Checkbox */}
-            <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2.5">
-              <label className="flex items-center gap-2.5 text-xs font-bold text-gray-800 cursor-pointer select-none">
+            <div className="bg-[var(--badge-bg)] p-3 rounded-2xl border border-[var(--border)] space-y-2.5">
+              <label className="flex items-center gap-2.5 text-xs font-bold text-[var(--text-primary)] cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={overrideColor}
@@ -404,19 +409,19 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                     if (!e.target.checked) setColor(null);
                     else if (!color) setColor(defaultAutoColor || '#0D9488');
                   }}
-                  className="w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
+                  className="w-4 h-4 rounded border-[var(--border)] text-teal-600 focus:ring-teal-500 cursor-pointer"
                 />
                 <span>Customize Accent Color (Override Theme Gradient)</span>
               </label>
 
               {!overrideColor && (
-                <p className="text-[11px] text-gray-500 italic pl-6">
+                <p className="text-[11px] text-[var(--text-muted)] italic pl-6">
                   ✨ Inherits parent color with a soft, readable level gradient tint automatically.
                 </p>
               )}
 
               {overrideColor && (
-                <div className="pt-2 border-t border-gray-200">
+                <div className="pt-2 border-t border-[var(--border)]">
                   <ColorPicker
                     value={color}
                     onChange={setColor}
@@ -429,18 +434,18 @@ export const NodeForm: React.FC<NodeFormProps> = ({
           </div>
 
           {/* TARGET DATE & RELATIVE TIMING BUILDER */}
-          <div className="bg-slate-50/90 p-4 rounded-2xl border border-slate-200 space-y-3.5 shadow-2xs">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/80 pb-2.5">
+          <div className="bg-[var(--badge-bg)] p-4 rounded-2xl border border-[var(--border)] space-y-3.5 shadow-2xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[var(--border)]/80 pb-2.5">
               <div>
-                <label className="font-extrabold text-gray-900 flex items-center gap-1.5 text-xs">
+                <label className="font-extrabold text-[var(--text-primary)] flex items-center gap-1.5 text-xs">
                   <Calendar className="w-4 h-4 text-teal-600 shrink-0" />
                   <span>Milestone Scheduling & Dates</span>
                 </label>
-                <span className="text-[11px] text-gray-500 block mt-0.5">Select how this milestone's date is calculated & tracked</span>
+                <span className="text-[11px] text-[var(--text-muted)] block mt-0.5">Select how this milestone's date is calculated & tracked</span>
               </div>
 
               {/* 3-MODE DATE TYPE SEGMENTED SELECTOR */}
-              <div className="flex items-center bg-gray-200/70 p-1 rounded-xl border border-gray-300/60 shadow-2xs self-start sm:self-auto">
+              <div className="flex items-center bg-[var(--badge-bg)] p-1 rounded-xl border border-[var(--border)] shadow-2xs self-start sm:self-auto">
                 {parentId && (
                   <button
                     type="button"
@@ -448,7 +453,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                     className={`px-3 py-1.5 rounded-lg font-extrabold text-[11px] transition-all flex items-center gap-1 ${
                       dateMode === 'offset' 
                         ? 'bg-teal-600 text-white shadow-xs' 
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--card-bg)]/50'
                     }`}
                   >
                     <span>⚡ Relative Offset</span>
@@ -461,7 +466,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                   className={`px-3 py-1.5 rounded-lg font-extrabold text-[11px] transition-all flex items-center gap-1 ${
                     dateMode === 'single' 
                       ? 'bg-teal-600 text-white shadow-xs' 
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--card-bg)]/50'
                   }`}
                 >
                   <span>📌 Fixed Date</span>
@@ -473,7 +478,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                   className={`px-3 py-1.5 rounded-lg font-extrabold text-[11px] transition-all flex items-center gap-1 ${
                     dateMode === 'range' 
                       ? 'bg-teal-600 text-white shadow-xs' 
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--card-bg)]/50'
                   }`}
                 >
                   <span>🗓️ Date Range</span>
@@ -483,18 +488,18 @@ export const NodeForm: React.FC<NodeFormProps> = ({
 
             {/* MODE 1: RELATIVE OFFSET BUILDER (Dependent on Parent) */}
             {dateMode === 'offset' && parentId ? (
-              <div className="bg-white p-4 rounded-2xl border border-teal-200/80 space-y-3.5 shadow-2xs animate-in fade-in">
+              <div className="bg-[var(--card-bg)] p-4 rounded-2xl border border-teal-200/80 space-y-3.5 shadow-2xs animate-in fade-in">
                 
                 {/* Immediate Parent Reference Banner */}
                 <div className="flex items-center justify-between text-xs bg-teal-50/70 p-3 rounded-xl border border-teal-200">
                   <div className="flex items-center gap-2 truncate">
                     <Layers className="w-4 h-4 text-teal-700 shrink-0" />
-                    <span className="text-gray-600 font-medium shrink-0">Parent Milestone:</span>
+                    <span className="text-[var(--text-secondary)] font-medium shrink-0">Parent Milestone:</span>
                     <span className="font-bold text-teal-950 truncate">"{parentNode?.title || 'Parent Task'}"</span>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0 ml-2">
                     <span className="text-[11px] font-bold text-teal-700">Deadline:</span>
-                    <span className="font-mono font-extrabold text-teal-900 bg-white px-2.5 py-1 rounded-md border border-teal-200 shadow-2xs">
+                    <span className="font-mono font-extrabold text-teal-900 bg-[var(--card-bg)] px-2.5 py-1 rounded-md border border-teal-200 shadow-2xs">
                       {parentEffectiveDate ? formatLocalDate(parentEffectiveDate, 'MMM d, yyyy') : 'No Target Date'}
                     </span>
                   </div>
@@ -502,7 +507,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
 
                 {/* Timing Direction Cards */}
                 <div className="space-y-1.5">
-                  <label className="block text-[11px] font-extrabold text-gray-700">Timing Relative to Parent Milestone:</label>
+                  <label className="block text-[11px] font-extrabold text-[var(--text-secondary)]">Timing Relative to Parent Milestone:</label>
                   <div className="grid grid-cols-3 gap-2">
                     <button
                       type="button"
@@ -510,7 +515,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                       className={`py-2.5 px-2 rounded-xl font-bold text-[11px] border flex items-center justify-center gap-1.5 transition-all ${
                         offsetDirection === 'before'
                           ? 'bg-teal-50 border-teal-500 text-teal-950 ring-2 ring-teal-400/40 shadow-xs'
-                          : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                          : 'bg-[var(--input-bg)] border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--badge-bg)]'
                       }`}
                     >
                       <ArrowLeft className="w-3.5 h-3.5 text-teal-600 shrink-0" />
@@ -523,7 +528,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                       className={`py-2.5 px-2 rounded-xl font-bold text-[11px] border flex items-center justify-center gap-1.5 transition-all ${
                         offsetDirection === 'same'
                           ? 'bg-teal-50 border-teal-500 text-teal-950 ring-2 ring-teal-400/40 shadow-xs'
-                          : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                          : 'bg-[var(--input-bg)] border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--badge-bg)]'
                       }`}
                     >
                       <span>● Same Day</span>
@@ -535,7 +540,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                       className={`py-2.5 px-2 rounded-xl font-bold text-[11px] border flex items-center justify-center gap-1.5 transition-all ${
                         offsetDirection === 'after'
                           ? 'bg-teal-50 border-teal-500 text-teal-950 ring-2 ring-teal-400/40 shadow-xs'
-                          : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                          : 'bg-[var(--input-bg)] border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--badge-bg)]'
                       }`}
                     >
                       <span>After Parent</span>
@@ -546,16 +551,16 @@ export const NodeForm: React.FC<NodeFormProps> = ({
 
                 {/* Days Offset Stepper & Presets */}
                 {offsetDirection !== 'same' && (
-                  <div className="space-y-2.5 pt-2 border-t border-gray-100">
+                  <div className="space-y-2.5 pt-2 border-t border-[var(--border-subtle)]">
                     <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-bold text-gray-700">
+                      <label className="text-[11px] font-bold text-[var(--text-secondary)]">
                         {offsetDirection === 'before' ? 'Days Before Parent Target:' : 'Days After Parent Target:'}
                       </label>
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
                           onClick={() => setOffsetDaysQty(Math.max(1, offsetDaysQty - 1))}
-                          className="w-7 h-7 rounded-lg bg-gray-100 border border-gray-300 font-bold text-gray-700 hover:bg-gray-200 flex items-center justify-center"
+                          className="w-7 h-7 rounded-lg bg-[var(--badge-bg)] border border-[var(--border)] font-bold text-[var(--text-secondary)] hover:bg-[var(--badge-bg)] flex items-center justify-center"
                         >
                           -
                         </button>
@@ -565,21 +570,21 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                           max="365"
                           value={offsetDaysQty}
                           onChange={e => setOffsetDaysQty(Math.max(1, Number(e.target.value) || 1))}
-                          className="w-16 h-8 text-center font-mono font-bold bg-gray-50 border border-gray-300 rounded-lg text-xs"
+                          className="w-16 h-8 text-center font-mono font-bold bg-[var(--input-bg)] border border-[var(--border)] rounded-lg text-xs"
                         />
                         <button
                           type="button"
                           onClick={() => setOffsetDaysQty(offsetDaysQty + 1)}
-                          className="w-7 h-7 rounded-lg bg-gray-100 border border-gray-300 font-bold text-gray-700 hover:bg-gray-200 flex items-center justify-center"
+                          className="w-7 h-7 rounded-lg bg-[var(--badge-bg)] border border-[var(--border)] font-bold text-[var(--text-secondary)] hover:bg-[var(--badge-bg)] flex items-center justify-center"
                         >
                           +
                         </button>
-                        <span className="text-xs font-bold text-gray-500 ml-1">Days</span>
+                        <span className="text-xs font-bold text-[var(--text-muted)] ml-1">Days</span>
                       </div>
                     </div>
 
                     <div className="space-y-1">
-                      <span className="text-[10px] uppercase font-bold text-gray-400 block">Quick Offset Presets:</span>
+                      <span className="text-[10px] uppercase font-bold text-[var(--text-muted)] block">Quick Offset Presets:</span>
                       <div className="grid grid-cols-6 gap-1.5">
                         {[1, 3, 7, 14, 21, 30].map(d => (
                           <button
@@ -589,7 +594,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                             className={`py-1.5 rounded-lg text-[11px] font-bold border transition-all text-center ${
                               offsetDaysQty === d
                                 ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
-                                : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-100'
+                                : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--badge-bg)]'
                             }`}
                           >
                             {d}d
@@ -610,56 +615,66 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                       {calculatedTargetDate ? formatLocalDate(calculatedTargetDate, 'EEEE, MMMM d, yyyy') : 'Parent has no target date'}
                     </span>
                   </div>
-                  <span className="text-xs font-mono font-extrabold bg-white text-teal-900 px-3 py-1 rounded-lg shadow-2xs border border-white/20">
+                  <span className="text-xs font-mono font-extrabold bg-[var(--card-bg)] text-teal-900 px-3 py-1 rounded-lg shadow-2xs border border-white/20">
                     {offsetDirection === 'same' ? '0 Days' : `${offsetDirection === 'before' ? '-' : '+'}${offsetDaysQty} Days`}
                   </span>
                 </div>
-
-                {/* Read-only mini calendar landing preview */}
-                {calculatedTargetDate && (
-                  <InlineCalendar
-                    mode="single"
-                    selectedDate={calculatedTargetDate.substring(0, 10)}
-                    accentColor={parentResolvedColor}
-                    maxDate={parentEffectiveDate ? new Date(parentEffectiveDate) : null}
-                  />
-                )}
               </div>
             ) : dateMode === 'range' ? (
               /* MODE 2: DATE RANGE INPUT (Start Date -> Target End Date) via visual calendar */
-              <div className="bg-white p-4 rounded-2xl border border-indigo-200 space-y-3.5 shadow-2xs animate-in fade-in">
-                {/* Start / End readout chips indicating what the next click sets */}
+              <div className="bg-[var(--card-bg)] p-4 rounded-2xl border border-indigo-200 space-y-3.5 shadow-2xs animate-in fade-in">
+                {/* Start / End readout chips — click either to jump into the calendar */}
                 <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div className={`p-2.5 rounded-xl border-2 transition-all ${!startDate || (startDate && !plannedDate) ? 'border-indigo-400 bg-indigo-50/80 ring-2 ring-indigo-200' : 'border-gray-200 bg-gray-50'}`}>
-                    <span className="block font-bold text-gray-500 text-[10px] uppercase tracking-wide">Start Date</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowRangeCalendar(true)}
+                    className={`p-2.5 rounded-xl border-2 text-left transition-all ${!startDate || (startDate && !plannedDate) ? 'border-indigo-400 bg-indigo-50/80 ring-2 ring-indigo-200' : 'border-[var(--border)] bg-[var(--input-bg)] hover:border-indigo-300'}`}
+                  >
+                    <span className="block font-bold text-[var(--text-muted)] text-[10px] uppercase tracking-wide">Start Date</span>
                     <span className="font-mono font-extrabold text-indigo-950 text-xs">
                       {startDate ? formatLocalDate(new Date(startDate).toISOString(), 'MMM d, yyyy') : 'Tap a day →'}
                     </span>
-                  </div>
-                  <div className={`p-2.5 rounded-xl border-2 transition-all ${startDate && !plannedDate ? 'border-indigo-400 bg-indigo-50/80 ring-2 ring-indigo-200' : 'border-gray-200 bg-gray-50'}`}>
-                    <span className="block font-bold text-gray-500 text-[10px] uppercase tracking-wide">Target End Date</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowRangeCalendar(true)}
+                    className={`p-2.5 rounded-xl border-2 text-left transition-all ${startDate && !plannedDate ? 'border-indigo-400 bg-indigo-50/80 ring-2 ring-indigo-200' : 'border-[var(--border)] bg-[var(--input-bg)] hover:border-indigo-300'}`}
+                  >
+                    <span className="block font-bold text-[var(--text-muted)] text-[10px] uppercase tracking-wide">Target End Date</span>
                     <span className="font-mono font-extrabold text-indigo-950 text-xs">
                       {plannedDate ? formatLocalDate(new Date(plannedDate).toISOString(), 'MMM d, yyyy') : startDate ? 'Tap end day →' : '—'}
                     </span>
-                  </div>
+                  </button>
                 </div>
 
-                {/* Visual Range Calendar — first click sets start, second click sets end */}
-                <InlineCalendar
-                  mode="range"
-                  rangeStart={startDate || null}
-                  rangeEnd={plannedDate || null}
-                  onSelectRange={(start, end) => {
-                    setStartDate(start || '');
-                    setPlannedDate(end || '');
-                  }}
-                  accentColor={parentResolvedColor}
-                  maxDate={parentEffectiveDate ? new Date(parentEffectiveDate) : null}
-                />
+                {/* Visual Range Calendar — collapses once both ends are picked to keep the form tidy */}
+                {showRangeCalendar ? (
+                  <InlineCalendar
+                    mode="range"
+                    rangeStart={startDate || null}
+                    rangeEnd={plannedDate || null}
+                    onSelectRange={(start, end) => {
+                      setStartDate(start || '');
+                      setPlannedDate(end || '');
+                      if (start && end) setShowRangeCalendar(false);
+                    }}
+                    accentColor={parentResolvedColor}
+                    maxDate={parentEffectiveDate ? new Date(parentEffectiveDate) : null}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowRangeCalendar(true)}
+                    className="w-full py-2 rounded-xl border border-dashed border-indigo-300 text-indigo-700 text-[11px] font-bold hover:bg-indigo-50/60 transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>Change Dates on Calendar</span>
+                  </button>
+                )}
 
                 {/* Quick Add Duration Presets */}
-                <div className="space-y-1.5 pt-1 border-t border-gray-100">
-                  <span className="text-[10px] uppercase font-bold text-gray-400 block">Quick Duration Add (from Start Date):</span>
+                <div className="space-y-1.5 pt-1 border-t border-[var(--border-subtle)]">
+                  <span className="text-[10px] uppercase font-bold text-[var(--text-muted)] block">Quick Duration Add (from Start Date):</span>
                   <div className="grid grid-cols-5 gap-1.5">
                     {[
                       { label: '+3 Days', days: 3 },
@@ -693,7 +708,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                       <Calendar className="w-4 h-4 text-indigo-600" />
                       <span>Range Span: <strong>{formatLocalDate(new Date(startDate).toISOString(), 'MMM d')}</strong> → <strong>{formatLocalDate(new Date(plannedDate).toISOString(), 'MMM d, yyyy')}</strong></span>
                     </div>
-                    <span className="font-mono font-extrabold text-indigo-950 bg-white px-2.5 py-1 rounded-md border border-indigo-200 shadow-2xs">
+                    <span className="font-mono font-extrabold text-indigo-950 bg-[var(--card-bg)] px-2.5 py-1 rounded-md border border-indigo-200 shadow-2xs">
                       {Math.ceil((new Date(plannedDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1} Days
                     </span>
                   </div>
@@ -701,21 +716,52 @@ export const NodeForm: React.FC<NodeFormProps> = ({
               </div>
             ) : (
               /* MODE 3: SINGLE FIXED CALENDAR DATE INPUT — visual calendar picker */
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-3 shadow-2xs animate-in fade-in">
+              <div className="bg-[var(--card-bg)] p-4 rounded-2xl border border-[var(--border)] space-y-3 shadow-2xs animate-in fade-in">
                 <div>
-                  <label className="block font-bold text-gray-700 mb-1.5">Select Fixed Target Date</label>
-                  <InlineCalendar
-                    mode="single"
-                    selectedDate={plannedDate || null}
-                    onSelectSingle={d => setPlannedDate(d)}
-                    accentColor={parentResolvedColor}
-                    maxDate={parentEffectiveDate ? new Date(parentEffectiveDate) : null}
-                  />
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block font-bold text-[var(--text-secondary)]">Fixed Target Date</label>
+                    {plannedDate && (
+                      <button
+                        type="button"
+                        onClick={() => setShowFixedCalendar(o => !o)}
+                        className="text-[11px] font-bold text-[var(--accent)] hover:underline flex items-center gap-1"
+                      >
+                        {showFixedCalendar ? 'Hide Calendar' : 'Change'}
+                      </button>
+                    )}
+                  </div>
+
+                  {showFixedCalendar ? (
+                    <InlineCalendar
+                      mode="single"
+                      selectedDate={plannedDate || null}
+                      onSelectSingle={d => {
+                        setPlannedDate(d);
+                        setShowFixedCalendar(false);
+                      }}
+                      accentColor={parentResolvedColor}
+                      maxDate={parentEffectiveDate ? new Date(parentEffectiveDate) : null}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowFixedCalendar(true)}
+                      className="w-full p-3 bg-[var(--badge-bg)] rounded-xl border border-[var(--border)] flex items-center justify-between hover:border-[var(--accent)]/40 transition-colors"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4" style={{ color: parentResolvedColor }} />
+                        <span className="font-mono font-extrabold text-[var(--text-primary)] text-xs">
+                          {plannedDate ? formatLocalDate(new Date(plannedDate).toISOString(), 'EEEE, MMM d, yyyy') : 'No date selected'}
+                        </span>
+                      </span>
+                      <span className="text-[11px] font-bold text-[var(--accent)]">Tap to pick</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Quick Date Shortcuts */}
-                <div className="space-y-1.5 pt-1 border-t border-gray-100">
-                  <span className="text-[10px] uppercase font-bold text-gray-400 block">1-Click Date Shortcuts:</span>
+                <div className="space-y-1.5 pt-1 border-t border-[var(--border-subtle)]">
+                  <span className="text-[10px] uppercase font-bold text-[var(--text-muted)] block">1-Click Date Shortcuts:</span>
                   <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
                     {[
                       { label: 'Today', days: 0 },
@@ -732,7 +778,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                           const target = addDays(new Date(), s.days);
                           setPlannedDate(target.toISOString().substring(0, 10));
                         }}
-                        className="py-1.5 px-1 rounded-lg text-[11px] font-bold border border-gray-200 bg-gray-50 hover:bg-teal-600 hover:text-white text-gray-700 transition-all text-center truncate"
+                        className="py-1.5 px-1 rounded-lg text-[11px] font-bold border border-[var(--border)] bg-[var(--input-bg)] hover:bg-teal-600 hover:text-white text-[var(--text-secondary)] transition-all text-center truncate"
                       >
                         {s.label}
                       </button>
@@ -741,9 +787,9 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                 </div>
 
                 {plannedDate && (
-                  <div className="p-3 bg-slate-100 rounded-xl border border-slate-200 text-xs font-medium text-slate-800 flex items-center justify-between">
-                    <span className="text-gray-600">Scheduled Target Date:</span>
-                    <span className="font-mono font-extrabold text-teal-800 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs">
+                  <div className="p-3 bg-slate-100 rounded-xl border border-[var(--border)] text-xs font-medium text-slate-800 flex items-center justify-between">
+                    <span className="text-[var(--text-secondary)]">Scheduled Target Date:</span>
+                    <span className="font-mono font-extrabold text-teal-800 bg-[var(--card-bg)] px-2.5 py-1 rounded-lg border border-[var(--border)] shadow-2xs">
                       {formatLocalDate(new Date(plannedDate).toISOString(), 'EEEE, MMMM d, yyyy')}
                     </span>
                   </div>
@@ -767,7 +813,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
               <div className="space-y-1.5 pt-2 border-t border-amber-200/60">
                 <span className="text-[11px] font-bold text-amber-950 block">Existing Active Alerts:</span>
                 {existingNodeReminders.map(rem => (
-                  <div key={rem.id} className="bg-white p-2.5 rounded-xl border border-amber-200 flex items-center justify-between text-xs shadow-2xs">
+                  <div key={rem.id} className="bg-[var(--card-bg)] p-2.5 rounded-xl border border-amber-200 flex items-center justify-between text-xs shadow-2xs">
                     <div>
                       <p className="font-semibold text-amber-950">{rem.message}</p>
                       <p className="text-[10px] text-amber-700 font-mono mt-0.5">Trigger: {formatLocalDate(rem.remind_at)}</p>
@@ -801,8 +847,8 @@ export const NodeForm: React.FC<NodeFormProps> = ({
               </div>
 
               {attachReminder && (
-                <div className="bg-white p-3.5 rounded-2xl border border-amber-300 space-y-3 animate-in fade-in shadow-2xs">
-                  <label className="block text-[11px] font-bold text-gray-700">When should alert trigger?</label>
+                <div className="bg-[var(--card-bg)] p-3.5 rounded-2xl border border-amber-300 space-y-3 animate-in fade-in shadow-2xs">
+                  <label className="block text-[11px] font-bold text-[var(--text-secondary)]">When should alert trigger?</label>
                   
                   {/* Quick Alert Presets (6-Column Grid inside Popup) */}
                   <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
@@ -821,7 +867,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                         className={`py-1.5 px-1 rounded-xl text-[10px] font-bold border transition-colors text-center truncate ${
                           reminderPreset === p.val
                             ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                            : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                            : 'bg-[var(--input-bg)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--badge-bg)]'
                         }`}
                       >
                         {p.label}
@@ -837,9 +883,9 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                         max="60"
                         value={customReminderDays}
                         onChange={e => setCustomReminderDays(Math.max(1, Number(e.target.value) || 1))}
-                        className="w-16 h-8 text-center font-mono font-bold bg-gray-50 border border-gray-300 rounded-lg text-xs"
+                        className="w-16 h-8 text-center font-mono font-bold bg-[var(--input-bg)] border border-[var(--border)] rounded-lg text-xs"
                       />
-                      <span className="text-xs text-gray-600 font-medium">days before target date</span>
+                      <span className="text-xs text-[var(--text-secondary)] font-medium">days before target date</span>
                     </div>
                   )}
 
@@ -856,7 +902,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                     placeholder="Reminder note (e.g. Follow up with factory team on sample pull)..."
                     value={reminderMessage}
                     onChange={e => setReminderMessage(e.target.value)}
-                    className="w-full text-xs p-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-medium"
+                    className="w-full text-xs p-2.5 bg-[var(--input-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-[var(--accent)] font-medium"
                   />
                 </div>
               )}
@@ -866,43 +912,43 @@ export const NodeForm: React.FC<NodeFormProps> = ({
           {/* ASSIGNEE & VENDOR DETAILS */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-bold text-gray-700 mb-1.5 flex items-center gap-1">
-                <User className="w-3.5 h-3.5 text-gray-400" /> Assignee
+              <label className="block font-bold text-[var(--text-secondary)] mb-1.5 flex items-center gap-1">
+                <User className="w-3.5 h-3.5 text-[var(--text-muted)]" /> Assignee
               </label>
               <input
                 type="text"
                 value={assignee}
                 onChange={e => setAssignee(e.target.value)}
                 placeholder="e.g. Alex J. (alex@company.com)"
-                className="w-full text-xs px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500"
+                className="w-full text-xs px-3 py-2 bg-[var(--input-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-[var(--accent)]"
               />
             </div>
 
             <div>
-              <label className="block font-bold text-gray-700 mb-1.5 flex items-center gap-1">
-                <Tag className="w-3.5 h-3.5 text-gray-400" /> Vendor Contact
+              <label className="block font-bold text-[var(--text-secondary)] mb-1.5 flex items-center gap-1">
+                <Tag className="w-3.5 h-3.5 text-[var(--text-muted)]" /> Vendor Contact
               </label>
               <input
                 type="text"
                 value={vendorContact}
                 onChange={e => setVendorContact(e.target.value)}
                 placeholder="e.g. Apache Footwear Tier 1"
-                className="w-full text-xs px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500"
+                className="w-full text-xs px-3 py-2 bg-[var(--input-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-[var(--accent)]"
               />
             </div>
           </div>
 
           {/* Description & Follow-up Notes */}
           <div>
-            <label className="block font-bold text-gray-700 mb-1.5 flex items-center gap-1">
-              <FileText className="w-3.5 h-3.5 text-gray-400" /> Notes & Follow-up Log
+            <label className="block font-bold text-[var(--text-secondary)] mb-1.5 flex items-center gap-1">
+              <FileText className="w-3.5 h-3.5 text-[var(--text-muted)]" /> Notes & Follow-up Log
             </label>
             <textarea
               rows={2}
               value={description}
               onChange={e => setDescription(e.target.value)}
               placeholder="Milestone technical requirements, fit comments, vendor instructions..."
-              className="w-full text-xs p-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 leading-relaxed"
+              className="w-full text-xs p-2.5 bg-[var(--input-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-[var(--accent)] leading-relaxed"
             />
           </div>
 
@@ -918,11 +964,11 @@ export const NodeForm: React.FC<NodeFormProps> = ({
           )}
 
           {/* Form Actions */}
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border-subtle)]">
             <button
               type="button"
               onClick={onClose}
-              className="h-9 px-4 text-gray-600 font-semibold rounded-xl hover:bg-gray-100 transition-colors"
+              className="h-9 px-4 text-[var(--text-secondary)] font-semibold rounded-xl hover:bg-[var(--badge-bg)] transition-colors"
             >
               Cancel
             </button>
@@ -931,7 +977,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
               disabled={isSubmitting || Boolean(dateValidationError)}
               className={`h-9 px-5 font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 ${
                 dateValidationError
-                  ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed'
+                  ? 'bg-[var(--badge-bg)] text-[var(--text-muted)] border border-[var(--border)] cursor-not-allowed'
                   : 'bg-teal-600 hover:bg-teal-700 text-white'
               }`}
             >

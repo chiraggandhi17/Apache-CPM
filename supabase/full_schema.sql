@@ -165,6 +165,7 @@ CREATE TABLE IF NOT EXISTS public.reminders (
   message             TEXT NOT NULL,
   note                TEXT,
   is_recurring        BOOLEAN NOT NULL DEFAULT false,
+  recurrence_rule     TEXT, -- 'daily' | 'weekly' | 'monthly', meaningful only when is_recurring = true
   snoozed_until       TIMESTAMPTZ,
   dismissed_at        TIMESTAMPTZ,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -176,6 +177,7 @@ ALTER TABLE public.reminders ADD COLUMN IF NOT EXISTS note TEXT;
 ALTER TABLE public.reminders ADD COLUMN IF NOT EXISTS offset_mode TEXT DEFAULT 'relative';
 ALTER TABLE public.reminders ADD COLUMN IF NOT EXISTS offset_days INT;
 ALTER TABLE public.reminders ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.reminders ADD COLUMN IF NOT EXISTS recurrence_rule TEXT;
 ALTER TABLE public.reminders ADD COLUMN IF NOT EXISTS snoozed_until TIMESTAMPTZ;
 ALTER TABLE public.reminders ADD COLUMN IF NOT EXISTS dismissed_at TIMESTAMPTZ;
 

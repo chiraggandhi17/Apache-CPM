@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { useNodes } from '../../context/NodeContext';
 import { formatLocalDate } from '../../utils/date-format';
-import { X, Bell, Filter, Search, Calendar, Trash2, Clock, MessageSquare, Check, Edit2 } from 'lucide-react';
+import { X, Bell, Filter, Search, Calendar, Trash2, Clock, MessageSquare, Check, Edit2, RefreshCw } from 'lucide-react';
 import { formatISO } from 'date-fns';
+import { recurrenceLabel } from '../../utils/recurrence';
 
 interface ManageAlertsModalProps {
   onClose: () => void;
@@ -80,31 +81,31 @@ export const ManageAlertsModal: React.FC<ManageAlertsModalProps> = ({ onClose })
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-gray-100 flex flex-col max-h-[85vh]">
+      <div className="bg-[var(--card-bg)] rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-[var(--border-subtle)] flex flex-col max-h-[85vh]">
         
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50 shrink-0">
+        <div className="px-6 py-4 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--badge-bg)] shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-600">
               <Bell className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-gray-900">Manage All Scheduled Alerts</h2>
-              <p className="text-xs text-gray-500">View, search, snooze, or filter relative & fixed alerts across all active orders.</p>
+              <h2 className="text-base font-bold text-[var(--text-primary)]">Manage All Scheduled Alerts</h2>
+              <p className="text-xs text-[var(--text-muted)]">View, search, snooze, or filter relative & fixed alerts across all active orders.</p>
             </div>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-200/60 transition-colors"
+            className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--badge-bg)] transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Toolbar & Filter Controls */}
-        <div className="p-4 bg-gray-50/80 border-b border-gray-100 space-y-3 shrink-0">
+        <div className="p-4 bg-[var(--badge-bg)] border-b border-[var(--border-subtle)] space-y-3 shrink-0">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
             
             {/* Search Input */}
@@ -114,18 +115,18 @@ export const ManageAlertsModal: React.FC<ManageAlertsModalProps> = ({ onClose })
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 placeholder="Search alerts or tasks..."
-                className="w-full text-xs pl-8 pr-3 py-1.5 bg-white border border-gray-200 rounded-xl outline-none focus:border-teal-500"
+                className="w-full text-xs pl-8 pr-3 py-1.5 bg-[var(--card-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500"
               />
-              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2.5" />
+              <Search className="w-3.5 h-3.5 text-[var(--text-muted)] absolute left-2.5 top-2.5" />
             </div>
 
             {/* Project Filter Dropdown */}
             <div className="flex items-center gap-2 w-full sm:w-auto">
-              <Filter className="w-3.5 h-3.5 text-gray-400" />
+              <Filter className="w-3.5 h-3.5 text-[var(--text-muted)]" />
               <select
                 value={selectedProjectId}
                 onChange={e => setSelectedProjectId(e.target.value)}
-                className="text-xs px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl outline-none focus:border-teal-500"
+                className="text-xs px-2.5 py-1.5 bg-[var(--card-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500"
               >
                 <option value="all">All Projects</option>
                 {projects.map(p => (
@@ -141,7 +142,7 @@ export const ManageAlertsModal: React.FC<ManageAlertsModalProps> = ({ onClose })
               type="button"
               onClick={() => setActiveTab('all')}
               className={`px-3 py-1 rounded-lg font-semibold transition-colors ${
-                activeTab === 'all' ? 'bg-amber-500 text-white shadow-2xs' : 'text-gray-600 hover:bg-gray-200/60'
+                activeTab === 'all' ? 'bg-amber-500 text-white shadow-2xs' : 'text-[var(--text-secondary)] hover:bg-[var(--badge-bg)]'
               }`}
             >
               All Active Scheduled ({reminders.filter(r => !r.dismissed_at).length})
@@ -150,7 +151,7 @@ export const ManageAlertsModal: React.FC<ManageAlertsModalProps> = ({ onClose })
               type="button"
               onClick={() => setActiveTab('triggered')}
               className={`px-3 py-1 rounded-lg font-semibold transition-colors ${
-                activeTab === 'triggered' ? 'bg-rose-600 text-white shadow-2xs' : 'text-gray-600 hover:bg-gray-200/60'
+                activeTab === 'triggered' ? 'bg-rose-600 text-white shadow-2xs' : 'text-[var(--text-secondary)] hover:bg-[var(--badge-bg)]'
               }`}
             >
               Triggered / Due
@@ -159,7 +160,7 @@ export const ManageAlertsModal: React.FC<ManageAlertsModalProps> = ({ onClose })
               type="button"
               onClick={() => setActiveTab('snoozed')}
               className={`px-3 py-1 rounded-lg font-semibold transition-colors ${
-                activeTab === 'snoozed' ? 'bg-indigo-600 text-white shadow-2xs' : 'text-gray-600 hover:bg-gray-200/60'
+                activeTab === 'snoozed' ? 'bg-indigo-600 text-white shadow-2xs' : 'text-[var(--text-secondary)] hover:bg-[var(--badge-bg)]'
               }`}
             >
               Snoozed ({reminders.filter(r => r.snoozed_until).length})
@@ -170,9 +171,9 @@ export const ManageAlertsModal: React.FC<ManageAlertsModalProps> = ({ onClose })
         {/* Alerts List */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {filteredReminders.length === 0 ? (
-            <div className="text-center py-12 text-gray-400 space-y-2">
-              <Bell className="w-10 h-10 mx-auto text-gray-300" />
-              <p className="text-xs font-semibold text-gray-600">No matching scheduled alerts found.</p>
+            <div className="text-center py-12 text-[var(--text-muted)] space-y-2">
+              <Bell className="w-10 h-10 mx-auto text-[var(--text-muted)]" />
+              <p className="text-xs font-semibold text-[var(--text-secondary)]">No matching scheduled alerts found.</p>
             </div>
           ) : (
             filteredReminders.map(rem => {
@@ -180,12 +181,12 @@ export const ManageAlertsModal: React.FC<ManageAlertsModalProps> = ({ onClose })
               return (
                 <div
                   key={rem.id}
-                  className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs space-y-2 hover:border-gray-300 transition-colors"
+                  className="bg-[var(--card-bg)] p-4 rounded-2xl border border-[var(--border)] shadow-2xs space-y-2 hover:border-[var(--border)] transition-colors"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-gray-900">{rem.message}</span>
+                        <span className="text-xs font-bold text-[var(--text-primary)]">{rem.message}</span>
                         {rem.offset_mode === 'fixed' ? (
                           <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md font-mono border border-indigo-200">
                             Fixed Timestamp
@@ -195,11 +196,16 @@ export const ManageAlertsModal: React.FC<ManageAlertsModalProps> = ({ onClose })
                             {rem.offset_days}d Offset
                           </span>
                         )}
+                        {rem.is_recurring && recurrenceLabel(rem.recurrence_rule) && (
+                          <span className="text-[10px] bg-amber-50 text-amber-800 px-2 py-0.5 rounded-md font-mono border border-amber-200 flex items-center gap-1">
+                            <RefreshCw className="w-2.5 h-2.5" /> {recurrenceLabel(rem.recurrence_rule)}
+                          </span>
+                        )}
                       </div>
 
                       {node && (
-                        <p className="text-[11px] text-gray-500 font-medium">
-                          Attached to: <span className="text-gray-800 font-semibold">{node.title}</span>
+                        <p className="text-[11px] text-[var(--text-muted)] font-medium">
+                          Attached to: <span className="text-[var(--text-primary)] font-semibold">{node.title}</span>
                         </p>
                       )}
                     </div>
@@ -212,7 +218,7 @@ export const ManageAlertsModal: React.FC<ManageAlertsModalProps> = ({ onClose })
                           setEditDate(rem.remind_at.substring(0, 16));
                         }}
                         title="Edit Trigger Date"
-                        className="p-1 text-gray-400 hover:text-gray-700 rounded-md hover:bg-gray-100"
+                        className="p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] rounded-md hover:bg-[var(--badge-bg)]"
                       >
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
@@ -234,7 +240,7 @@ export const ManageAlertsModal: React.FC<ManageAlertsModalProps> = ({ onClose })
                         type="datetime-local"
                         value={editDate}
                         onChange={e => setEditDate(e.target.value)}
-                        className="text-xs p-1 border border-amber-300 rounded-md bg-white font-mono"
+                        className="text-xs p-1 border border-amber-300 rounded-md bg-[var(--card-bg)] font-mono"
                       />
                       <button
                         type="button"
@@ -245,10 +251,10 @@ export const ManageAlertsModal: React.FC<ManageAlertsModalProps> = ({ onClose })
                       </button>
                     </div>
                   ) : (
-                    <div className="flex items-center justify-between text-xs pt-1 border-t border-gray-100 text-gray-600">
+                    <div className="flex items-center justify-between text-xs pt-1 border-t border-[var(--border-subtle)] text-[var(--text-secondary)]">
                       <span className="flex items-center gap-1 text-[11px]">
                         <Calendar className="w-3.5 h-3.5 text-amber-500" />
-                        Trigger Date: <strong className="font-mono text-gray-800">{formatLocalDate(rem.remind_at, 'MMM d, yyyy h:mm a')}</strong>
+                        Trigger Date: <strong className="font-mono text-[var(--text-primary)]">{formatLocalDate(rem.remind_at, 'MMM d, yyyy h:mm a')}</strong>
                       </span>
 
                       {/* Quick Snooze Actions */}
@@ -256,16 +262,17 @@ export const ManageAlertsModal: React.FC<ManageAlertsModalProps> = ({ onClose })
                         <button
                           type="button"
                           onClick={() => snoozeReminder(rem.id, '1d')}
-                          className="text-[10px] px-2 py-0.5 bg-gray-100 hover:bg-amber-100 text-gray-700 hover:text-amber-900 rounded-md font-medium border border-gray-200"
+                          className="text-[10px] px-2 py-0.5 bg-[var(--badge-bg)] hover:bg-amber-100 text-[var(--text-secondary)] hover:text-amber-900 rounded-md font-medium border border-[var(--border)]"
                         >
                           Snooze 1d
                         </button>
                         <button
                           type="button"
                           onClick={() => dismissReminder(rem.id)}
+                          title={rem.is_recurring ? 'Advance to next occurrence' : 'Dismiss'}
                           className="text-[10px] px-2 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-md font-semibold border border-rose-200"
                         >
-                          Dismiss
+                          {rem.is_recurring ? 'Skip' : 'Dismiss'}
                         </button>
                       </div>
                     </div>
@@ -273,10 +280,10 @@ export const ManageAlertsModal: React.FC<ManageAlertsModalProps> = ({ onClose })
 
                   {/* User Activity Note */}
                   {rem.note && (
-                    <div className="bg-gray-50 p-2 rounded-xl border border-gray-200 text-xs text-gray-700 flex items-start gap-2">
+                    <div className="bg-[var(--badge-bg)] p-2 rounded-xl border border-[var(--border)] text-xs text-[var(--text-secondary)] flex items-start gap-2">
                       <MessageSquare className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
                       <div>
-                        <span className="font-semibold text-gray-900 text-[10px] uppercase block">Vendor Log / Note:</span>
+                        <span className="font-semibold text-[var(--text-primary)] text-[10px] uppercase block">Vendor Log / Note:</span>
                         <p className="text-[11px] leading-tight">{rem.note}</p>
                       </div>
                     </div>

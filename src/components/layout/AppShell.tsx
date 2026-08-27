@@ -6,6 +6,7 @@ import { TodayView } from '../today/TodayView';
 import { NodeTree } from '../nodes/NodeTree';
 import { CalendarView } from '../calendar/CalendarView';
 import { NodeInspectorModal } from '../nodes/NodeInspectorModal';
+import { GlobalSearchPalette } from '../shared/GlobalSearchPalette';
 import { ManageAlertsModal } from '../reminders/ManageAlertsModal';
 import { SuperAdminDashboard } from '../admin/SuperAdminDashboard';
 import { OrgAdminDashboard } from '../admin/OrgAdminDashboard';
@@ -18,7 +19,7 @@ import { LoginPage } from '../auth/LoginPage';
 import { 
   Bell, Calendar, Home, Layers, LogOut, Footprints, ChevronRight, 
   ShieldCheck, Sparkles, User, Building2, FolderTree, Activity, 
-  AlertTriangle, Download, HardDrive, Users, CheckCircle2, Zap, Settings, KeyRound, Menu, X, FileSpreadsheet
+  AlertTriangle, Download, HardDrive, Users, CheckCircle2, Zap, Settings, KeyRound, Menu, X, FileSpreadsheet, Search
 } from 'lucide-react';
 
 type NavTab = 'today' | 'browse' | 'calendar' | 'super_admin' | 'super_observability' | 'super_errors' | 'super_backups' | 'org_admin' | 'org_teams' | 'org_backup';
@@ -53,7 +54,20 @@ export const AppShellContent: React.FC = () => {
   const [showTierPricingModal, setShowTierPricingModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showGlobalSearch, setShowGlobalSearch] = useState(false);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
+
+  // Global Cmd/Ctrl+K search shortcut
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setShowGlobalSearch(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   // Determine Dynamic Branding
   const brandTitle = isSuperAdmin 
@@ -283,6 +297,22 @@ export const AppShellContent: React.FC = () => {
               </span>
             </div>
           </div>
+
+          {/* Global Search Trigger */}
+          <button
+            type="button"
+            onClick={() => setShowGlobalSearch(true)}
+            className="w-full mb-2 px-3 py-2 rounded-lg text-xs font-semibold flex items-center justify-between gap-2 border transition-colors"
+            style={{ backgroundColor: 'var(--sidebar-hover)', color: 'var(--sidebar-text-muted)', borderColor: 'var(--sidebar-border)' }}
+          >
+            <span className="flex items-center gap-2">
+              <Search className="w-3.5 h-3.5" />
+              <span>Search everything</span>
+            </span>
+            <span className="hidden lg:flex items-center gap-0.5 text-[9px] font-mono px-1.5 py-0.5 rounded border" style={{ borderColor: 'var(--sidebar-border)' }}>
+              &#8984;K
+            </span>
+          </button>
 
           {/* Super Admin Console Switcher */}
           {isSuperAdmin && (
@@ -605,6 +635,12 @@ export const AppShellContent: React.FC = () => {
       </nav>
 
       {/* Center Focus Inspector Modal */}
+      <GlobalSearchPalette
+        open={showGlobalSearch}
+        onClose={() => setShowGlobalSearch(false)}
+        onSelectNode={setSelectedNode}
+      />
+
       {selectedNode && (
         <NodeInspectorModal
           initialNode={selectedNode}

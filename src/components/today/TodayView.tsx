@@ -223,7 +223,7 @@ export const TodayView: React.FC<TodayViewProps> = ({ onSelectNode }) => {
                         <button
                           type="button"
                           onClick={() => dismissReminder(rem.id)}
-                          className="px-2.5 py-1 text-[11px] font-semibold text-gray-700 bg-white hover:bg-gray-100 rounded-lg border border-gray-300 transition-colors"
+                          className="px-2.5 py-1 text-[11px] font-semibold text-[var(--text-secondary)] bg-[var(--card-bg)] hover:bg-[var(--badge-bg)] rounded-lg border border-[var(--border)] transition-colors"
                         >
                           Dismiss
                         </button>

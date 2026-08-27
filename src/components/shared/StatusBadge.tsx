@@ -11,10 +11,10 @@ interface StatusBadgeProps {
 const CONFIG: Record<NodeStatus, { label: string; bg: string; text: string; border: string; icon: React.ReactNode }> = {
   not_started: {
     label: 'Not Started',
-    bg: 'bg-gray-100',
-    text: 'text-gray-700',
-    border: 'border-gray-200',
-    icon: <Clock className="w-3 h-3 text-gray-500" />,
+    bg: 'bg-[var(--badge-bg)]',
+    text: 'text-[var(--text-secondary)]',
+    border: 'border-[var(--border)]',
+    icon: <Clock className="w-3 h-3 text-[var(--text-muted)]" />,
   },
   in_progress: {
     label: 'In Progress',

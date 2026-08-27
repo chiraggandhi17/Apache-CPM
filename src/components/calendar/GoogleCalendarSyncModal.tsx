@@ -25,10 +25,10 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100 flex flex-col max-h-[85vh]">
+      <div className="bg-[var(--card-bg)] rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-[var(--border-subtle)] flex flex-col max-h-[85vh]">
         
         {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-slate-900 text-white shrink-0">
+        <div className="px-6 py-4 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--sidebar-bg)] text-white shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-teal-500/20 border border-teal-500/40 flex items-center justify-center text-teal-400">
               <Calendar className="w-4 h-4" />
@@ -40,14 +40,14 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
                   Premium Module
                 </span>
               </h2>
-              <p className="text-[11px] text-slate-400">Sync Cadence critical path dates directly with your personal or work calendar.</p>
+              <p className="text-[11px] text-[var(--sidebar-text-muted)]">Sync Cadence critical path dates directly with your personal or work calendar.</p>
             </div>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="p-1 rounded-lg text-[var(--sidebar-text-muted)] hover:text-white hover:bg-[var(--sidebar-hover)] transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -87,11 +87,11 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
             )}
 
             {/* Tier 2: Tokenized Live iCal Subscription Feed */}
-            <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200 space-y-2.5">
-              <span className="text-xs font-bold text-gray-900 block">
+            <div className="bg-[var(--badge-bg)] p-4 rounded-2xl border border-[var(--border)] space-y-2.5">
+              <span className="text-xs font-bold text-[var(--text-primary)] block">
                 iCal / Webcal Subscription Feed (.ics)
               </span>
-              <p className="text-xs text-gray-600 leading-relaxed">
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
                 Subscribe to your Cadence milestone feed in Apple Calendar, Outlook, or Google Calendar. Updates sync automatically when milestone dates shift.
               </p>
 
@@ -100,12 +100,12 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
                   type="text"
                   readOnly
                   value={iCalFeedUrl}
-                  className="flex-1 text-[11px] font-mono p-2 bg-white border border-gray-300 rounded-xl text-gray-700 truncate outline-none select-all"
+                  className="flex-1 text-[11px] font-mono p-2 bg-[var(--card-bg)] border border-[var(--border)] rounded-xl text-[var(--text-secondary)] truncate outline-none select-all"
                 />
                 <button
                   type="button"
                   onClick={handleCopyFeed}
-                  className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs rounded-xl flex items-center gap-1.5 transition-colors shrink-0 shadow-2xs"
+                  className="px-3 py-2 bg-[var(--sidebar-bg)] hover:bg-[var(--sidebar-hover)] text-white font-semibold text-xs rounded-xl flex items-center gap-1.5 transition-colors shrink-0 shadow-2xs"
                 >
                   {copiedFeed ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                   <span>{copiedFeed ? 'Copied Feed URL!' : 'Copy Feed URL'}</span>
@@ -114,7 +114,7 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
             </div>
 
             {/* Tier 3: Automated Google Calendar OAuth 2-Way Sync Settings */}
-            <div className="bg-slate-900 text-slate-100 p-4 rounded-2xl border border-slate-800 space-y-3">
+            <div className="bg-[var(--sidebar-bg)] text-[var(--sidebar-text)] p-4 rounded-2xl border border-[var(--sidebar-border)] space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <RefreshCw className="w-4 h-4 text-teal-400" />
@@ -124,16 +124,16 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
                   type="checkbox"
                   checked={isAutoSyncEnabled}
                   onChange={e => setIsAutoSyncEnabled(e.target.checked)}
-                  className="rounded border-slate-700 text-teal-500 focus:ring-teal-500"
+                  className="rounded border-[var(--sidebar-border)] text-teal-500 focus:ring-teal-500"
                 />
               </div>
 
-              <p className="text-[11px] text-slate-400 leading-relaxed">
+              <p className="text-[11px] text-[var(--sidebar-text-muted)] leading-relaxed">
                 Automated background push: Whenever a parent milestone date shifts in Cadence, all downstream relative dates automatically update in your Google Calendar in real time.
               </p>
 
-              <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px]">
-                <span className="text-slate-400">Target Google Account:</span>
+              <div className="pt-2 border-t border-[var(--sidebar-border)] flex items-center justify-between text-[11px]">
+                <span className="text-[var(--sidebar-text-muted)]">Target Google Account:</span>
                 <span className="font-mono text-teal-300 font-semibold">{profile?.email || 'merchandiser@apache.com'}</span>
               </div>
             </div>

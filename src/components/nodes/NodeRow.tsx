@@ -5,6 +5,7 @@ import { StatusBadge } from '../shared/StatusBadge';
 import { CriticalFlag } from '../shared/CriticalFlag';
 import { formatLocalDate, getRelativeDateBadge } from '../../utils/date-format';
 import { NodeForm } from './NodeForm';
+import { useToast } from '../../context/ToastContext';
 import { SubtreeCompletionModal } from './SubtreeCompletionModal';
 import { 
   ChevronRight, ChevronDown, Plus, Folder, Calendar, CheckSquare, 
@@ -14,6 +15,9 @@ import {
 interface NodeRowProps {
   node: TreeNode;
   onSelectNode: (node: TreeNode) => void;
+  selectMode?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (nodeId: string) => void;
 }
 
 const getNodeIcon = (type: NodeType): React.ReactNode => {
@@ -28,11 +32,13 @@ const getNodeIcon = (type: NodeType): React.ReactNode => {
   }
 };
 
-export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
+export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode, selectMode = false, selectedIds, onToggleSelect }) => {
   const { 
     reminders, toggleCritical, updateStatus, toggleDone, deleteNode, 
-    getNodeAccessInfo, getDescendantNodes, completeNodeAndSubtree 
+    getNodeAccessInfo, getDescendantNodes, completeNodeAndSubtree,
+    hideNodeLocally, restoreNodesLocally,
   } = useNodes();
+  const toast = useToast();
   
   // Collapse tree hierarchy by default
   const [isExpanded, setIsExpanded] = useState(false);
@@ -85,7 +91,7 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
   return (
     <div className="space-y-1">
       <div
-        onClick={() => onSelectNode(node)}
+        onClick={() => (selectMode ? onToggleSelect?.(node.id) : onSelectNode(node))}
         style={{ paddingLeft: `${node.depth * 20 + 12}px` }}
         className={`group relative flex items-center justify-between py-2.5 pr-3 rounded-xl border border-[var(--border)] bg-[var(--card-bg)] hover:bg-[var(--canvas-bg)] transition-all cursor-pointer shadow-2xs ${
           node.is_overdue ? 'ring-1 ring-rose-300 border-rose-200' : ''
@@ -97,6 +103,24 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
         />
 
         <div className="flex items-center gap-2.5 min-w-0 pr-2">
+          {/* Bulk-select checkbox */}
+          {selectMode && (
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                onToggleSelect?.(node.id);
+              }}
+              className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0 ${
+                selectedIds?.has(node.id)
+                  ? 'bg-[var(--accent)] border-[var(--accent)] text-white'
+                  : 'border-[var(--input-border)] hover:border-[var(--accent)] bg-[var(--card-bg)]'
+              }`}
+            >
+              {selectedIds?.has(node.id) && <Check className="w-3 h-3 stroke-[3]" />}
+            </button>
+          )}
+
           {/* Chevron expander */}
           {hasChildren ? (
             <button
@@ -255,9 +279,12 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
                 type="button"
                 onClick={e => {
                   e.stopPropagation();
-                  if (confirm(`Delete "${node.title}" and all its subtasks?`)) {
-                    deleteNode(node.id);
-                  }
+                  const removed = hideNodeLocally(node.id);
+                  toast.undoable({
+                    message: `"${node.title}" deleted${hasChildren ? ' (with its subtasks)' : ''}.`,
+                    onCommit: () => deleteNode(node.id),
+                    onUndo: () => restoreNodesLocally(removed),
+                  });
                 }}
                 title="Delete Milestone"
                 className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg border border-rose-200"
@@ -272,7 +299,14 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode }) => {
       {isExpanded && hasChildren && (
         <div className="space-y-1 pl-2 border-l border-[var(--border)] ml-4 pt-1">
           {node.children.map(child => (
-            <NodeRow key={child.id} node={child} onSelectNode={onSelectNode} />
+            <NodeRow
+              key={child.id}
+              node={child}
+              onSelectNode={onSelectNode}
+              selectMode={selectMode}
+              selectedIds={selectedIds}
+              onToggleSelect={onToggleSelect}
+            />
           ))}
         </div>
       )}

@@ -1,10 +1,13 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import { NodeItem, ReminderItem, TreeNode, TodayItem, NodeStatus } from '../types/domain';
 import { resolveColor } from '../lib/color-resolver';
 import { addDays, addHours, parseISO, formatISO, isValid, isBefore, isToday as isDateToday, isAfter } from 'date-fns';
+import { sendBrowserNotification } from '../utils/notifications';
+import { computeNextOccurrence } from '../utils/recurrence';
 import { playNotificationSound } from '../utils/sound';
+import { useToast } from './ToastContext';
 
 export interface NodeAuditLog {
   id: string;
@@ -40,6 +43,8 @@ interface NodeContextType {
   getNodeAccessInfo: (nodeId: string) => NodeAccessInfo;
   isNodeAncestorOfAssigned: (nodeId: string) => boolean;
   getDescendantNodes: (nodeId: string) => NodeItem[];
+  hideNodeLocally: (nodeId: string) => NodeItem[];
+  restoreNodesLocally: (removed: NodeItem[]) => void;
   completeNodeAndSubtree: (nodeId: string) => Promise<void>;
   getTree: () => TreeNode[];
   getTodayUpcomingFeed: () => {
@@ -83,6 +88,7 @@ const NodeContext = createContext<NodeContextType | undefined>(undefined);
 
 export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, profile, isSuperAdmin, isOrgAdmin, isIndividual, accessLevel } = useAuth();
+  const toast = useToast();
   
   const [nodes, setNodes] = useState<NodeItem[]>(() => {
     try {
@@ -96,6 +102,18 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [reminders, setReminders] = useState<ReminderItem[]>([]);
   const [selectedNode, setSelectedNode] = useState<NodeItem | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // Optimistic "pending delete" tracking for the undo-toast delete flow: a node
+  // (and its descendants) is removed from local state immediately on delete-click,
+  // but the real Supabase delete only fires once the undo window expires. A ref
+  // mirrors the state so the realtime-refetch callback below (a stable useCallback)
+  // can always see the latest set without being resubscribed on every change.
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<string>>(new Set());
+  const pendingDeleteIdsRef = useRef<Set<string>>(new Set());
+
+  // Tracks reminder ids we've already fired a browser Notification for this
+  // session, so the 60s poll doesn't re-notify the same triggered alert.
+  const notifiedReminderIdsRef = useRef<Set<string>>(new Set());
 
   // Single Source of Truth: Fetch nodes & reminders directly from Supabase Cloud DB with Strict Multi-Tenant Scoping
   const fetchNodesAndReminders = useCallback(async () => {
@@ -133,7 +151,8 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return n.created_by === user.id || n.user_id === user.id || (!n.org_id && (!n.created_by || n.created_by === user.id));
         });
 
-        setNodes(scopedNodes);
+        const visibleScopedNodes = scopedNodes.filter(n => !pendingDeleteIdsRef.current.has(n.id));
+        setNodes(visibleScopedNodes);
         try {
           localStorage.setItem(`cadence_cached_nodes_${user.id}`, JSON.stringify(scopedNodes));
         } catch {
@@ -189,11 +208,11 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [nodes]);
 
-  // Audio chime polling hook
+  // Audio chime + browser push-notification polling hook
   useEffect(() => {
     const checkReminders = () => {
       const soundEnabled = localStorage.getItem('cadence_sound_enabled') !== 'false';
-      if (!soundEnabled) return;
+      const pushEnabled = localStorage.getItem('cadence_push_enabled') === 'true';
 
       const now = new Date();
       const active = reminders.filter(r => {
@@ -203,8 +222,22 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return isBefore(triggerDate, now) || isDateToday(triggerDate);
       });
 
-      if (active.length > 0) {
+      if (active.length > 0 && soundEnabled) {
         playNotificationSound();
+      }
+
+      // Fire a browser Notification for any newly-triggered reminder we
+      // haven't already notified about this session (avoids re-notifying
+      // the same alert on every 60s poll).
+      if (pushEnabled && active.length > 0) {
+        for (const r of active) {
+          if (notifiedReminderIdsRef.current.has(r.id)) continue;
+          notifiedReminderIdsRef.current.add(r.id);
+          sendBrowserNotification(r.message || 'Milestone reminder', {
+            body: r.node_title ? `Task: ${r.node_title}` : undefined,
+            tag: r.id,
+          });
+        }
       }
     };
 
@@ -376,6 +409,46 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     collectChildren(nodeId);
     return results;
   }, [nodes]);
+
+  /**
+   * Optimistically hides a node (and its subtree) from local state immediately,
+   * without touching Supabase. Pairs with restoreNodesLocally() to power an
+   * "Undo" toast on delete: the real DB delete is deferred until the undo
+   * window expires (see deleteNode call sites).
+   */
+  const hideNodeLocally = useCallback((nodeId: string): NodeItem[] => {
+    const idsToHide = new Set([nodeId, ...getDescendantNodes(nodeId).map(n => n.id)]);
+    const removed = nodes.filter(n => idsToHide.has(n.id));
+
+    setPendingDeleteIds(prev => {
+      const next = new Set(prev);
+      idsToHide.forEach(id => next.add(id));
+      pendingDeleteIdsRef.current = next;
+      return next;
+    });
+    setNodes(prev => prev.filter(n => !idsToHide.has(n.id)));
+
+    if (selectedNode && idsToHide.has(selectedNode.id)) setSelectedNode(null);
+
+    return removed;
+  }, [nodes, getDescendantNodes, selectedNode]);
+
+  /** Restores nodes hidden by hideNodeLocally() — used when the user clicks "Undo". */
+  const restoreNodesLocally = useCallback((removed: NodeItem[]) => {
+    const ids = new Set(removed.map(n => n.id));
+
+    setPendingDeleteIds(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.delete(id));
+      pendingDeleteIdsRef.current = next;
+      return next;
+    });
+    setNodes(prev => {
+      const existingIds = new Set(prev.map(n => n.id));
+      const toAdd = removed.filter(n => !existingIds.has(n.id));
+      return toAdd.length ? [...prev, ...toAdd] : prev;
+    });
+  }, []);
 
   const completeNodeAndSubtree = async (nodeId: string) => {
     const descendants = getDescendantNodes(nodeId);
@@ -769,6 +842,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       offset_days: data.offset_days !== undefined ? data.offset_days : null,
       message: data.message || 'Milestone follow up reminder',
       is_recurring: data.is_recurring || false,
+      recurrence_rule: data.is_recurring ? (data.recurrence_rule || null) : null,
     };
     if (data.note) {
       newRem.note = data.note;
@@ -777,7 +851,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { error } = await supabase.from('reminders').insert(newRem);
     if (error) {
       console.error('addReminder Supabase insert error:', error);
-      alert(`Supabase DB error saving alert: ${error.message}\n\nPlease run the updated supabase/full_schema.sql query in your Supabase SQL Editor.`);
+      toast.error(`Couldn't save alert: ${error.message}. Try running the updated supabase/full_schema.sql in your Supabase SQL Editor.`);
       return;
     }
 
@@ -792,6 +866,25 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const dismissReminder = async (reminderId: string) => {
+    // Recurring reminders don't get permanently dismissed — instead they're
+    // rolled forward to their next occurrence, clearing dismissed/snoozed
+    // state so the alert becomes "live" again for the next cycle.
+    const reminder = reminders.find(r => r.id === reminderId);
+    if (reminder?.is_recurring && reminder.recurrence_rule) {
+      const nextRemindAt = computeNextOccurrence(reminder.remind_at, reminder.recurrence_rule);
+      if (nextRemindAt) {
+        notifiedReminderIdsRef.current.delete(reminderId);
+        const { error } = await supabase.from('reminders').update({
+          remind_at: nextRemindAt,
+          dismissed_at: null,
+          snoozed_until: null,
+        }).eq('id', reminderId);
+        if (error) console.error('dismissReminder (recurrence advance) error:', error);
+        await fetchNodesAndReminders();
+        return;
+      }
+    }
+
     const nowISO = new Date().toISOString();
     const { error } = await supabase.from('reminders').update({ dismissed_at: nowISO }).eq('id', reminderId);
     if (error) console.error('dismissReminder error:', error);
@@ -854,6 +947,8 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         getNodeAccessInfo,
         isNodeAncestorOfAssigned,
         getDescendantNodes,
+        hideNodeLocally,
+        restoreNodesLocally,
         completeNodeAndSubtree,
         getTree,
         getTodayUpcomingFeed,

@@ -1,25 +1,78 @@
 import React, { useState, useMemo } from 'react';
 import { useNodes } from '../../context/NodeContext';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { useDialog } from '../../context/DialogContext';
 import { TreeNode } from '../../types/domain';
 import { NodeRow } from './NodeRow';
 import { NodeForm } from './NodeForm';
 import { matchesSearchQuery } from '../../utils/search';
-import { Plus, FolderPlus, Layers, Search, Filter, AlertCircle, Sparkles } from 'lucide-react';
+import { Plus, FolderPlus, Layers, Search, Filter, AlertCircle, Sparkles, CheckSquare, Square, X, Trash2, CheckCircle2, Circle } from 'lucide-react';
 
 interface NodeTreeProps {
   onSelectNode: (node: TreeNode) => void;
 }
 
 export const NodeTree: React.FC<NodeTreeProps> = ({ onSelectNode }) => {
-  const { getTree, nodes } = useNodes();
+  const { getTree, nodes, updateStatus, deleteNode, hideNodeLocally, restoreNodesLocally } = useNodes();
   const { isIndividual } = useAuth();
+  const toast = useToast();
+  const { confirm } = useDialog();
   const rawTree = getTree();
 
   const [showAddRoot, setShowAddRoot] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [criticalOnly, setCriticalOnly] = useState(false);
+
+  // Bulk selection / bulk actions
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const toggleSelectMode = () => {
+    setSelectMode(prev => !prev);
+    setSelectedIds(new Set());
+  };
+
+  const handleToggleSelect = (nodeId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const handleBulkStatus = async (status: 'not_started' | 'in_progress' | 'done' | 'blocked') => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    await Promise.all(ids.map(id => updateStatus(id, status)));
+    toast.success(`Updated status for ${ids.length} item${ids.length === 1 ? '' : 's'}.`);
+    clearSelection();
+  };
+
+  const handleBulkDelete = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+
+    const ok = await confirm({
+      title: 'Delete Selected Milestones',
+      message: `Delete ${ids.length} selected item${ids.length === 1 ? '' : 's'}? Any of their subtasks will also be removed.`,
+      destructive: true,
+      confirmLabel: 'Delete Selected',
+    });
+    if (!ok) return;
+
+    const allRemoved = ids.flatMap(id => hideNodeLocally(id));
+    toast.undoable({
+      message: `${ids.length} item${ids.length === 1 ? '' : 's'} deleted.`,
+      onCommit: () => { ids.forEach(id => deleteNode(id)); },
+      onUndo: () => restoreNodesLocally(allRemoved),
+    });
+    clearSelection();
+  };
 
   // Deep multi-field search & filtering
   const filteredTree = useMemo(() => {
@@ -73,14 +126,29 @@ export const NodeTree: React.FC<NodeTreeProps> = ({ onSelectNode }) => {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowAddRoot(true)}
-          className="px-3.5 py-2 text-xs font-bold text-white bg-[var(--accent)] hover:bg-[var(--accent-hover)] rounded-xl shadow-xs transition-colors flex items-center gap-1.5 shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span>{isIndividual ? 'Add New Task / Project' : 'Add Project / Department'}</span>
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={toggleSelectMode}
+            className={`px-3 py-2 text-xs font-bold rounded-xl border shadow-xs transition-colors flex items-center gap-1.5 ${
+              selectMode
+                ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--canvas-bg)]'
+            }`}
+          >
+            {selectMode ? <X className="w-3.5 h-3.5" /> : <CheckSquare className="w-3.5 h-3.5" />}
+            <span>{selectMode ? 'Cancel' : 'Select'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowAddRoot(true)}
+            className="px-3.5 py-2 text-xs font-bold text-white bg-[var(--accent)] hover:bg-[var(--accent-hover)] rounded-xl shadow-xs transition-colors flex items-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" />
+            <span>{isIndividual ? 'Add New Task / Project' : 'Add Project / Department'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Deep Search & Filter Bar */}
@@ -157,10 +225,61 @@ export const NodeTree: React.FC<NodeTreeProps> = ({ onSelectNode }) => {
           </p>
         </div>
       ) : (
-        <div className="space-y-1">
+        <div className="space-y-1 pb-16">
           {filteredTree.map(node => (
-            <NodeRow key={node.id} node={node} onSelectNode={onSelectNode} />
+            <NodeRow
+              key={node.id}
+              node={node}
+              onSelectNode={onSelectNode}
+              selectMode={selectMode}
+              selectedIds={selectedIds}
+              onToggleSelect={handleToggleSelect}
+            />
           ))}
+        </div>
+      )}
+
+      {/* Floating Bulk Action Bar */}
+      {selectMode && selectedIds.size > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 bg-[var(--sidebar-bg)] text-[var(--sidebar-text)] rounded-2xl shadow-2xl border border-[var(--sidebar-border)] px-4 py-2.5 flex items-center gap-3">
+          <span className="text-xs font-bold whitespace-nowrap">{selectedIds.size} selected</span>
+          <div className="w-px h-5 bg-[var(--sidebar-border)]" />
+          <button
+            type="button"
+            onClick={() => handleBulkStatus('done')}
+            title="Mark Done"
+            className="p-1.5 rounded-lg hover:bg-[var(--sidebar-hover)] flex items-center gap-1 text-xs font-semibold"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">Done</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleBulkStatus('in_progress')}
+            title="Mark In Progress"
+            className="p-1.5 rounded-lg hover:bg-[var(--sidebar-hover)] flex items-center gap-1 text-xs font-semibold"
+          >
+            <Circle className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden sm:inline">In Progress</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleBulkDelete}
+            title="Delete Selected"
+            className="p-1.5 rounded-lg hover:bg-rose-500/20 flex items-center gap-1 text-xs font-semibold text-rose-300"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Delete</span>
+          </button>
+          <div className="w-px h-5 bg-[var(--sidebar-border)]" />
+          <button
+            type="button"
+            onClick={clearSelection}
+            title="Clear Selection"
+            className="p-1.5 rounded-lg hover:bg-[var(--sidebar-hover)]"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 

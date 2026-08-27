@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth, UserProfile, UserRole, UserStatus, FeatureKey } from '../../context/AuthContext';
 import { ShieldCheck, UserCheck, UserX, ToggleLeft, ToggleRight, CheckCircle2, Clock, ShieldAlert, Sparkles, Filter, Search, Layers, Check, X, Bell, Trash2 } from 'lucide-react';
+import { useToast } from '../../context/ToastContext';
+import { useDialog } from '../../context/DialogContext';
 
 interface FeatureDef {
   key: FeatureKey;
@@ -18,6 +20,8 @@ const FEATURE_LIST: FeatureDef[] = [
 
 export const AdminDashboard: React.FC = () => {
   const { refreshProfile } = useAuth();
+  const toast = useToast();
+  const { confirm } = useDialog();
   
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [userFeatures, setUserFeatures] = useState<Record<string, Record<FeatureKey, boolean>>>({});
@@ -72,16 +76,22 @@ export const AdminDashboard: React.FC = () => {
   }, []);
 
   const handleDeleteUser = async (targetId: string, email: string) => {
-    if (!confirm(`Are you sure you want to permanently delete user account "${email}"?`)) return;
+    const confirmed = await confirm({
+      title: 'Delete User Account',
+      message: `Permanently delete user account "${email}"? This cannot be undone.`,
+      destructive: true,
+      confirmLabel: 'Delete Account',
+    });
+    if (!confirmed) return;
 
     try {
       const { error } = await supabase.from('profiles').delete().eq('id', targetId);
       if (error) throw error;
-      alert(`User "${email}" deleted successfully.`);
+      toast.success(`User "${email}" deleted successfully.`);
       await loadData();
     } catch (err: any) {
       console.error('Delete user error:', err);
-      alert(`Failed to delete user: ${err.message}`);
+      toast.error(`Failed to delete user: ${err.message}`);
     }
   };
 
@@ -153,25 +163,25 @@ export const AdminDashboard: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border border-slate-800">
+      <div className="bg-[var(--sidebar-bg)] text-white p-6 rounded-3xl shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border border-[var(--sidebar-border)]">
         <div>
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30 mb-2">
             <ShieldCheck className="w-3.5 h-3.5" /> Admin Security Center
           </div>
           <h1 className="text-xl md:text-2xl font-black tracking-tight">Access Control & Modular Subscriptions</h1>
-          <p className="text-xs md:text-sm text-slate-400 mt-1 max-w-xl">
+          <p className="text-xs md:text-sm text-[var(--sidebar-text-muted)] mt-1 max-w-xl">
             Approve registered accounts, assign RBAC permissions, and toggle premium modular feature flags per user.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="bg-slate-800 px-4 py-2.5 rounded-2xl border border-slate-700 text-center min-w-[100px]">
+          <div className="bg-[var(--sidebar-hover)] px-4 py-2.5 rounded-2xl border border-[var(--sidebar-border)] text-center min-w-[100px]">
             <span className="text-xl font-extrabold text-amber-400 block font-mono">{pendingCount}</span>
-            <span className="text-[10px] text-slate-400 uppercase font-semibold">Pending</span>
+            <span className="text-[10px] text-[var(--sidebar-text-muted)] uppercase font-semibold">Pending</span>
           </div>
-          <div className="bg-slate-800 px-4 py-2.5 rounded-2xl border border-slate-700 text-center min-w-[100px]">
+          <div className="bg-[var(--sidebar-hover)] px-4 py-2.5 rounded-2xl border border-[var(--sidebar-border)] text-center min-w-[100px]">
             <span className="text-xl font-extrabold text-emerald-400 block font-mono">{profiles.filter(p => p.status === 'approved').length}</span>
-            <span className="text-[10px] text-slate-400 uppercase font-semibold">Approved</span>
+            <span className="text-[10px] text-[var(--sidebar-text-muted)] uppercase font-semibold">Approved</span>
           </div>
         </div>
       </div>
@@ -204,16 +214,16 @@ export const AdminDashboard: React.FC = () => {
       )}
 
       {/* Filter & Search Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+      <div className="bg-[var(--card-bg)] p-4 rounded-2xl border border-[var(--border)] shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
         <div className="relative w-full sm:w-72">
           <input
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search accounts by email or name..."
-            className="w-full pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-teal-500"
+            className="w-full pl-8 pr-3 py-1.5 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500"
           />
-          <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2.5" />
+          <Search className="w-3.5 h-3.5 text-[var(--text-muted)] absolute left-2.5 top-2.5" />
         </div>
 
         <div className="flex items-center gap-1">
@@ -221,7 +231,7 @@ export const AdminDashboard: React.FC = () => {
             type="button"
             onClick={() => setStatusFilter('all')}
             className={`px-3 py-1.5 rounded-xl font-semibold transition-colors ${
-              statusFilter === 'all' ? 'bg-slate-900 text-white' : 'text-gray-600 hover:bg-gray-100'
+              statusFilter === 'all' ? 'bg-[var(--sidebar-bg)] text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--badge-bg)]'
             }`}
           >
             All Accounts ({profiles.length})
@@ -230,7 +240,7 @@ export const AdminDashboard: React.FC = () => {
             type="button"
             onClick={() => setStatusFilter('pending')}
             className={`px-3 py-1.5 rounded-xl font-semibold transition-colors ${
-              statusFilter === 'pending' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+              statusFilter === 'pending' ? 'bg-amber-600 text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--badge-bg)]'
             }`}
           >
             Pending ({pendingCount})
@@ -239,7 +249,7 @@ export const AdminDashboard: React.FC = () => {
             type="button"
             onClick={() => setStatusFilter('approved')}
             className={`px-3 py-1.5 rounded-xl font-semibold transition-colors ${
-              statusFilter === 'approved' ? 'bg-emerald-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+              statusFilter === 'approved' ? 'bg-emerald-600 text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--badge-bg)]'
             }`}
           >
             Approved
@@ -248,17 +258,17 @@ export const AdminDashboard: React.FC = () => {
       </div>
 
       {/* User Directory Table */}
-      <div className="bg-white rounded-3xl border border-gray-200 shadow-2xs overflow-hidden">
-        <div className="p-4 bg-gray-50/50 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
+      <div className="bg-[var(--card-bg)] rounded-3xl border border-[var(--border)] shadow-2xs overflow-hidden">
+        <div className="p-4 bg-[var(--badge-bg)] border-b border-[var(--border-subtle)] flex items-center justify-between">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] flex items-center gap-1.5">
             <Layers className="w-4 h-4 text-teal-600" /> Live Supabase User Directory & Modular Subscriptions
           </h2>
-          {loading && <span className="text-xs text-gray-400 animate-pulse">Syncing Supabase DB...</span>}
+          {loading && <span className="text-xs text-[var(--text-muted)] animate-pulse">Syncing Supabase DB...</span>}
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 font-bold uppercase tracking-wider text-[10px]">
+            <thead className="bg-[var(--badge-bg)] border-b border-[var(--border)] text-[var(--text-secondary)] font-bold uppercase tracking-wider text-[10px]">
               <tr>
                 <th className="px-4 py-3">User / Account</th>
                 <th className="px-4 py-3">Role</th>
@@ -267,10 +277,10 @@ export const AdminDashboard: React.FC = () => {
                 <th className="px-4 py-3 text-right">Access Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-[var(--border-subtle)]">
               {filteredProfiles.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-gray-400 italic text-xs">
+                  <td colSpan={5} className="py-8 text-center text-[var(--text-muted)] italic text-xs">
                     No registered user accounts matching your criteria.
                   </td>
                 </tr>
@@ -279,12 +289,12 @@ export const AdminDashboard: React.FC = () => {
                   const userFeats = userFeatures[prof.id] || { base_tier: true, node_mutation: true, google_calendar_sync: false, advanced_reports: false, admin_management: false };
 
                   return (
-                    <tr key={prof.id} className="hover:bg-gray-50/60 transition-colors">
+                    <tr key={prof.id} className="hover:bg-[var(--badge-bg)]/60 transition-colors">
                       
                       {/* User Info */}
                       <td className="px-4 py-3.5">
-                        <div className="font-bold text-gray-900">{prof.full_name || 'Registered User'}</div>
-                        <div className="text-[11px] text-gray-500 font-mono">{prof.email}</div>
+                        <div className="font-bold text-[var(--text-primary)]">{prof.full_name || 'Registered User'}</div>
+                        <div className="text-[11px] text-[var(--text-muted)] font-mono">{prof.email}</div>
                       </td>
 
                       {/* Role Selector */}
@@ -292,7 +302,7 @@ export const AdminDashboard: React.FC = () => {
                         <select
                           value={prof.role}
                           onChange={e => handleUpdateStatus(prof.id, prof.status, e.target.value as UserRole)}
-                          className="px-2.5 py-1.5 bg-white border border-gray-300 rounded-xl text-xs font-semibold shadow-2xs outline-none focus:border-teal-500"
+                          className="px-2.5 py-1.5 bg-[var(--card-bg)] border border-[var(--border)] rounded-xl text-xs font-semibold shadow-2xs outline-none focus:border-teal-500"
                         >
                           <option value="admin">Admin</option>
                           <option value="manager">Manager</option>
@@ -332,7 +342,7 @@ export const AdminDashboard: React.FC = () => {
                                 className={`px-2.5 py-1 rounded-xl text-[10px] font-semibold border flex items-center gap-1 transition-all ${
                                   isEnabled
                                     ? 'bg-teal-50 text-teal-800 border-teal-300 shadow-2xs'
-                                    : 'bg-gray-100 text-gray-400 border-gray-200 hover:text-gray-600'
+                                    : 'bg-[var(--badge-bg)] text-[var(--text-muted)] border-[var(--border)] hover:text-[var(--text-primary)]'
                                 }`}
                               >
                                 <span>{f.name}</span>

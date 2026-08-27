@@ -7,6 +7,7 @@ import { useNodes } from '../../context/NodeContext';
 import { NodeItem } from '../../types/domain';
 import { resolveColor, getReadableTextColor } from '../../lib/color-resolver';
 import { SearchableParentSelect } from '../shared/SearchableParentSelect';
+import { PortalDropdown } from '../shared/PortalDropdown';
 import { addDays, parseISO } from 'date-fns';
 import {
   Filter, Calendar as CalendarIcon, Bell, CheckCircle2,
@@ -30,7 +31,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
   const calendarRef = useRef<FullCalendar>(null);
   const calendarContainerRef = useRef<HTMLDivElement>(null);
   const lastScrollTime = useRef<number>(0);
-  const levelDropdownRef = useRef<HTMLDivElement>(null);
+  const levelDropdownRef = useRef<HTMLButtonElement>(null);
 
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
   const [selectedLevels, setSelectedLevels] = useState<number[]>([1, 2, 3, 4, 5]);
@@ -39,18 +40,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
   const [currentMonthTitle, setCurrentMonthTitle] = useState<string>('');
   const [activeView, setActiveView] = useState<'dayGridMonth' | 'timeGridWeek' | 'timeGridDay'>('dayGridMonth');
   const [levelDropdownOpen, setLevelDropdownOpen] = useState(false);
-
-  // Close level dropdown on outside click
-  useEffect(() => {
-    if (!levelDropdownOpen) return;
-    const handleClick = (e: MouseEvent) => {
-      if (levelDropdownRef.current && !levelDropdownRef.current.contains(e.target as Node)) {
-        setLevelDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [levelDropdownOpen]);
 
   // Mouse wheel scroll to move between months / weeks / days
   useEffect(() => {
@@ -289,29 +278,33 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
 
           {/* Month Navigation & View Modes */}
           <div className="flex items-center flex-wrap gap-2 shrink-0">
-            <div className="flex items-center bg-[var(--badge-bg)] p-1 rounded-xl border border-[var(--border)]">
+            {/* "Today" is a standalone jump action — kept separate from the
+                prev/next pair below so it's never mistaken for a 3rd nav step
+                sitting between the arrows. */}
+            <button
+              type="button"
+              onClick={handleToday}
+              className="h-9 px-3 text-xs font-bold rounded-xl border border-[var(--border)] bg-[var(--card-bg)] text-[var(--text-primary)] hover:bg-[var(--badge-bg)] transition-colors"
+            >
+              Today
+            </button>
+
+            {/* Prev / Next — a single unambiguous pair, no label between them */}
+            <div className="flex items-center h-9 bg-[var(--badge-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
               <button
                 type="button"
                 onClick={handlePrev}
                 title="Previous (or scroll up)"
-                className="p-1.5 rounded-lg text-[var(--text-primary)] hover:bg-[var(--card-bg)] transition-colors"
+                className="h-full px-2 text-[var(--text-primary)] hover:bg-[var(--card-bg)] transition-colors"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
-
-              <button
-                type="button"
-                onClick={handleToday}
-                className="px-3 py-1 text-xs font-bold text-[var(--text-primary)] hover:bg-[var(--card-bg)] rounded-lg transition-colors"
-              >
-                Today
-              </button>
-
+              <span className="w-px h-4 bg-[var(--border)]" />
               <button
                 type="button"
                 onClick={handleNext}
                 title="Next (or scroll down)"
-                className="p-1.5 rounded-lg text-[var(--text-primary)] hover:bg-[var(--card-bg)] transition-colors"
+                className="h-full px-2 text-[var(--text-primary)] hover:bg-[var(--card-bg)] transition-colors"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -352,61 +345,62 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
           />
 
           {/* Level Filter Dropdown (replaces 5 loose pill buttons) */}
-          <div className="relative" ref={levelDropdownRef}>
-            <button
-              type="button"
-              onClick={() => setLevelDropdownOpen(o => !o)}
-              className={`h-9 px-3 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-all ${
-                levelDropdownOpen || !allLevelsSelected
-                  ? 'bg-[var(--accent-subtle)] text-[var(--accent)] border-[var(--accent)]/30'
-                  : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--badge-bg)]'
-              }`}
-            >
-              <Filter className="w-3.5 h-3.5" />
-              <span>Levels {noLevelsSelected ? '(none)' : allLevelsSelected ? '(all)' : `(${selectedLevels.length}/5)`}</span>
-              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${levelDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
+          <button
+            ref={levelDropdownRef}
+            type="button"
+            onClick={() => setLevelDropdownOpen(o => !o)}
+            className={`h-9 px-3 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-all ${
+              levelDropdownOpen || !allLevelsSelected
+                ? 'bg-[var(--accent-subtle)] text-[var(--accent)] border-[var(--accent)]/30'
+                : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--badge-bg)]'
+            }`}
+          >
+            <Filter className="w-3.5 h-3.5" />
+            <span>Levels {noLevelsSelected ? '(none)' : allLevelsSelected ? '(all)' : `(${selectedLevels.length}/5)`}</span>
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${levelDropdownOpen ? 'rotate-180' : ''}`} />
+          </button>
 
-            {levelDropdownOpen && (
-              <div className="absolute z-20 mt-1.5 w-56 bg-[var(--card-bg)] border border-[var(--border)] rounded-2xl shadow-lg p-2 animate-in fade-in">
-                {LEVEL_DEFS.map(item => {
-                  const active = selectedLevels.includes(item.lvl);
-                  return (
-                    <button
-                      key={item.lvl}
-                      type="button"
-                      onClick={() => toggleLevel(item.lvl)}
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
-                        active ? 'bg-[var(--accent-subtle)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--badge-bg)]'
-                      }`}
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="font-mono text-[10px] font-extrabold text-[var(--accent)] w-6 text-left">{item.short}</span>
-                        <span>{item.label}</span>
-                      </span>
-                      {active && <Check className="w-3.5 h-3.5 text-[var(--accent)]" />}
-                    </button>
-                  );
-                })}
-                <div className="flex items-center justify-between px-2 pt-1.5 mt-1 border-t border-[var(--border-subtle)]">
+          {/* Portaled so it always renders above the sidebar and is never
+              clipped by the scrollable <main> content area */}
+          <PortalDropdown open={levelDropdownOpen} anchorRef={levelDropdownRef} onClose={() => setLevelDropdownOpen(false)} align="left" width={224}>
+            <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-2xl shadow-lg p-2">
+              {LEVEL_DEFS.map(item => {
+                const active = selectedLevels.includes(item.lvl);
+                return (
                   <button
+                    key={item.lvl}
                     type="button"
-                    onClick={() => setSelectedLevels([1, 2, 3, 4, 5])}
-                    className="text-[11px] font-bold text-[var(--accent)] hover:underline"
+                    onClick={() => toggleLevel(item.lvl)}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+                      active ? 'bg-[var(--accent-subtle)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--badge-bg)]'
+                    }`}
                   >
-                    Select All
+                    <span className="flex items-center gap-2">
+                      <span className="font-mono text-[10px] font-extrabold text-[var(--accent)] w-6 text-left">{item.short}</span>
+                      <span>{item.label}</span>
+                    </span>
+                    {active && <Check className="w-3.5 h-3.5 text-[var(--accent)]" />}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedLevels([])}
-                    className="text-[11px] font-bold text-[var(--text-muted)] hover:underline"
-                  >
-                    Clear
-                  </button>
-                </div>
+                );
+              })}
+              <div className="flex items-center justify-between px-2 pt-1.5 mt-1 border-t border-[var(--border-subtle)]">
+                <button
+                  type="button"
+                  onClick={() => setSelectedLevels([1, 2, 3, 4, 5])}
+                  className="text-[11px] font-bold text-[var(--accent)] hover:underline"
+                >
+                  Select All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedLevels([])}
+                  className="text-[11px] font-bold text-[var(--text-muted)] hover:underline"
+                >
+                  Clear
+                </button>
               </div>
-            )}
-          </div>
+            </div>
+          </PortalDropdown>
 
           <button
             type="button"

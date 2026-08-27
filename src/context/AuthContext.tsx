@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { User } from '@supabase/supabase-js';
+import { useToast } from './ToastContext';
 
 export type UserRole = 'super_admin' | 'org_admin' | 'level_1' | 'level_2' | 'level_3' | 'senior_manager' | 'junior_manager' | 'viewer' | 'editor' | 'manager' | 'admin';
 export type UserStatus = 'pending' | 'approved' | 'revoked';
@@ -79,6 +80,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const toast = useToast();
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [organization, setOrganization] = useState<Organization | null>(null);
@@ -194,10 +196,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
       if (error) throw error;
       await fetchProfileAndOrg(user.id);
-      alert('🎉 Account successfully promoted to Platform Super Admin!');
+      toast.success('Account successfully promoted to Platform Super Admin!');
     } catch (err: any) {
       console.error('Failed to promote user to super admin:', err);
-      alert('Error promoting account: ' + err.message);
+      toast.error('Error promoting account: ' + err.message);
     }
   };
 

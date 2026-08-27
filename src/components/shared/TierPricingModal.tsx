@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { supabase } from '../../lib/supabase';
 import { Check, Sparkles, Zap, Building2, User, X, ArrowRight, ShieldCheck, Clock, Send } from 'lucide-react';
 
@@ -9,7 +10,8 @@ interface TierPricingModalProps {
 
 export const TierPricingModal: React.FC<TierPricingModalProps> = ({ onClose }) => {
   const { tier, setTier, isIndividual, profile, organization, isSuperAdmin } = useAuth();
-  
+  const toast = useToast();
+
   const [submittingTier, setSubmittingTier] = useState<number | null>(null);
   const [requestSubmitted, setRequestSubmitted] = useState<string | null>(null);
 
@@ -41,7 +43,7 @@ export const TierPricingModal: React.FC<TierPricingModalProps> = ({ onClose }) =
       if (error) throw error;
       setRequestSubmitted(tierNames[targetTier]);
     } catch (err: any) {
-      alert('Failed to submit upgrade request: ' + err.message);
+      toast.error('Failed to submit upgrade request: ' + err.message);
     } finally {
       setSubmittingTier(null);
     }

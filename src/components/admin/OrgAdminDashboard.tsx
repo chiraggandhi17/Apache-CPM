@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth, UserProfile, UserRole, UserStatus, FeatureKey, Team, Organization } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { useDialog } from '../../context/DialogContext';
 import { 
   ShieldCheck, Layers, Plus, Check, X, Search, Clock, CheckCircle2, 
   ShieldAlert, Users, FolderTree, ToggleLeft, ToggleRight, Bell, Download, 
@@ -35,6 +37,8 @@ interface OrgAdminDashboardProps {
 
 export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSection = 'users' }) => {
   const { profile, organization, refreshProfile } = useAuth();
+  const toast = useToast();
+  const { confirm, showInfo } = useDialog();
   
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -225,7 +229,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
       setShowAddEmployeeModal(false);
       await loadData();
     } catch (err: any) {
-      alert('Error creating employee account: ' + err.message);
+      toast.error('Error creating employee account: ' + err.message);
     } finally {
       setCreatingEmployee(false);
     }
@@ -241,7 +245,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
       setCopiedCreds(true);
       setTimeout(() => setCopiedCreds(false), 3000);
     } else {
-      prompt('Copy employee credentials below:', msg);
+      showInfo({ title: 'Employee Credentials', message: 'Copy the credentials below:', copyText: msg });
     }
   };
 
@@ -272,7 +276,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
       await refreshProfile();
       await loadData();
     } catch (err: any) {
-      alert('Error saving company settings: ' + err.message);
+      toast.error('Error saving company settings: ' + err.message);
     }
   };
 
@@ -304,18 +308,24 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
       setShowAddTeamModal(false);
       await loadData();
     } catch (err: any) {
-      alert('Error saving team: ' + err.message);
+      toast.error('Error saving team: ' + err.message);
     }
   };
 
   const handleDeleteTeam = async (teamId: string, teamName: string) => {
-    if (!confirm(`Are you sure you want to delete "${teamName}"? Any sub-teams will also be removed.`)) return;
+    const ok = await confirm({
+      title: 'Delete Team',
+      message: `Are you sure you want to delete "${teamName}"? Any sub-teams will also be removed.`,
+      destructive: true,
+      confirmLabel: 'Delete Team',
+    });
+    if (!ok) return;
 
     try {
       await supabase.from('teams').delete().eq('id', teamId);
       await loadData();
     } catch (err: any) {
-      alert('Error deleting team: ' + err.message);
+      toast.error('Error deleting team: ' + err.message);
     }
   };
 
@@ -400,7 +410,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (err: any) {
-      alert('Failed to export organization backup: ' + err.message);
+      toast.error('Failed to export organization backup: ' + err.message);
     }
   };
 
@@ -419,7 +429,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
   return (
     <div className="space-y-6">
       {/* Company Header */}
-      <div className="bg-slate-900 text-white p-6 rounded-3xl border border-slate-800 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+      <div className="bg-[var(--sidebar-bg)] text-white p-6 rounded-3xl border border-[var(--sidebar-border)] shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
         <div className="max-w-2xl">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30 mb-2">
             <ShieldCheck className="w-3.5 h-3.5" /> Company Organization Admin
@@ -449,7 +459,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
               setNewTeamDefaultRole('level_2');
               setShowAddTeamModal(true);
             }}
-            className="w-full h-10 px-4 bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 rounded-xl font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-2 shrink-0"
+            className="w-full h-10 px-4 bg-[var(--sidebar-hover)] hover:bg-[var(--sidebar-active)]/20 text-[var(--sidebar-text)] border border-[var(--sidebar-border)] rounded-xl font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-2 shrink-0"
           >
             <Plus className="w-4 h-4 text-teal-400" /> Add Team / Dept
           </button>
@@ -457,7 +467,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
           <button
             type="button"
             onClick={openSettingsModal}
-            className="w-full h-10 px-4 bg-slate-850 hover:bg-slate-800 text-slate-300 border border-slate-750 rounded-xl font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-2 shrink-0"
+            className="w-full h-10 px-4 bg-[var(--sidebar-bg)] hover:bg-[var(--sidebar-hover)] text-[var(--sidebar-text)] border border-[var(--sidebar-border)] rounded-xl font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-2 shrink-0"
           >
             <Edit3 className="w-4 h-4 text-teal-400" /> Edit Company Info
           </button>
@@ -493,9 +503,9 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
 
       {/* VISUAL COMPANY ORG STRUCTURE & ACCESS LEVELS */}
       {(currentSection === 'teams' || currentSection === 'users' || !currentSection) && (
-        <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-2xs space-y-4">
+        <div className="bg-[var(--card-bg)] p-6 rounded-3xl border border-[var(--border)] shadow-2xs space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] flex items-center gap-1.5">
               <FolderTree className="w-4 h-4 text-teal-600" /> Company Hierarchy & Team Access Levels ({teams.length} Teams)
             </h3>
             <button
@@ -514,10 +524,10 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
           </div>
 
           {teams.length === 0 ? (
-            <div className="p-8 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-300 space-y-2">
-              <FolderTree className="w-8 h-8 text-gray-400 mx-auto" />
-              <p className="text-xs font-semibold text-gray-600">No departments or teams defined yet.</p>
-              <p className="text-[11px] text-gray-400 max-w-sm mx-auto">
+            <div className="p-8 text-center bg-[var(--badge-bg)] rounded-2xl border border-dashed border-[var(--border)] space-y-2">
+              <FolderTree className="w-8 h-8 text-[var(--text-muted)] mx-auto" />
+              <p className="text-xs font-semibold text-[var(--text-secondary)]">No departments or teams defined yet.</p>
+              <p className="text-[11px] text-[var(--text-muted)] max-w-sm mx-auto">
                 Create your company's departments (e.g. Production, Merchandising, Quality) and lines to assign access scopes to employees.
               </p>
             </div>
@@ -528,22 +538,22 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                 const assignedEmployees = profiles.filter(p => p.team_id === t.id);
 
                 return (
-                  <div key={t.id} className="p-4 bg-gray-50/80 border border-gray-200 rounded-2xl space-y-2 hover:border-teal-300 transition-colors">
+                  <div key={t.id} className="p-4 bg-[var(--badge-bg)]/80 border border-[var(--border)] rounded-2xl space-y-2 hover:border-teal-300 transition-colors">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-gray-900 text-xs truncate max-w-[170px]" title={t.name}>
+                      <span className="font-bold text-[var(--text-primary)] text-xs truncate max-w-[170px]" title={t.name}>
                         {t.name}
                       </span>
-                      <span className="text-[10px] bg-slate-900 text-teal-300 px-2 py-0.5 rounded-full font-mono font-bold">
+                      <span className="text-[10px] bg-[var(--sidebar-bg)] text-teal-300 px-2 py-0.5 rounded-full font-mono font-bold">
                         Level {t.level_depth}
                       </span>
                     </div>
 
-                    <div className="text-[11px] text-gray-500">
-                      {parent ? <span>Parent: <strong className="text-gray-700">{parent.name}</strong></span> : <span className="text-teal-700 font-semibold">Top-Level Division</span>}
+                    <div className="text-[11px] text-[var(--text-muted)]">
+                      {parent ? <span>Parent: <strong className="text-[var(--text-secondary)]">{parent.name}</strong></span> : <span className="text-teal-700 font-semibold">Top-Level Division</span>}
                     </div>
 
-                    <div className="pt-1 flex items-center justify-between text-[11px] border-t border-gray-200/60">
-                      <span className="font-mono text-gray-600 font-semibold">
+                    <div className="pt-1 flex items-center justify-between text-[11px] border-t border-[var(--border)]/60">
+                      <span className="font-mono text-[var(--text-secondary)] font-semibold">
                         👥 {assignedEmployees.length} Member{assignedEmployees.length === 1 ? '' : 's'}
                       </span>
 
@@ -557,7 +567,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                             setNewTeamDefaultRole(((t as any).default_role as UserRole) || 'level_2');
                             setShowAddTeamModal(true);
                           }}
-                          className="p-1 text-gray-500 hover:text-slate-900 rounded-lg hover:bg-gray-200 transition-colors"
+                          className="p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] rounded-lg hover:bg-[var(--badge-bg)] transition-colors"
                           title="Edit Team & Access"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
@@ -582,10 +592,10 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
 
       {/* STREAMLINED EMPLOYEE DIRECTORY TABLE */}
       {(currentSection === 'users' || !currentSection) && (
-        <div className="bg-white rounded-3xl border border-gray-200 shadow-2xs overflow-hidden">
-          <div className="p-4 bg-gray-50/50 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="bg-[var(--card-bg)] rounded-3xl border border-[var(--border)] shadow-2xs overflow-hidden">
+          <div className="p-4 bg-[var(--badge-bg)] border-b border-[var(--border-subtle)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] flex items-center gap-1.5">
                 <Users className="w-4 h-4 text-teal-600" /> Employee Accounts & Permissions ({filteredProfiles.length})
               </h2>
 
@@ -605,15 +615,15 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   placeholder="Filter employees..."
-                  className="h-8 pl-7 pr-2.5 text-xs bg-white border border-gray-300 rounded-xl outline-none focus:border-teal-500"
+                  className="h-8 pl-7 pr-2.5 text-xs bg-[var(--card-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500"
                 />
-                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2 top-2.5" />
+                <Search className="w-3.5 h-3.5 text-[var(--text-muted)] absolute left-2 top-2.5" />
               </div>
 
               <select
                 value={statusFilter}
                 onChange={e => setStatusFilter(e.target.value as any)}
-                className="h-8 px-2 bg-white border border-gray-300 rounded-xl text-xs font-semibold outline-none focus:border-teal-500"
+                className="h-8 px-2 bg-[var(--card-bg)] border border-[var(--border)] rounded-xl text-xs font-semibold outline-none focus:border-teal-500"
               >
                 <option value="all">All Status</option>
                 <option value="pending">Pending Only</option>
@@ -625,7 +635,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 font-bold uppercase tracking-wider text-[10px]">
+              <thead className="bg-[var(--badge-bg)] border-b border-[var(--border)] text-[var(--text-secondary)] font-bold uppercase tracking-wider text-[10px]">
                 <tr>
                   <th className="px-4 py-3">Employee</th>
                   <th className="px-4 py-3">Assigned Team / Level</th>
@@ -637,18 +647,18 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
               <tbody className="divide-y divide-gray-100">
                 {filteredProfiles.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="p-8 text-center text-gray-400 italic">
+                    <td colSpan={5} className="p-8 text-center text-[var(--text-muted)] italic">
                       No employees added yet under this company. Click "Create Employee Account" above to provision staff credentials!
                     </td>
                   </tr>
                 ) : (
                   filteredProfiles.map(prof => {
                     return (
-                      <tr key={prof.id} className="hover:bg-gray-50/60 transition-colors">
+                      <tr key={prof.id} className="hover:bg-[var(--badge-bg)] transition-colors">
                         {/* Employee Name & Email */}
                         <td className="px-4 py-3.5">
-                          <div className="font-bold text-gray-900">{prof.full_name || 'Staff Member'}</div>
-                          <div className="text-[11px] text-gray-500 font-mono">{prof.email}</div>
+                          <div className="font-bold text-[var(--text-primary)]">{prof.full_name || 'Staff Member'}</div>
+                          <div className="text-[11px] text-[var(--text-muted)] font-mono">{prof.email}</div>
                         </td>
 
                         {/* Team Selector */}
@@ -656,7 +666,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                           <select
                             value={prof.team_id || ''}
                             onChange={e => handleUpdateStatus(prof.id, prof.status, prof.role, e.target.value || undefined)}
-                            className="h-8 px-2.5 bg-white border border-gray-300 rounded-xl text-xs font-semibold shadow-2xs outline-none focus:border-teal-500 max-w-[170px]"
+                            className="h-8 px-2.5 bg-[var(--card-bg)] border border-[var(--border)] rounded-xl text-xs font-semibold shadow-2xs outline-none focus:border-teal-500 max-w-[170px]"
                           >
                             <option value="">No Team Assigned</option>
                             {teams.map(t => (
@@ -672,7 +682,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                           <select
                             value={prof.role}
                             onChange={e => handleUpdateStatus(prof.id, prof.status, e.target.value as UserRole, prof.team_id || undefined)}
-                            className="h-8 px-2.5 bg-white border border-gray-300 rounded-xl text-xs font-semibold shadow-2xs outline-none focus:border-teal-500"
+                            className="h-8 px-2.5 bg-[var(--card-bg)] border border-[var(--border)] rounded-xl text-xs font-semibold shadow-2xs outline-none focus:border-teal-500"
                           >
                             <option value="org_admin">Org Admin</option>
                             <option value="level_1">Level 1 (Full Access)</option>
@@ -707,9 +717,9 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                               type="button"
                               onClick={() => setManagingUser(prof)}
                               title="Manage Feature Flags & Permissions"
-                              className="h-8 w-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl transition-all border border-slate-300 shadow-2xs"
+                              className="h-8 w-8 flex items-center justify-center bg-[var(--badge-bg)] hover:bg-[var(--border)] text-[var(--text-primary)] rounded-xl transition-all border border-[var(--border)] shadow-2xs"
                             >
-                              <Sliders className="w-4 h-4 text-slate-700" />
+                              <Sliders className="w-4 h-4 text-[var(--text-secondary)]" />
                             </button>
 
                             {/* Approve */}
@@ -750,14 +760,14 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
 
       {/* COMPANY DATA BACKUP PANEL */}
       {currentSection === 'backup' && (
-        <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-2xs space-y-4">
+        <div className="bg-[var(--card-bg)] p-6 rounded-3xl border border-[var(--border)] shadow-2xs space-y-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-teal-500/10 text-teal-600 flex items-center justify-center border border-teal-500/20">
               <HardDrive className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-gray-900">Company Data Backup & Export Center</h2>
-              <p className="text-xs text-gray-500">
+              <h2 className="text-base font-bold text-[var(--text-primary)]">Company Data Backup & Export Center</h2>
+              <p className="text-xs text-[var(--text-muted)]">
                 Download and archive your organization's milestone hierarchy, teams, and employee directories.
               </p>
             </div>
@@ -776,20 +786,20 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
       {/* CREATE EMPLOYEE ACCOUNT MODAL (DIRECT ADMIN PROVISIONING) */}
       {showAddEmployeeModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-200 space-y-4">
+          <div className="bg-[var(--card-bg)] rounded-3xl p-6 max-w-md w-full shadow-2xl border border-[var(--border)] space-y-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-teal-500/10 text-teal-600 flex items-center justify-center border border-teal-500/20">
                 <UserPlus className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-base font-bold text-gray-900">Create Employee Account</h2>
-                <p className="text-xs text-gray-500">Provision a login ID and password for your staff member.</p>
+                <h2 className="text-base font-bold text-[var(--text-primary)]">Create Employee Account</h2>
+                <p className="text-xs text-[var(--text-muted)]">Provision a login ID and password for your staff member.</p>
               </div>
             </div>
 
             <form onSubmit={handleCreateEmployee} className="space-y-3 text-xs">
               <div>
-                <label className="block font-bold text-gray-700 mb-1">Employee Full Name</label>
+                <label className="block font-bold text-[var(--text-secondary)] mb-1">Employee Full Name</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -797,14 +807,14 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                     value={newEmpName}
                     onChange={e => setNewEmpName(e.target.value)}
                     placeholder="e.g. Alex Merchandiser"
-                    className="w-full h-9 pl-9 pr-3 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                    className="w-full h-9 pl-9 pr-3 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500 font-semibold"
                   />
-                  <User className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+                  <User className="w-4 h-4 text-[var(--text-muted)] absolute left-3 top-2.5" />
                 </div>
               </div>
 
               <div>
-                <label className="block font-bold text-gray-700 mb-1">Employee Email Address (Login ID)</label>
+                <label className="block font-bold text-[var(--text-secondary)] mb-1">Employee Email Address (Login ID)</label>
                 <div className="relative">
                   <input
                     type="email"
@@ -812,15 +822,15 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                     value={newEmpEmail}
                     onChange={e => setNewEmpEmail(e.target.value)}
                     placeholder="e.g. alex@company.com"
-                    className="w-full h-9 pl-9 pr-3 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-mono"
+                    className="w-full h-9 pl-9 pr-3 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500 font-mono"
                   />
-                  <Mail className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+                  <Mail className="w-4 h-4 text-[var(--text-muted)] absolute left-3 top-2.5" />
                 </div>
               </div>
 
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="block font-bold text-gray-700">Initial Login Password</label>
+                  <label className="block font-bold text-[var(--text-secondary)]">Initial Login Password</label>
                   <button
                     type="button"
                     onClick={() => setNewEmpPassword(generateDefaultPassword())}
@@ -836,19 +846,19 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                     value={newEmpPassword}
                     onChange={e => setNewEmpPassword(e.target.value)}
                     placeholder="Enter password..."
-                    className="w-full h-9 pl-9 pr-3 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-mono font-bold text-slate-900"
+                    className="w-full h-9 pl-9 pr-3 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500 font-mono font-bold text-[var(--text-primary)]"
                   />
-                  <Lock className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+                  <Lock className="w-4 h-4 text-[var(--text-muted)] absolute left-3 top-2.5" />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-gray-700 mb-1">Department / Team</label>
+                  <label className="block font-bold text-[var(--text-secondary)] mb-1">Department / Team</label>
                   <select
                     value={newEmpTeamId}
                     onChange={e => setNewEmpTeamId(e.target.value)}
-                    className="w-full h-9 px-2 bg-white border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                    className="w-full h-9 px-2 bg-[var(--card-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500 font-semibold"
                   >
                     <option value="">No Team Assigned</option>
                     {teams.map(t => (
@@ -860,11 +870,11 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                 </div>
 
                 <div>
-                  <label className="block font-bold text-gray-700 mb-1">Access Level</label>
+                  <label className="block font-bold text-[var(--text-secondary)] mb-1">Access Level</label>
                   <select
                     value={newEmpRole}
                     onChange={e => setNewEmpRole(e.target.value as UserRole)}
-                    className="w-full h-9 px-2 bg-white border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                    className="w-full h-9 px-2 bg-[var(--card-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500 font-semibold"
                   >
                     <option value="level_1">Level 1 (Full)</option>
                     <option value="level_2">Level 2 (Limited)</option>
@@ -873,11 +883,11 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--border-subtle)]">
                 <button
                   type="button"
                   onClick={() => setShowAddEmployeeModal(false)}
-                  className="h-9 px-4 text-gray-600 font-semibold rounded-xl hover:bg-gray-100"
+                  className="h-9 px-4 text-[var(--text-secondary)] font-semibold rounded-xl hover:bg-[var(--badge-bg)]"
                 >
                   Cancel
                 </button>
@@ -898,39 +908,39 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
       {/* CREATED EMPLOYEE CREDENTIALS MODAL */}
       {createdEmployee && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-200 space-y-4">
+          <div className="bg-[var(--card-bg)] rounded-3xl p-6 max-w-md w-full shadow-2xl border border-[var(--border)] space-y-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center border border-emerald-500/20">
                 <CheckCircle2 className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-base font-bold text-gray-900">Employee Account Created!</h2>
-                <p className="text-xs text-gray-500">Account is active. Send these login details to your employee.</p>
+                <h2 className="text-base font-bold text-[var(--text-primary)]">Employee Account Created!</h2>
+                <p className="text-xs text-[var(--text-muted)]">Account is active. Send these login details to your employee.</p>
               </div>
             </div>
 
-            <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200 space-y-2 text-xs">
+            <div className="bg-[var(--badge-bg)] p-4 rounded-2xl border border-[var(--border)] space-y-2 text-xs">
               <div className="flex justify-between">
-                <span className="text-gray-500">Employee Name:</span>
-                <span className="font-bold text-gray-900">{createdEmployee.name}</span>
+                <span className="text-[var(--text-muted)]">Employee Name:</span>
+                <span className="font-bold text-[var(--text-primary)]">{createdEmployee.name}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Login Email:</span>
-                <span className="font-mono font-bold text-gray-900">{createdEmployee.email}</span>
+                <span className="text-[var(--text-muted)]">Login Email:</span>
+                <span className="font-mono font-bold text-[var(--text-primary)]">{createdEmployee.email}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Password:</span>
-                <span className="font-mono font-bold bg-slate-900 text-teal-300 px-2 py-0.5 rounded">
+                <span className="text-[var(--text-muted)]">Password:</span>
+                <span className="font-mono font-bold bg-[var(--sidebar-bg)] text-teal-300 px-2 py-0.5 rounded">
                   {createdEmployee.password}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Workspace Code:</span>
-                <span className="font-mono font-bold text-gray-800">{organization?.org_code || 'APACHE'}</span>
+                <span className="text-[var(--text-muted)]">Workspace Code:</span>
+                <span className="font-mono font-bold text-[var(--text-primary)]">{organization?.org_code || 'APACHE'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Team & Access:</span>
-                <span className="font-semibold text-gray-800">{createdEmployee.teamName} ({createdEmployee.role.replace('_', ' ').toUpperCase()})</span>
+                <span className="text-[var(--text-muted)]">Team & Access:</span>
+                <span className="font-semibold text-[var(--text-primary)]">{createdEmployee.teamName} ({createdEmployee.role.replace('_', ' ').toUpperCase()})</span>
               </div>
             </div>
 
@@ -938,7 +948,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
               <button
                 type="button"
                 onClick={() => setCreatedEmployee(null)}
-                className="h-9 px-4 text-gray-600 font-semibold rounded-xl hover:bg-gray-100 text-xs"
+                className="h-9 px-4 text-[var(--text-secondary)] font-semibold rounded-xl hover:bg-[var(--badge-bg)] text-xs"
               >
                 Done
               </button>
@@ -959,30 +969,30 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
       {/* ADD / EDIT TEAM MODAL */}
       {showAddTeamModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-200 space-y-4">
-            <h2 className="text-lg font-bold text-gray-900">
+          <div className="bg-[var(--card-bg)] rounded-3xl p-6 max-w-md w-full shadow-2xl border border-[var(--border)] space-y-4">
+            <h2 className="text-lg font-bold text-[var(--text-primary)]">
               {editingTeam ? 'Edit Department / Team' : 'Add Department or Team Level'}
             </h2>
             
             <form onSubmit={handleSaveTeam} className="space-y-3 text-xs">
               <div>
-                <label className="block font-semibold text-gray-700 mb-1">Department / Team Name</label>
+                <label className="block font-semibold text-[var(--text-secondary)] mb-1">Department / Team Name</label>
                 <input
                   type="text"
                   required
                   value={newTeamName}
                   onChange={e => setNewTeamName(e.target.value)}
                   placeholder="e.g. Production Department or Stitching Line A"
-                  className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                  className="w-full h-9 px-3 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500 font-semibold"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold text-gray-700 mb-1">Parent Level (Leave empty for Division Level 1)</label>
+                <label className="block font-semibold text-[var(--text-secondary)] mb-1">Parent Level (Leave empty for Division Level 1)</label>
                 <select
                   value={newParentTeamId}
                   onChange={e => setNewParentTeamId(e.target.value)}
-                  className="w-full h-9 px-3 bg-white border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                  className="w-full h-9 px-3 bg-[var(--card-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500 font-semibold"
                 >
                   <option value="">Top-Level Division (Level 1)</option>
                   {teams.filter(t => editingTeam ? t.id !== editingTeam.id : true).map(t => (
@@ -994,17 +1004,17 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
               </div>
 
               <div>
-                <label className="block font-semibold text-gray-700 mb-1">Default Access Level for Members</label>
+                <label className="block font-semibold text-[var(--text-secondary)] mb-1">Default Access Level for Members</label>
                 <select
                   value={newTeamDefaultRole}
                   onChange={e => setNewTeamDefaultRole(e.target.value as UserRole)}
-                  className="w-full h-9 px-3 bg-white border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                  className="w-full h-9 px-3 bg-[var(--card-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500 font-semibold"
                 >
                   <option value="level_1">Level 1 (Full Access)</option>
                   <option value="level_2">Level 2 (Limited Access)</option>
                   <option value="level_3">Level 3 (View Only)</option>
                 </select>
-                <span className="text-[10px] text-gray-400 mt-1 block">
+                <span className="text-[10px] text-[var(--text-muted)] mt-1 block">
                   Employees assigned to this team will inherit this access level.
                 </span>
               </div>
@@ -1016,7 +1026,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                     setShowAddTeamModal(false);
                     setEditingTeam(null);
                   }}
-                  className="h-9 px-4 text-gray-600 font-semibold rounded-xl hover:bg-gray-100"
+                  className="h-9 px-4 text-[var(--text-secondary)] font-semibold rounded-xl hover:bg-[var(--badge-bg)]"
                 >
                   Cancel
                 </button>
@@ -1035,26 +1045,26 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
       {/* MANAGE EMPLOYEE ENTITLEMENTS & ACCESS MODAL */}
       {managingUser && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+          <div className="bg-[var(--card-bg)] rounded-3xl p-6 max-w-md w-full shadow-2xl border border-[var(--border)] space-y-4">
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
               <div>
-                <h2 className="text-base font-bold text-gray-900">Manage Employee Access & Features</h2>
-                <p className="text-xs text-gray-500 font-mono mt-0.5">{managingUser.email}</p>
+                <h2 className="text-base font-bold text-[var(--text-primary)]">Manage Employee Access & Features</h2>
+                <p className="text-xs text-[var(--text-muted)] font-mono mt-0.5">{managingUser.email}</p>
               </div>
-              <button onClick={() => setManagingUser(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+              <button onClick={() => setManagingUser(null)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">✕</button>
             </div>
 
             <div className="space-y-3">
-              <div className="text-xs font-bold text-gray-800">Feature Entitlements:</div>
+              <div className="text-xs font-bold text-[var(--text-primary)]">Feature Entitlements:</div>
               {FEATURE_LIST.map(f => {
                 const userFeats = userFeatures[managingUser.id] || { base_tier: true, node_mutation: true, google_calendar_sync: false, advanced_reports: false, admin_management: false };
                 const isEnabled = Boolean(userFeats[f.key]);
 
                 return (
-                  <div key={f.key} className="p-3 bg-gray-50 rounded-2xl border border-gray-200 flex items-center justify-between gap-3">
+                  <div key={f.key} className="p-3 bg-[var(--badge-bg)] rounded-2xl border border-[var(--border)] flex items-center justify-between gap-3">
                     <div>
-                      <div className="text-xs font-bold text-gray-900">{f.name}</div>
-                      <div className="text-[10px] text-gray-500">{f.description}</div>
+                      <div className="text-xs font-bold text-[var(--text-primary)]">{f.name}</div>
+                      <div className="text-[10px] text-[var(--text-muted)]">{f.description}</div>
                     </div>
 
                     <button
@@ -1063,7 +1073,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                       className={`h-7 px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                         isEnabled
                           ? 'bg-teal-600 text-white shadow-xs'
-                          : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                          : 'bg-gray-200 text-[var(--text-secondary)] hover:bg-gray-300'
                       }`}
                     >
                       {isEnabled ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
@@ -1078,7 +1088,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
               <button
                 type="button"
                 onClick={() => setManagingUser(null)}
-                className="h-9 px-5 bg-slate-900 text-white font-bold text-xs rounded-xl shadow-xs"
+                className="h-9 px-5 bg-[var(--sidebar-bg)] text-white font-bold text-xs rounded-xl shadow-xs"
               >
                 Done
               </button>
@@ -1090,51 +1100,51 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
       {/* EDIT COMPANY SETTINGS MODAL */}
       {showEditSettingsModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+          <div className="bg-[var(--card-bg)] rounded-3xl p-6 max-w-md w-full shadow-2xl border border-[var(--border)] space-y-4">
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
+              <h2 className="text-base font-bold text-[var(--text-primary)] flex items-center gap-2">
                 <Edit3 className="w-5 h-5 text-teal-600" />
                 <span>Edit Company Information & Logo</span>
               </h2>
-              <button onClick={() => setShowEditSettingsModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+              <button onClick={() => setShowEditSettingsModal(false)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">✕</button>
             </div>
 
             <form onSubmit={handleSaveCompanySettings} className="space-y-3.5 text-xs">
               <div>
-                <label className="block font-bold text-gray-800 mb-1">Company Display Title</label>
+                <label className="block font-bold text-[var(--text-primary)] mb-1">Company Display Title</label>
                 <input
                   type="text"
                   required
                   value={editBrandTitle}
                   onChange={e => setEditBrandTitle(e.target.value)}
                   placeholder="e.g. Cadence - Apache Footwear"
-                  className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                  className="w-full h-9 px-3 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500 font-semibold"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-gray-800 mb-1">Company Tagline</label>
+                <label className="block font-bold text-[var(--text-primary)] mb-1">Company Tagline</label>
                 <input
                   type="text"
                   value={editBrandTagline}
                   onChange={e => setEditBrandTagline(e.target.value)}
                   placeholder="e.g. adidas Ex-Factory Production Critical Path Tracker"
-                  className="w-full h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500"
+                  className="w-full h-9 px-3 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-teal-500"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-gray-800 mb-1">Company Logo URL</label>
+                <label className="block font-bold text-[var(--text-primary)] mb-1">Company Logo URL</label>
                 <div className="flex gap-2">
                   <input
                     type="url"
                     value={editLogoUrl}
                     onChange={e => setEditLogoUrl(e.target.value)}
                     placeholder="https://example.com/logo.png"
-                    className="flex-1 h-9 px-3 bg-gray-50 border border-gray-300 rounded-xl font-mono outline-none focus:border-teal-500"
+                    className="flex-1 h-9 px-3 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl font-mono outline-none focus:border-teal-500"
                   />
                   {editLogoUrl && (
-                    <div className="w-9 h-9 border border-gray-200 rounded-xl flex items-center justify-center p-1 bg-white shrink-0">
+                    <div className="w-9 h-9 border border-[var(--border)] rounded-xl flex items-center justify-center p-1 bg-[var(--card-bg)] shrink-0">
                       <img src={editLogoUrl} alt="Logo" className="max-h-full max-w-full object-contain" />
                     </div>
                   )}
@@ -1145,7 +1155,7 @@ export const OrgAdminDashboard: React.FC<OrgAdminDashboardProps> = ({ currentSec
                 <button
                   type="button"
                   onClick={() => setShowEditSettingsModal(false)}
-                  className="h-9 px-4 text-gray-600 font-semibold rounded-xl hover:bg-gray-100"
+                  className="h-9 px-4 text-[var(--text-secondary)] font-semibold rounded-xl hover:bg-[var(--badge-bg)]"
                 >
                   Cancel
                 </button>
