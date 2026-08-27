@@ -12,7 +12,8 @@ export interface NodeItem {
   title: string;
   description: string | null;
   color: string | null;
-  planned_date: string | null;       // ISO 8601 UTC string
+  start_date: string | null;         // ISO 8601 UTC string (Range start date)
+  planned_date: string | null;       // ISO 8601 UTC string (Target / End date)
   actual_date: string | null;        // ISO 8601 UTC string
   trigger_offset_days: number | null; // Offset relative to parent.planned_date
   status: NodeStatus;
@@ -39,6 +40,7 @@ export interface TodayItem {
   type: NodeType;
   title: string;
   effective_color: string;
+  start_date: string | null;
   planned_date: string | null;
   actual_date: string | null;
   status: NodeStatus;

@@ -7,6 +7,7 @@ import { useNodes } from '../../context/NodeContext';
 import { NodeItem, ReminderItem } from '../../types/domain';
 import { resolveColor } from '../../lib/color-resolver';
 import { SearchableParentSelect } from '../shared/SearchableParentSelect';
+import { addDays, parseISO } from 'date-fns';
 import { Filter, Calendar as CalendarIcon, Bell, CheckCircle2, Zap, Layers, FolderTree, XCircle } from 'lucide-react';
 
 interface CalendarViewProps {
@@ -16,8 +17,25 @@ interface CalendarViewProps {
 export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
   const { nodes, reminders } = useNodes();
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
+  const [selectedLevels, setSelectedLevels] = useState<number[]>([1, 2, 3, 4, 5]);
   const [showCompleted, setShowCompleted] = useState(true);
   const [showAlertsOnCal, setShowAlertsOnCal] = useState(true);
+
+  const toggleLevel = (lvl: number) => {
+    setSelectedLevels(prev =>
+      prev.includes(lvl) ? prev.filter(l => l !== lvl) : [...prev, lvl]
+    );
+  };
+
+  const getNodeDepth = (nodeId: string): number => {
+    let depth = 1;
+    let curr = nodes.find(n => n.id === nodeId);
+    while (curr && curr.parent_id) {
+      depth++;
+      curr = nodes.find(n => n.id === curr!.parent_id);
+    }
+    return Math.min(5, depth);
+  };
 
   // Calculate recursive descendant sub-task IDs for the selected parent task
   const allowedSubtreeNodeIds = useMemo(() => {
@@ -45,11 +63,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
   }, [selectedParentId, nodes]);
 
   const events = useMemo(() => {
-    // 1. Task & Milestone Events (Subtree Filtered)
+    // 1. Task & Milestone Events (Subtree & Level Filtered)
     const nodeEvents = nodes
       .filter(n => {
         if (!n.planned_date) return false;
         if (!showCompleted && n.status === 'done') return false;
+        
+        // Level Matrix Filter
+        const depth = getNodeDepth(n.id);
+        if (!selectedLevels.includes(depth)) return false;
+
         // Level 1 Department / Stream Subtree Filter
         if (allowedSubtreeNodeIds && !allowedSubtreeNodeIds.has(n.id)) return false;
         return true;
@@ -65,12 +88,24 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
 
         const color = resolveColor(n.color, ancestorColors);
         const isDone = n.status === 'done';
-        const dateStr = n.planned_date!.length >= 10 ? n.planned_date!.slice(0, 10) : n.planned_date!;
+        const plannedDateStr = n.planned_date!.length >= 10 ? n.planned_date!.slice(0, 10) : n.planned_date!;
+        const startDateStr = n.start_date && n.start_date.length >= 10 ? n.start_date.slice(0, 10) : plannedDateStr;
+        const isRange = Boolean(n.start_date && startDateStr !== plannedDateStr);
+
+        let endDateStr: string | undefined = undefined;
+        if (isRange) {
+          try {
+            endDateStr = addDays(parseISO(n.planned_date!), 1).toISOString().slice(0, 10);
+          } catch {
+            endDateStr = undefined;
+          }
+        }
 
         return {
           id: n.id,
           title: n.title,
-          start: dateStr,
+          start: startDateStr,
+          end: endDateStr,
           allDay: true,
           backgroundColor: isDone ? '#94a3b8' : color,
           borderColor: isDone ? '#64748b' : color,
@@ -78,6 +113,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
           extendedProps: { 
             node: n, 
             isReminder: false, 
+            isRange,
             isDone, 
             isCritical: n.is_critical, 
             color,
@@ -185,6 +221,32 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
         </div>
       </div>
 
+      {/* SLEEK HIERARCHY LEVEL MATRIX FILTER BAR */}
+      <div className="bg-white px-4 py-2.5 rounded-2xl border border-gray-200 flex items-center flex-wrap gap-2 text-xs font-bold shadow-2xs">
+        <span className="text-gray-500 text-[11px] uppercase tracking-wider mr-1">Filter Hierarchy Levels:</span>
+        {[
+          { lvl: 1, label: 'L1 Dept / Stream' },
+          { lvl: 2, label: 'L2 Season' },
+          { lvl: 3, label: 'L3 Model' },
+          { lvl: 4, label: 'L4 Task' },
+          { lvl: 5, label: 'L5 Subtask' },
+        ].map(item => (
+          <button
+            key={item.lvl}
+            type="button"
+            onClick={() => toggleLevel(item.lvl)}
+            className={`px-2.5 py-1 rounded-lg border text-[11px] transition-all flex items-center gap-1 ${
+              selectedLevels.includes(item.lvl)
+                ? 'bg-teal-600 text-white border-teal-600 shadow-2xs'
+                : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
+            }`}
+          >
+            {selectedLevels.includes(item.lvl) && <span className="font-extrabold text-[10px]">✓</span>}
+            <span>{item.label}</span>
+          </button>
+        ))}
+      </div>
+
       {/* ACTIVE DEPARTMENT / STREAM FILTER BANNER */}
       {selectedParentNode && (
         <div className="bg-indigo-50/90 border border-indigo-200 px-4 py-2.5 rounded-2xl flex items-center justify-between text-xs text-indigo-950 font-medium shadow-2xs animate-in fade-in">
@@ -224,6 +286,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
           eventContent={eventInfo => {
             const isDone = eventInfo.event.extendedProps.isDone;
             const isReminder = eventInfo.event.extendedProps.isReminder;
+            const isRange = eventInfo.event.extendedProps.isRange;
             const isCritical = eventInfo.event.extendedProps.isCritical;
             const color = eventInfo.event.extendedProps.color || '#0d9488';
 
@@ -238,6 +301,26 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
                   className="w-full px-2 py-0.5 rounded-md text-white text-[11px] font-bold truncate flex items-center gap-1 shadow-2xs cursor-pointer transition-all hover:brightness-110 border"
                 >
                   <span className="text-[11px] shrink-0">🔔</span>
+                  <span className="truncate">{eventInfo.event.title}</span>
+                </div>
+              );
+            }
+
+            // Sleek Dashed Rendering for Multi-Day Date Range Spans
+            if (isRange) {
+              return (
+                <div
+                  title={`🗓️ Date Range: ${eventInfo.event.title}`}
+                  style={{
+                    borderColor: isDone ? '#94a3b8' : color,
+                    backgroundColor: isDone ? '#f1f5f9' : `${color}20`,
+                    color: isDone ? '#64748b' : color,
+                  }}
+                  className={`w-full px-2 py-0.5 rounded-md text-[11px] font-extrabold truncate flex items-center gap-1 shadow-2xs border-2 border-dashed transition-all hover:brightness-105 cursor-pointer ${
+                    isDone ? 'line-through opacity-70 italic' : ''
+                  }`}
+                >
+                  <span className="shrink-0 text-[10px]">🗓️</span>
                   <span className="truncate">{eventInfo.event.title}</span>
                 </div>
               );

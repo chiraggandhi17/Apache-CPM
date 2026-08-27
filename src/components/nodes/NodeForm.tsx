@@ -53,18 +53,26 @@ export const NodeForm: React.FC<NodeFormProps> = ({
 
   const [title, setTitle] = useState(initialNode?.title || '');
   const [type, setType] = useState<NodeType>(getSuggestedType());
+  const [startDate, setStartDate] = useState(
+    initialNode?.start_date ? initialNode.start_date.substring(0, 10) : ''
+  );
   const [plannedDate, setPlannedDate] = useState(
     initialNode?.planned_date ? initialNode.planned_date.substring(0, 10) : ''
   );
+  
+  // Color Override Toggle (De-cluttered: only show swatch picker when checked)
+  const [overrideColor, setOverrideColor] = useState<boolean>(Boolean(initialNode?.color));
   const [color, setColor] = useState<string | null>(defaultAutoColor);
   
-  // Date Mode State: Default to 'relative' if parent exists, else 'absolute'
-  const [dateMode, setDateMode] = useState<'absolute' | 'relative'>(
-    initialNode?.trigger_offset_days !== null && initialNode?.trigger_offset_days !== undefined
-      ? 'relative'
+  // Date Mode State: 'single' (Fixed Date), 'offset' (Relative to Parent), 'range' (Start -> End Range)
+  const [dateMode, setDateMode] = useState<'single' | 'offset' | 'range'>(
+    initialNode?.start_date
+      ? 'range'
+      : initialNode?.trigger_offset_days !== null && initialNode?.trigger_offset_days !== undefined
+      ? 'offset'
       : parentId
-      ? 'relative'
-      : 'absolute'
+      ? 'offset'
+      : 'single'
   );
 
   // Intuitive Offset State
@@ -96,7 +104,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
 
   // Calculate final offset
   const computedOffsetDays: number | null = (() => {
-    if (dateMode !== 'relative' || !parentId) return null;
+    if (dateMode !== 'offset' || !parentId) return null;
     if (offsetDirection === 'same') return 0;
     if (offsetDirection === 'before') return -Math.abs(offsetDaysQty);
     return Math.abs(offsetDaysQty);
@@ -104,7 +112,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
 
   // Calculate live resulting target date
   const calculatedTargetDate: string | null = (() => {
-    if (dateMode === 'relative' && parentEffectiveDate && computedOffsetDays !== null) {
+    if (dateMode === 'offset' && parentEffectiveDate && computedOffsetDays !== null) {
       try {
         const base = new Date(parentEffectiveDate);
         if (isValid(base)) {
@@ -119,6 +127,13 @@ export const NodeForm: React.FC<NodeFormProps> = ({
 
   // Date Hierarchy & Lineage Validation Rules
   const dateValidationError: string | null = (() => {
+    // Range mode validation: start date must be <= end date
+    if (dateMode === 'range' && startDate && plannedDate) {
+      if (new Date(startDate) > new Date(plannedDate)) {
+        return '⚠️ Invalid Date Range: Start Date cannot be later than Target End Date.';
+      }
+    }
+
     if (!calculatedTargetDate) return null;
     const targetDateObj = new Date(calculatedTargetDate);
     if (!isValid(targetDateObj)) return null;
@@ -175,12 +190,17 @@ export const NodeForm: React.FC<NodeFormProps> = ({
     if (!title.trim() || isSubmitting || dateValidationError) return;
 
     setIsSubmitting(true);
+    let finalStartDate: string | null = null;
     let finalPlannedDate: string | null = null;
     let finalOffset: number | null = null;
+    let finalColor: string | null = overrideColor ? color : null;
 
-    if (dateMode === 'relative' && parentId) {
+    if (dateMode === 'offset' && parentId) {
       finalOffset = computedOffsetDays;
       finalPlannedDate = calculatedTargetDate;
+    } else if (dateMode === 'range') {
+      finalStartDate = startDate ? new Date(startDate).toISOString() : null;
+      finalPlannedDate = plannedDate ? new Date(plannedDate).toISOString() : null;
     } else if (plannedDate) {
       finalPlannedDate = new Date(plannedDate).toISOString();
     }
@@ -193,7 +213,8 @@ export const NodeForm: React.FC<NodeFormProps> = ({
         await updateNode(initialNode.id, {
           title,
           type,
-          color,
+          color: finalColor,
+          start_date: finalStartDate,
           planned_date: finalPlannedDate,
           trigger_offset_days: finalOffset,
           is_critical: isCritical,
@@ -209,7 +230,8 @@ export const NodeForm: React.FC<NodeFormProps> = ({
           parent_id: parentId,
           type,
           title,
-          color,
+          color: finalColor,
+          start_date: finalStartDate,
           planned_date: finalPlannedDate,
           trigger_offset_days: finalOffset,
           is_critical: isCritical,
@@ -361,51 +383,92 @@ export const NodeForm: React.FC<NodeFormProps> = ({
               </select>
             </div>
 
-            <ColorPicker
-              value={color}
-              onChange={setColor}
-              inheritedColor={parentResolvedColor}
-              inheritedFromTitle={parentNode?.title}
-            />
+            {/* De-cluttered Optional Color Swatch Override Checkbox */}
+            <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2.5">
+              <label className="flex items-center gap-2.5 text-xs font-bold text-gray-800 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={overrideColor}
+                  onChange={e => {
+                    setOverrideColor(e.target.checked);
+                    if (!e.target.checked) setColor(null);
+                    else if (!color) setColor(defaultAutoColor || '#0D9488');
+                  }}
+                  className="w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
+                />
+                <span>Customize Accent Color (Override Theme Gradient)</span>
+              </label>
+
+              {!overrideColor && (
+                <p className="text-[11px] text-gray-500 italic pl-6">
+                  ✨ Inherits parent color with a soft, readable level gradient tint automatically.
+                </p>
+              )}
+
+              {overrideColor && (
+                <div className="pt-2 border-t border-gray-200">
+                  <ColorPicker
+                    value={color}
+                    onChange={setColor}
+                    inheritedColor={parentResolvedColor}
+                    inheritedFromTitle={parentNode?.title}
+                  />
+                </div>
+              )}
+            </div>
           </div>
 
           {/* TARGET DATE & RELATIVE TIMING BUILDER */}
           <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-200 space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="font-bold text-gray-900 flex items-center gap-1.5">
-                <Calendar className="w-4 h-4 text-teal-600" /> Planned Target Date
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <label className="font-bold text-gray-900 flex items-center gap-1.5 text-xs">
+                <Calendar className="w-4 h-4 text-teal-600" /> Milestone Scheduling Panel
               </label>
 
-              {parentId && (
-                <div className="flex items-center bg-white p-0.5 rounded-xl border border-gray-300 shadow-2xs">
+              {/* 3-MODE DATE TYPE TABS */}
+              <div className="flex items-center bg-white p-0.5 rounded-xl border border-gray-300 shadow-2xs">
+                {parentId && (
                   <button
                     type="button"
-                    onClick={() => setDateMode('relative')}
-                    className={`px-3 py-1 rounded-lg font-bold text-[11px] transition-colors ${
-                      dateMode === 'relative' 
+                    onClick={() => setDateMode('offset')}
+                    className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors ${
+                      dateMode === 'offset' 
                         ? 'bg-teal-600 text-white shadow-xs' 
                         : 'text-gray-600 hover:text-gray-900'
                     }`}
                   >
-                    ⚡ Relative Offset
+                    ⚡ Offset
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setDateMode('absolute')}
-                    className={`px-3 py-1 rounded-lg font-bold text-[11px] transition-colors ${
-                      dateMode === 'absolute' 
-                        ? 'bg-teal-600 text-white shadow-xs' 
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    📅 Fixed Date
-                  </button>
-                </div>
-              )}
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setDateMode('single')}
+                  className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors ${
+                    dateMode === 'single' 
+                      ? 'bg-teal-600 text-white shadow-xs' 
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  📌 Single Date
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDateMode('range')}
+                  className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors ${
+                    dateMode === 'range' 
+                      ? 'bg-teal-600 text-white shadow-xs' 
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  🗓️ Date Range
+                </button>
+              </div>
             </div>
 
-            {/* RELATIVE OFFSET BUILDER */}
-            {dateMode === 'relative' && parentId ? (
+            {/* MODE 1: RELATIVE OFFSET BUILDER */}
+            {dateMode === 'offset' && parentId ? (
               <div className="bg-white p-4 rounded-2xl border border-teal-200 space-y-3.5 shadow-2xs">
                 
                 {/* Immediate Parent Reference Banner */}
@@ -463,20 +526,24 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                   </div>
                 </div>
 
-                {/* Days Quantity & Presets Grid (Never Overflows!) */}
+                {/* Days Quantity Inputs */}
                 {offsetDirection !== 'same' && (
-                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-gray-700 text-xs">Offset Days:</span>
-                      <input
-                        type="number"
-                        min="1"
-                        max="365"
-                        value={offsetDaysQty}
-                        onChange={e => setOffsetDaysQty(Math.max(1, Number(e.target.value) || 1))}
-                        className="w-16 h-8 text-center text-xs font-mono font-bold bg-white border border-gray-300 rounded-lg outline-none focus:border-teal-500"
-                      />
-                      <span className="text-gray-600 text-xs font-medium">days {offsetDirection} parent</span>
+                  <div className="space-y-2 pt-1 border-t border-gray-100">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold text-gray-700">
+                        {offsetDirection === 'before' ? 'Days Before Parent Target:' : 'Days After Parent Target:'}
+                      </label>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="1"
+                          max="365"
+                          value={offsetDaysQty}
+                          onChange={e => setOffsetDaysQty(Math.max(1, Number(e.target.value) || 1))}
+                          className="w-16 h-8 text-center font-mono font-bold bg-gray-50 border border-gray-300 rounded-lg text-xs"
+                        />
+                        <span className="text-xs font-bold text-gray-500">Days</span>
+                      </div>
                     </div>
 
                     <div className="space-y-1">
@@ -516,8 +583,42 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                   </span>
                 </div>
               </div>
+            ) : dateMode === 'range' ? (
+              /* MODE 2: DATE RANGE INPUT (Start Date -> Target End Date) */
+              <div className="bg-white p-4 rounded-2xl border border-indigo-200 space-y-3 shadow-2xs">
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">Start Date</label>
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={e => setStartDate(e.target.value)}
+                      className="w-full text-xs px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">Target End Date</label>
+                    <input
+                      type="date"
+                      value={plannedDate}
+                      onChange={e => setPlannedDate(e.target.value)}
+                      className="w-full text-xs px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-teal-500 font-semibold"
+                    />
+                  </div>
+                </div>
+
+                {startDate && plannedDate && new Date(startDate) <= new Date(plannedDate) && (
+                  <div className="p-2.5 bg-indigo-50 rounded-xl border border-indigo-200 text-indigo-950 text-xs flex items-center justify-between font-medium">
+                    <span>🗓️ Total Range Duration:</span>
+                    <span className="font-mono font-extrabold text-indigo-900 bg-white px-2 py-0.5 rounded-md border border-indigo-200">
+                      {Math.ceil((new Date(plannedDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1} Days
+                    </span>
+                  </div>
+                )}
+              </div>
             ) : (
-              /* FIXED CALENDAR DATE INPUT */
+              /* MODE 3: SINGLE FIXED CALENDAR DATE INPUT */
               <div className="space-y-1.5">
                 <input
                   type="date"

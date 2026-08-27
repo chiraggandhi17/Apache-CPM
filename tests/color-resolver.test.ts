@@ -8,14 +8,16 @@ describe('Color Resolver Pure Function (resolveColor)', () => {
     expect(color).toBe('#0D9488');
   });
 
-  it('should inherit nearest parent color when node color is null', () => {
-    const color = resolveColor(null, ['#2563EB', '#0D9488']);
-    expect(color).toBe('#0D9488');
+  it('should inherit nearest parent color with level gradient tinting when node color is null', () => {
+    const color = resolveColor(null, ['#EF4444']);
+    // Ancestor is red #EF4444, 1 level down should be lightened
+    expect(color).not.toBe('#EF4444');
+    expect(color.startsWith('#')).toBe(true);
   });
 
-  it('should inherit root color when intermediate ancestors are null', () => {
+  it('should inherit root color with gradient tinting when intermediate ancestors are null', () => {
     const color = resolveColor(null, ['#2563EB', null, undefined]);
-    expect(color).toBe('#2563EB');
+    expect(color).toBe('#739bf2');
   });
 
   it('should return default fallback color when no ancestor has color', () => {

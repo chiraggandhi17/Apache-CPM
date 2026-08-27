@@ -627,6 +627,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       title: data.title || 'Untitled Task',
       description: data.description || null,
       color: data.color || null,
+      start_date: data.start_date || null,
       planned_date: data.planned_date || null,
       actual_date: data.actual_date || null,
       trigger_offset_days: data.trigger_offset_days !== undefined ? data.trigger_offset_days : null,
