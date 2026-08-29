@@ -469,16 +469,10 @@ export const AppShellContent: React.FC = () => {
                 <span>Export Excel</span>
               </button>
 
-              {/* Google Cal Sync */}
+              {/* Google Cal Sync — available to everyone, no tier gate */}
               <button
                 type="button"
-                onClick={() => {
-                  if (tier < 2) {
-                    setShowTierPricingModal(true);
-                  } else {
-                    setShowGoogleCalSync(true);
-                  }
-                }}
+                onClick={() => setShowGoogleCalSync(true)}
                 className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all"
                 style={{ color: 'var(--sidebar-text)' }}
                 onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--sidebar-hover)'; }}
@@ -488,11 +482,6 @@ export const AppShellContent: React.FC = () => {
                   <Calendar className="w-4 h-4 shrink-0" style={{ color: 'var(--sidebar-text-muted)' }} />
                   <span>Google Cal</span>
                 </div>
-                {tier < 2 && (
-                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-md" style={{ backgroundColor: 'var(--accent-subtle)', color: 'var(--accent)' }}>
-                    PRO
-                  </span>
-                )}
               </button>
             </nav>
           )}
