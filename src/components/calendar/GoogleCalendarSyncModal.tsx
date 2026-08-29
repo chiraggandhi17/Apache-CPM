@@ -14,7 +14,7 @@ import {
 import { NodeForm } from '../nodes/NodeForm';
 import {
   X, Calendar, ExternalLink, Sparkles, Search, Info, Link2,
-  RefreshCw, Unlink, Inbox, Check, XCircle, CheckSquare, Square, Layers, Settings2,
+  RefreshCw, Unlink, Inbox, Check, XCircle, CheckSquare, Square, Layers, Settings2, AlertTriangle,
 } from 'lucide-react';
 
 interface GoogleCalendarSyncModalProps {
@@ -182,6 +182,33 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
     return nodes.filter(n => n.type === pType);
   }, [nodes, placeLevel]);
 
+  // Already tracked by an existing CPM task (belt-and-suspenders against
+  // a double-click, a slow retry, or a pending row that slipped through
+  // the server-side dedupe) — resolved from the already-loaded node list,
+  // no extra round trip.
+  const findLinkedNode = useCallback(
+    (googleEventId: string) => nodes.find(n => n.google_event_id === googleEventId),
+    [nodes]
+  );
+
+  // Soft heads-up only — a same title + same day CPM task that was never
+  // actually linked to this Google event. Could be a genuine duplicate, or
+  // could just be a coincidence (recurring task names repeat legitimately),
+  // so this is a warning badge, never a block.
+  const findPossibleDuplicate = useCallback(
+    (ev: PendingGoogleEvent) => {
+      const evDate = (ev.start_at || '').slice(0, 10);
+      const normTitle = ev.title.trim().toLowerCase();
+      if (!normTitle || !evDate) return null;
+      return nodes.find(n =>
+        n.google_event_id !== ev.google_event_id &&
+        n.title.trim().toLowerCase() === normTitle &&
+        n.planned_date && n.planned_date.slice(0, 10) === evDate
+      ) || null;
+    },
+    [nodes]
+  );
+
   const loadPendingEvents = useCallback(async () => {
     if (!user) return;
     setLoadingPending(true);
@@ -266,23 +293,38 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
     }
 
     setBatchWorking(true);
+    let created = 0;
+    let alreadyLinked = 0;
     try {
       for (const ev of toAdd) {
-        await addNode({
-          id: crypto.randomUUID(),
-          parent_id: batchParentId || null,
-          type: batchLevel,
-          title: ev.title,
-          description: ev.description,
-          planned_date: ev.end_at || ev.start_at,
-          start_date: ev.is_all_day ? null : ev.start_at,
-          calendar_sync_enabled: true,
-          google_event_id: ev.google_event_id,
-        });
+        // Someone already accepted this exact event (a previous sync's
+        // batch, a race from double-clicking, etc.) — link instead of
+        // creating a second task for it.
+        const existingNode = findLinkedNode(ev.google_event_id);
+        if (existingNode) {
+          alreadyLinked++;
+        } else {
+          await addNode({
+            id: crypto.randomUUID(),
+            parent_id: batchParentId || null,
+            type: batchLevel,
+            title: ev.title,
+            description: ev.description,
+            planned_date: ev.end_at || ev.start_at,
+            start_date: ev.is_all_day ? null : ev.start_at,
+            calendar_sync_enabled: true,
+            google_event_id: ev.google_event_id,
+          });
+          created++;
+        }
         await supabase.from('google_calendar_pending_events').update({ status: 'imported' }).eq('id', ev.id);
       }
       removePendingLocally(toAdd.map(ev => ev.id));
-      toast.success(`Added ${toAdd.length} task${toAdd.length === 1 ? '' : 's'} to CPM.`);
+      if (alreadyLinked > 0) {
+        toast.success(`Added ${created} task${created === 1 ? '' : 's'} · ${alreadyLinked} were already linked to an existing task.`);
+      } else {
+        toast.success(`Added ${created} task${created === 1 ? '' : 's'} to CPM.`);
+      }
     } catch (err: any) {
       toast.error('Batch add failed: ' + err.message);
     } finally {
@@ -302,6 +344,17 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
   };
 
   const continueToFullForm = (ev: PendingGoogleEvent) => {
+    // Already linked to a task (a previous accept, a race from a fast
+    // double-click) — don't open the form to create a second one.
+    const existingNode = findLinkedNode(ev.google_event_id);
+    if (existingNode) {
+      supabase.from('google_calendar_pending_events').update({ status: 'imported' }).eq('id', ev.id).then(() => {});
+      removePendingLocally([ev.id]);
+      toast.success(`Already linked to "${existingNode.title}" — nothing new added.`);
+      setPlacingEventId(null);
+      return;
+    }
+
     const pType = parentTypeFor(placeLevel);
     if (pType && !placeParentId) {
       toast.error(`Pick a parent ${pType} first.`);
@@ -610,7 +663,9 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
                     {pendingEvents.length === 0 ? 'Nothing new — click Sync Now above to check again.' : 'No matching events.'}
                   </p>
                 ) : (
-                  filteredPendingEvents.map(ev => (
+                  filteredPendingEvents.map(ev => {
+                    const possibleDup = findPossibleDuplicate(ev);
+                    return (
                     <div key={ev.id} className="rounded-lg bg-[var(--card-bg)] border border-indigo-100 overflow-hidden">
                       <div className="flex items-center gap-2 px-2.5 py-1.5">
                         <input
@@ -622,6 +677,12 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
                         <div className="min-w-0 flex-1">
                           <p className="text-xs font-semibold text-[var(--text-primary)] truncate">{ev.title}</p>
                           <p className="text-[10px] text-[var(--text-muted)] font-mono">{formatLocalDate(ev.start_at, 'MMM d, yyyy')}</p>
+                          {possibleDup && (
+                            <p className="text-[10px] text-amber-700 flex items-center gap-1 mt-0.5" title="Same title and date as an existing task, but not linked to this event — could be a coincidence.">
+                              <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
+                              <span className="truncate">Possibly already tracked as "{possibleDup.title}"</span>
+                            </p>
+                          )}
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                           <button
@@ -690,7 +751,8 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
                         </div>
                       )}
                     </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>

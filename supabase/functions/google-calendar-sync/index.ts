@@ -42,7 +42,7 @@ async function refreshAccessToken(clientId: string, clientSecret: string, refres
   return data as { access_token: string; expires_in: number };
 }
 
-function toGoogleEventBody(node: { title: string; description: string | null; is_critical: boolean; department: string | null; start_date: string | null; planned_date: string | null }) {
+function toGoogleEventBody(node: { id: string; title: string; description: string | null; is_critical: boolean; department: string | null; start_date: string | null; planned_date: string | null }) {
   const summary = `${node.is_critical ? '⚡ ' : ''}${node.title}`;
   const description = [
     'Synced from Cadence CPM',
@@ -58,6 +58,12 @@ function toGoogleEventBody(node: { title: string; description: string | null; is
     description,
     start: { dateTime: new Date(start).toISOString() },
     end: { dateTime: new Date(end).toISOString() },
+    // Tags every event CPM creates with its source node id, so we can
+    // recognize "this is our own event" both when re-pulling it (avoids
+    // re-offering it as a new import) and when deciding whether to create
+    // a fresh event or reuse one that already exists (avoids a duplicate
+    // POST if a prior create succeeded but saving the id back failed).
+    extendedProperties: { private: { cpm_node_id: node.id } },
   };
 }
 
@@ -178,6 +184,21 @@ Deno.serve(async (req: Request) => {
             continue;
           }
 
+          // Already tracked by a CPM task (we pushed it there ourselves,
+          // or a previous pull already linked it) — not "new," skip it.
+          // Covers both the extendedProperties tag (belt-and-suspenders,
+          // works even before the id round-trips back onto the node) and
+          // a direct google_event_id match.
+          const cpmNodeId = event.extendedProperties?.private?.cpm_node_id;
+          if (cpmNodeId) continue;
+          const { data: linkedNode } = await admin
+            .from('nodes')
+            .select('id')
+            .eq('google_event_id', event.id)
+            .or(`user_id.eq.${userId},assignee_user_id.eq.${userId}`)
+            .maybeSingle();
+          if (linkedNode) continue;
+
           const startRaw = event.start?.dateTime || event.start?.date;
           const endRaw = event.end?.dateTime || event.end?.date;
           if (!startRaw) continue;
@@ -249,6 +270,22 @@ Deno.serve(async (req: Request) => {
               console.error('Failed to update Google event for node', node.id, await res.text());
             }
           } else {
+            // Guard against double-creating: if a previous push already
+            // created this node's event but the id never made it back onto
+            // the node (e.g. the write failed after a successful POST),
+            // find it by our own tag instead of creating a second one.
+            const dedupeUrl = new URL(`${CALENDAR_EVENTS_BASE}/${encodeURIComponent(calendarId)}/events`);
+            dedupeUrl.searchParams.set('privateExtendedProperty', `cpm_node_id=${node.id}`);
+            const dedupeRes = await fetch(dedupeUrl.toString(), { headers: authHeaders });
+            const dedupeData = dedupeRes.ok ? await dedupeRes.json().catch(() => ({})) : {};
+            const existingMatch = (dedupeData.items || []).find((it: any) => it.status !== 'cancelled');
+
+            if (existingMatch) {
+              await admin.from('nodes').update({ google_event_id: existingMatch.id }).eq('id', node.id);
+              pushedCount++;
+              continue;
+            }
+
             const res = await fetch(
               `${CALENDAR_EVENTS_BASE}/${encodeURIComponent(calendarId)}/events`,
               { method: 'POST', headers: authHeaders, body: JSON.stringify(eventBody) }

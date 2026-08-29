@@ -93,3 +93,24 @@ help with that:
   event that needs individual placement instead, "Add to CPM" on that one
   row asks for its level + parent, then opens the full task form (color,
   critical flag, reminders, assignee, etc.) pre-filled from the event.
+
+## Duplicate prevention
+
+Re-syncing (or pulling an overlapping range) does not create duplicates:
+
+- Every event CPM pushes to Google is tagged with a private
+  `cpm_node_id` extended property. The pull step skips any event carrying
+  that tag (or matching an existing task's `google_event_id`) — it's
+  already a CPM task's mirror, not something "new from Google."
+- Before creating a brand-new Google event for a task, the push step first
+  looks for an existing event with that task's tag, in case a prior push
+  created one but failed to save the id back onto the task — it reuses
+  that event instead of creating a second one.
+- Accepting a pending event (individually or in a batch) checks whether a
+  task is already linked to that Google event id first; if so, it links to
+  the existing task instead of creating a new one, which covers a
+  double-click or a slow retry.
+- As a heads-up only (never a block), the review list flags a pending
+  event with a same title + same day as an existing, unlinked task —
+  "Possibly already tracked as ...". This is a heuristic, not a hard
+  match, since two genuinely different tasks can share a name and date.
