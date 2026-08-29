@@ -36,7 +36,7 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode, selectMode
   const { 
     reminders, toggleCritical, updateStatus, toggleDone, deleteNode, 
     getNodeAccessInfo, getDescendantNodes, completeNodeAndSubtree,
-    hideNodeLocally, restoreNodesLocally,
+    hideNodeLocally, restoreNodesLocally, cleanupGoogleEventsFor,
   } = useNodes();
   const toast = useToast();
   
@@ -282,7 +282,7 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode, selectMode
                   const removed = hideNodeLocally(node.id);
                   toast.undoable({
                     message: `"${node.title}" deleted${hasChildren ? ' (with its subtasks)' : ''}.`,
-                    onCommit: () => deleteNode(node.id),
+                    onCommit: () => { cleanupGoogleEventsFor(removed); deleteNode(node.id); },
                     onUndo: () => restoreNodesLocally(removed),
                   });
                 }}

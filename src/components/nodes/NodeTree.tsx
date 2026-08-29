@@ -14,7 +14,7 @@ interface NodeTreeProps {
 }
 
 export const NodeTree: React.FC<NodeTreeProps> = ({ onSelectNode }) => {
-  const { getTree, nodes, updateStatus, deleteNode, hideNodeLocally, restoreNodesLocally } = useNodes();
+  const { getTree, nodes, updateStatus, deleteNode, hideNodeLocally, restoreNodesLocally, cleanupGoogleEventsFor } = useNodes();
   const { isIndividual } = useAuth();
   const toast = useToast();
   const { confirm } = useDialog();
@@ -68,7 +68,7 @@ export const NodeTree: React.FC<NodeTreeProps> = ({ onSelectNode }) => {
     const allRemoved = ids.flatMap(id => hideNodeLocally(id));
     toast.undoable({
       message: `${ids.length} item${ids.length === 1 ? '' : 's'} deleted.`,
-      onCommit: () => { ids.forEach(id => deleteNode(id)); },
+      onCommit: () => { cleanupGoogleEventsFor(allRemoved); ids.forEach(id => deleteNode(id)); },
       onUndo: () => restoreNodesLocally(allRemoved),
     });
     clearSelection();

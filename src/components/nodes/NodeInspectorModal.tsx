@@ -26,7 +26,7 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
   const { 
     nodes, reminders, deleteNode, toggleCritical, updateStatus, 
     addReminder, dismissReminder, getNodeAccessInfo, fetchNodeAuditLogs,
-    getDescendantNodes, completeNodeAndSubtree, hideNodeLocally, restoreNodesLocally
+    getDescendantNodes, completeNodeAndSubtree, hideNodeLocally, restoreNodesLocally, cleanupGoogleEventsFor
   } = useNodes();
   const toast = useToast();
   
@@ -264,7 +264,7 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
                       const removed = hideNodeLocally(currentNode.id);
                       toast.undoable({
                         message: `"${currentNode.title}" deleted.`,
-                        onCommit: () => deleteNode(currentNode.id),
+                        onCommit: () => { cleanupGoogleEventsFor(removed); deleteNode(currentNode.id); },
                         onUndo: () => restoreNodesLocally(removed),
                       });
                       onClose();

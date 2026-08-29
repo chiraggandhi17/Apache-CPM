@@ -7,8 +7,8 @@ export interface GoogleCalendarStatus {
   connectedAt?: string | null;
 }
 
-async function invoke<T = any>(fn: string, opts?: { method?: 'GET' | 'POST' }): Promise<T> {
-  const { data, error } = await supabase.functions.invoke(fn, { method: opts?.method || 'POST' });
+async function invoke<T = any>(fn: string, opts?: { method?: 'GET' | 'POST'; body?: Record<string, unknown> }): Promise<T> {
+  const { data, error } = await supabase.functions.invoke(fn, { method: opts?.method || 'POST', body: opts?.body });
   if (error) throw error;
   if (data?.error) throw new Error(data.error);
   return data as T;
@@ -30,4 +30,19 @@ export async function disconnectGoogleCalendar(): Promise<void> {
 
 export async function syncGoogleCalendarNow(): Promise<{ pulled: number; pushed: number }> {
   return invoke<{ pulled: number; pushed: number }>('google-calendar-sync');
+}
+
+/**
+ * Best-effort cleanup: deletes the given Google Calendar events. Called
+ * right when a task is deleted or marked complete in CPM so its calendar
+ * event doesn't linger until the next "Sync Now". Silently no-ops if the
+ * user isn't connected to Google — never throws into the caller's UI flow.
+ */
+export async function deleteGoogleCalendarEvents(eventIds: string[]): Promise<void> {
+  if (eventIds.length === 0) return;
+  try {
+    await invoke('google-calendar-delete-events', { body: { eventIds } });
+  } catch (err) {
+    console.error('deleteGoogleCalendarEvents failed:', err);
+  }
 }

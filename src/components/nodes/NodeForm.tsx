@@ -19,6 +19,8 @@ interface NodeFormProps {
   parentId?: string | null;
   parentType?: NodeType;
   parentDate?: string | null;
+  /** Pre-fills a fixed planned date (e.g. from clicking a day on the calendar) and forces "single date" mode. */
+  initialPlannedDate?: string | null;
   initialNode?: NodeItem | null;
   onClose: () => void;
 }
@@ -27,6 +29,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
   parentId = null,
   parentType,
   parentDate = null,
+  initialPlannedDate = null,
   initialNode = null,
   onClose,
 }) => {
@@ -61,7 +64,11 @@ export const NodeForm: React.FC<NodeFormProps> = ({
     initialNode?.start_date ? initialNode.start_date.substring(0, 10) : ''
   );
   const [plannedDate, setPlannedDate] = useState(
-    initialNode?.planned_date ? initialNode.planned_date.substring(0, 10) : ''
+    initialNode?.planned_date
+      ? initialNode.planned_date.substring(0, 10)
+      : initialPlannedDate
+      ? initialPlannedDate.substring(0, 10)
+      : ''
   );
   
   // Color Override Toggle (De-cluttered: only show swatch picker when checked)
@@ -74,6 +81,8 @@ export const NodeForm: React.FC<NodeFormProps> = ({
       ? 'range'
       : initialNode?.trigger_offset_days !== null && initialNode?.trigger_offset_days !== undefined
       ? 'offset'
+      : initialPlannedDate
+      ? 'single'
       : parentId
       ? 'offset'
       : 'single'

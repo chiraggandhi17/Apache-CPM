@@ -27,7 +27,13 @@ supabase functions deploy google-oauth-callback --no-verify-jwt
 supabase functions deploy google-calendar-status
 supabase functions deploy google-calendar-disconnect
 supabase functions deploy google-calendar-sync
+supabase functions deploy google-calendar-delete-events
 ```
+
+> `google-calendar-delete-events` was added after the initial rollout (it's what
+> cleans up the Google-side event when a task is deleted or marked complete in
+> CPM). If you deployed before this function existed, run just that one line
+> above to add it — nothing else needs to be redeployed.
 
 `google-oauth-callback` needs `--no-verify-jwt` because Google redirects the browser to it directly — there's no Cadence session/JWT on that request. It authenticates the flow itself via the one-time `state` token instead (see the function's comments).
 
@@ -53,5 +59,10 @@ https://epgkciibhgadtgpulfko.supabase.co/functions/v1/google-oauth-callback
 ## Known v1 limitations
 
 - Sync is on-demand ("Sync Now"), not instant — a scheduled background sync can be added later via `pg_cron` calling `google-calendar-sync` periodically.
-- Unlinking or deleting a task does not delete its already-created Google Calendar event.
 - Each user connects their own Google account; org-wide tasks sync per-assignee (via `assignee_user_id`), not per-organization.
+- Manual .ics export/import has been removed — real OAuth sync replaces it as the only sync path now that it's live for everyone.
+
+Deleting a task or marking it (and its subtree) complete in CPM now deletes the
+matching Google Calendar event via `google-calendar-delete-events` — this is
+fire-and-forget from the frontend, so it fails silently if that function isn't
+deployed yet (see the deploy step above).

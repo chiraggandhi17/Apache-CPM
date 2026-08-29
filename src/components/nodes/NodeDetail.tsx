@@ -15,7 +15,7 @@ interface NodeDetailProps {
 }
 
 export const NodeDetail: React.FC<NodeDetailProps> = ({ node, onClose }) => {
-  const { nodes, reminders, deleteNode, toggleCritical, updateStatus, addReminder, dismissReminder, hideNodeLocally, restoreNodesLocally } = useNodes();
+  const { nodes, reminders, deleteNode, toggleCritical, updateStatus, addReminder, dismissReminder, hideNodeLocally, restoreNodesLocally, cleanupGoogleEventsFor } = useNodes();
   const toast = useToast();
   
   const [isEditing, setIsEditing] = useState(false);
@@ -72,7 +72,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({ node, onClose }) => {
                 const removed = hideNodeLocally(node.id);
                 toast.undoable({
                   message: `"${node.title}" deleted.`,
-                  onCommit: () => deleteNode(node.id),
+                  onCommit: () => { cleanupGoogleEventsFor(removed); deleteNode(node.id); },
                   onUndo: () => restoreNodesLocally(removed),
                 });
                 onClose();

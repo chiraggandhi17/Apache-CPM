@@ -6,6 +6,7 @@ import { resolveColor } from '../lib/color-resolver';
 import { addDays, addHours, parseISO, formatISO, isValid, isBefore, isToday as isDateToday, isAfter } from 'date-fns';
 import { sendBrowserNotification } from '../utils/notifications';
 import { computeNextOccurrence } from '../utils/recurrence';
+import { deleteGoogleCalendarEvents } from '../utils/google-calendar-api';
 import { playNotificationSound } from '../utils/sound';
 import { useToast } from './ToastContext';
 
@@ -45,6 +46,7 @@ interface NodeContextType {
   getDescendantNodes: (nodeId: string) => NodeItem[];
   hideNodeLocally: (nodeId: string) => NodeItem[];
   restoreNodesLocally: (removed: NodeItem[]) => void;
+  cleanupGoogleEventsFor: (removedNodes: NodeItem[]) => void;
   completeNodeAndSubtree: (nodeId: string) => Promise<void>;
   getTree: () => TreeNode[];
   getTodayUpcomingFeed: () => {
@@ -456,15 +458,39 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   }, []);
 
+  /**
+   * Best-effort cleanup of the Google Calendar events belonging to nodes
+   * that were just deleted. Takes the `removed` snapshot returned by
+   * hideNodeLocally() (captured BEFORE the nodes left local state), since by
+   * the time deleteNode() actually runs — after the undo-toast window — the
+   * nodes are already gone from both local state and (once committed) the
+   * database, so there's nowhere left to read their google_event_id from.
+   */
+  const cleanupGoogleEventsFor = useCallback((removedNodes: NodeItem[]) => {
+    const eventIds = removedNodes.filter(n => n.google_event_id).map(n => n.google_event_id as string);
+    if (eventIds.length === 0) return;
+    deleteGoogleCalendarEvents(eventIds).catch(() => {});
+  }, []);
+
   const completeNodeAndSubtree = async (nodeId: string) => {
     const descendants = getDescendantNodes(nodeId);
     const allIdsToComplete = [nodeId, ...descendants.map(d => d.id)];
     const nowISO = new Date().toISOString();
 
+    // Completed tasks don't need a calendar reminder anymore — clear the
+    // Google Calendar link and delete the event(s) so it doesn't linger.
+    const googleEventIdsToClean = nodes
+      .filter(n => allIdsToComplete.includes(n.id) && n.google_event_id)
+      .map(n => n.google_event_id as string);
+
     await supabase
       .from('nodes')
-      .update({ status: 'done', actual_date: nowISO, updated_at: nowISO })
+      .update({ status: 'done', actual_date: nowISO, updated_at: nowISO, google_event_id: null })
       .in('id', allIdsToComplete);
+
+    if (googleEventIdsToClean.length > 0) {
+      deleteGoogleCalendarEvents(googleEventIdsToClean).catch(() => {});
+    }
 
     for (const id of allIdsToComplete) {
       const n = nodes.find(item => item.id === id);
@@ -804,8 +830,21 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const node = nodes.find(n => n.id === nodeId);
     const prevStatus = node?.status;
     const actual_date = status === 'done' ? new Date().toISOString() : null;
-    
-    await supabase.from('nodes').update({ status, actual_date, updated_at: new Date().toISOString() }).eq('id', nodeId);
+
+    // Completed tasks don't need a calendar reminder anymore — clear the
+    // Google Calendar link and delete the event so it doesn't linger.
+    const eventIdToClean = status === 'done' ? node?.google_event_id : null;
+
+    await supabase.from('nodes').update({
+      status,
+      actual_date,
+      updated_at: new Date().toISOString(),
+      ...(eventIdToClean ? { google_event_id: null } : {}),
+    }).eq('id', nodeId);
+
+    if (eventIdToClean) {
+      deleteGoogleCalendarEvents([eventIdToClean]).catch(() => {});
+    }
 
     await logNodeActivity(
       nodeId,
@@ -823,7 +862,21 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!node) return;
     const newStatus: NodeStatus = node.status === 'done' ? 'in_progress' : 'done';
     const actual_date = newStatus === 'done' ? new Date().toISOString() : null;
-    await supabase.from('nodes').update({ status: newStatus, actual_date, updated_at: new Date().toISOString() }).eq('id', nodeId);
+
+    // Completed tasks don't need a calendar reminder anymore — clear the
+    // Google Calendar link and delete the event so it doesn't linger.
+    const eventIdToClean = newStatus === 'done' ? node.google_event_id : null;
+
+    await supabase.from('nodes').update({
+      status: newStatus,
+      actual_date,
+      updated_at: new Date().toISOString(),
+      ...(eventIdToClean ? { google_event_id: null } : {}),
+    }).eq('id', nodeId);
+
+    if (eventIdToClean) {
+      deleteGoogleCalendarEvents([eventIdToClean]).catch(() => {});
+    }
 
     await logNodeActivity(
       nodeId,
@@ -958,6 +1011,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         getDescendantNodes,
         hideNodeLocally,
         restoreNodesLocally,
+        cleanupGoogleEventsFor,
         completeNodeAndSubtree,
         getTree,
         getTodayUpcomingFeed,

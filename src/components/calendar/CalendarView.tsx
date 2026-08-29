@@ -5,6 +5,7 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { useNodes } from '../../context/NodeContext';
 import { NodeItem } from '../../types/domain';
+import { NodeForm } from '../nodes/NodeForm';
 import { resolveColor, getReadableTextColor } from '../../lib/color-resolver';
 import { SearchableParentSelect } from '../shared/SearchableParentSelect';
 import { PortalDropdown } from '../shared/PortalDropdown';
@@ -40,6 +41,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
   const [currentMonthTitle, setCurrentMonthTitle] = useState<string>('');
   const [activeView, setActiveView] = useState<'dayGridMonth' | 'timeGridWeek' | 'timeGridDay'>('dayGridMonth');
   const [levelDropdownOpen, setLevelDropdownOpen] = useState(false);
+  const [quickAddDate, setQuickAddDate] = useState<string | null>(null);
 
   // Mouse wheel scroll to move between months / weeks / days
   useEffect(() => {
@@ -271,7 +273,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
               </div>
               <p className="text-[11px] text-[var(--text-secondary)] font-medium flex items-center gap-1 mt-0.5">
                 <MousePointer className="w-3 h-3 text-[var(--accent)] shrink-0" />
-                <span className="truncate">Scroll over the grid to move between months</span>
+                <span className="truncate">Scroll to move between months · Click a date to add a task</span>
               </p>
             </div>
           </div>
@@ -465,6 +467,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
             setCurrentMonthTitle(dateInfo.view.title);
           }}
           events={events}
+          dateClick={info => setQuickAddDate(info.dateStr)}
           eventClick={info => {
             const node = info.event.extendedProps.node as NodeItem;
             if (node) onSelectNode(node);
@@ -528,6 +531,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
           aspectRatio={1.6}
         />
       </div>
+
+      {/* Click-a-date quick add: opens the standard task form pre-filled with that date */}
+      {quickAddDate && (
+        <NodeForm
+          parentId={null}
+          initialPlannedDate={quickAddDate}
+          onClose={() => setQuickAddDate(null)}
+        />
+      )}
     </div>
   );
 };
