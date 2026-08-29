@@ -20,6 +20,7 @@ export interface NodeItem {
   is_critical: boolean;
   assignee: string | null;
   assignee_user_id?: string | null;
+  calendar_sync_enabled?: boolean;
   vendor_contact: string | null;
   department: string | null;
   season: string | null;

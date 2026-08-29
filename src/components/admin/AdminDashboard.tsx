@@ -14,7 +14,6 @@ interface FeatureDef {
 const FEATURE_LIST: FeatureDef[] = [
   { key: 'base_tier', name: 'Base Timeline', description: 'Browse milestone tree and action feeds' },
   { key: 'node_mutation', name: 'Edit & Create Tasks', description: 'Create tasks and shift target dates' },
-  { key: 'google_calendar_sync', name: 'Google Cal Sync', description: 'Export & 2-way Google Calendar OAuth sync' },
   { key: 'advanced_reports', name: 'Variance Reports', description: 'Bottleneck and critical path analytics' },
 ];
 

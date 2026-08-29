@@ -139,6 +139,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
 
   const [vendorContact, setVendorContact] = useState(initialNode?.vendor_contact || '');
   const [description, setDescription] = useState(initialNode?.description || '');
+  const [calendarSyncEnabled, setCalendarSyncEnabled] = useState(initialNode?.calendar_sync_enabled !== false);
 
   // Reminder alert state (available in both Create & Edit)
   const existingNodeReminders = isEditing && initialNode 
@@ -279,6 +280,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
           status,
           assignee: assignee || null,
           assignee_user_id: isIndividual ? null : assigneeUserId,
+          calendar_sync_enabled: calendarSyncEnabled,
           vendor_contact: vendorContact || null,
           description: description || null,
         });
@@ -297,6 +299,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
           status,
           assignee: assignee || null,
           assignee_user_id: isIndividual ? null : assigneeUserId,
+          calendar_sync_enabled: calendarSyncEnabled,
           vendor_contact: vendorContact || null,
           description: description || null,
         });
@@ -998,6 +1001,24 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                 className="w-full text-xs px-3 py-2 bg-[var(--input-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-[var(--accent)]"
               />
             </div>
+          </div>
+
+          {/* Calendar Linking Toggle */}
+          <div className="flex items-center justify-between p-3 bg-[var(--input-bg)] rounded-xl border border-[var(--border)]">
+            <label className="flex items-center gap-1.5 font-bold text-[var(--text-secondary)] cursor-pointer">
+              <Calendar className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+              <span>Sync to Calendar</span>
+              <span className="font-normal text-[var(--text-muted)] hidden sm:inline">(include in .ics export & quick-add links)</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => setCalendarSyncEnabled(!calendarSyncEnabled)}
+              className={`w-9 h-5 rounded-full transition-colors flex items-center px-0.5 shrink-0 ${
+                calendarSyncEnabled ? 'bg-[var(--accent)] justify-end' : 'bg-[var(--border)] justify-start'
+              }`}
+            >
+              <span className="w-4 h-4 rounded-full bg-white shadow-sm block" />
+            </button>
           </div>
 
           {/* Description & Follow-up Notes */}
