@@ -715,6 +715,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       assignee: data.assignee || null,
       assignee_user_id: data.assignee_user_id || null,
       calendar_sync_enabled: data.calendar_sync_enabled !== undefined ? data.calendar_sync_enabled : true,
+      google_event_id: data.google_event_id || null,
       vendor_contact: data.vendor_contact || null,
       department: data.department || profile?.department || (isIndividual ? 'Personal' : 'Production'),
       season: data.season || 'SS26',

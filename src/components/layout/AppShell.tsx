@@ -11,6 +11,7 @@ import { ManageAlertsModal } from '../reminders/ManageAlertsModal';
 import { SuperAdminDashboard } from '../admin/SuperAdminDashboard';
 import { OrgAdminDashboard } from '../admin/OrgAdminDashboard';
 import { GoogleCalendarSyncModal } from '../calendar/GoogleCalendarSyncModal';
+import { useToast } from '../../context/ToastContext';
 import { TierPricingModal } from '../shared/TierPricingModal';
 import { PersonalUserSettingsModal } from '../settings/PersonalUserSettingsModal';
 import { ExportModal } from '../shared/ExportModal';
@@ -27,6 +28,7 @@ type NavTab = 'today' | 'browse' | 'calendar' | 'super_admin' | 'super_observabi
 export const AppShellContent: React.FC = () => {
   const { selectedNode, setSelectedNode, totalScheduledAlertsCount, triggeredAlertsCount } = useNodes();
   const { user, profile, organization, team, isSuperAdmin, isOrgAdmin, isIndividual, tier, signOut } = useAuth();
+  const toast = useToast();
   
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
@@ -55,6 +57,26 @@ export const AppShellContent: React.FC = () => {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
+
+  // Handle the redirect back from Google's OAuth consent screen
+  // (google-oauth-callback bounces the browser to /?google_calendar=connected|error).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get('google_calendar');
+    if (!result) return;
+
+    if (result === 'connected') {
+      toast.success('Google Calendar connected!');
+      setShowGoogleCalSync(true);
+    } else if (result === 'error') {
+      toast.error('Failed to connect Google Calendar. Please try again.');
+    }
+
+    params.delete('google_calendar');
+    params.delete('google_calendar_detail');
+    const newSearch = params.toString();
+    window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''));
+  }, []);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
 
   // Global Cmd/Ctrl+K search shortcut

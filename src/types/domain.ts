@@ -21,6 +21,7 @@ export interface NodeItem {
   assignee: string | null;
   assignee_user_id?: string | null;
   calendar_sync_enabled?: boolean;
+  google_event_id?: string | null;
   vendor_contact: string | null;
   department: string | null;
   season: string | null;
