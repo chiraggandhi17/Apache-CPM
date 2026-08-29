@@ -159,15 +159,33 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
 
   // --- Which-tasks-are-linked management (controls what gets pushed) ---
   const [linkedSearch, setLinkedSearch] = useState('');
+  const [showAllLinked, setShowAllLinked] = useState(false);
   const datedNodes = useMemo(
     () => nodes.filter(n => n.planned_date).sort((a, b) => (a.planned_date! < b.planned_date! ? -1 : 1)),
     [nodes]
   );
+  // Once someone has a lot of tasks, listing every dated task with a toggle
+  // gets long fast. Default to a recent/upcoming window (searching or
+  // "Show all" bypasses it) so the common case stays short.
+  const RECENT_WINDOW_DAYS = 14;
+  const UPCOMING_WINDOW_DAYS = 180;
+  const windowedNodes = useMemo(() => {
+    const now = Date.now();
+    const minTime = now - RECENT_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+    const maxTime = now + UPCOMING_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+    return datedNodes.filter(n => {
+      const t = new Date(n.planned_date!).getTime();
+      return t >= minTime && t <= maxTime;
+    });
+  }, [datedNodes]);
+  const isSearching = Boolean(linkedSearch.trim());
+  const visibleDatedNodes = isSearching || showAllLinked ? datedNodes : windowedNodes;
+  const hiddenLinkedCount = datedNodes.length - windowedNodes.length;
   const filteredDatedNodes = useMemo(() => {
-    if (!linkedSearch.trim()) return datedNodes;
+    if (!isSearching) return visibleDatedNodes;
     const q = linkedSearch.toLowerCase();
-    return datedNodes.filter(n => n.title.toLowerCase().includes(q));
-  }, [datedNodes, linkedSearch]);
+    return visibleDatedNodes.filter(n => n.title.toLowerCase().includes(q));
+  }, [visibleDatedNodes, linkedSearch, isSearching]);
   const linkedCount = datedNodes.filter(n => n.calendar_sync_enabled !== false).length;
 
   const handleToggleLinked = (nodeId: string, current: boolean) => {
@@ -368,6 +386,19 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
               />
               <Search className="w-3.5 h-3.5 text-[var(--text-muted)] absolute left-2.5 top-2" />
             </div>
+
+            {!isSearching && hiddenLinkedCount > 0 && (
+              <p className="text-[11px] text-[var(--text-muted)] flex items-center justify-between gap-2 -mt-1">
+                <span>Showing recent &amp; upcoming tasks · {hiddenLinkedCount} older/farther-out hidden</span>
+                <button
+                  type="button"
+                  onClick={() => setShowAllLinked(v => !v)}
+                  className="font-bold text-[var(--accent)] hover:underline shrink-0"
+                >
+                  {showAllLinked ? 'Show fewer' : 'Show all'}
+                </button>
+              </p>
+            )}
 
             <div className="max-h-52 overflow-y-auto space-y-1 pr-1">
               {filteredDatedNodes.length === 0 ? (

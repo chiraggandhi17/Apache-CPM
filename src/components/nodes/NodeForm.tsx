@@ -1017,7 +1017,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
             <label className="flex items-center gap-1.5 font-bold text-[var(--text-secondary)] cursor-pointer">
               <Calendar className="w-3.5 h-3.5 text-[var(--text-muted)]" />
               <span>Sync to Calendar</span>
-              <span className="font-normal text-[var(--text-muted)] hidden sm:inline">(include in .ics export & quick-add links)</span>
+              <span className="font-normal text-[var(--text-muted)] hidden sm:inline">(push to Google Calendar if connected)</span>
             </label>
             <button
               type="button"

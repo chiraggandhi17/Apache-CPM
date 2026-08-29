@@ -11,10 +11,14 @@
 // org accounts) — so each person's own Google Calendar only ever reflects
 // their own work, not the whole org's.
 //
-// Known v1 limitation: unlinking a task (calendar_sync_enabled = false) or
-// deleting it does not delete the already-created Google Calendar event —
-// only future pushes stop updating it. Cleaning up orphaned events is left
-// for a later pass.
+// Deletion sync: deleting a task's Google event from the CPM side is
+// handled elsewhere (google-calendar-delete-events, called from
+// NodeContext's cleanupGoogleEventsFor). Going the OTHER direction — an
+// event deleted on the Google Calendar side — is handled below: a
+// 'cancelled' tombstone from an incremental sync, or a 404/410 hit while
+// pushing, both mean the CPM task's link is dead, so we clear
+// google_event_id and turn its "Sync to Calendar" toggle off instead of
+// silently failing every sync from then on.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 
@@ -140,7 +144,25 @@ Deno.serve(async (req: Request) => {
         }
 
         for (const event of data.items || []) {
-          if (!event.id || event.status === 'cancelled') continue;
+          if (!event.id) continue;
+
+          if (event.status === 'cancelled') {
+            // Deleted on Google's side. If a CPM task was linked to this
+            // event, stop treating it as synced instead of letting every
+            // future push against it fail with a 404 forever.
+            await admin
+              .from('nodes')
+              .update({ google_event_id: null, calendar_sync_enabled: false })
+              .eq('google_event_id', event.id)
+              .or(`user_id.eq.${userId},assignee_user_id.eq.${userId}`);
+            await admin
+              .from('google_calendar_pending_events')
+              .delete()
+              .eq('user_id', userId)
+              .eq('google_event_id', event.id);
+            continue;
+          }
+
           const startRaw = event.start?.dateTime || event.start?.date;
           const endRaw = event.end?.dateTime || event.end?.date;
           if (!startRaw) continue;
@@ -196,8 +218,19 @@ Deno.serve(async (req: Request) => {
               `${CALENDAR_EVENTS_BASE}/${encodeURIComponent(calendarId)}/events/${node.google_event_id}`,
               { method: 'PATCH', headers: authHeaders, body: JSON.stringify(eventBody) }
             );
-            if (res.ok) pushedCount++;
-            else console.error('Failed to update Google event for node', node.id, await res.text());
+            if (res.ok) {
+              pushedCount++;
+            } else if (res.status === 404 || res.status === 410) {
+              // Event is gone on Google's side (missed by the pull step above,
+              // e.g. after a full resync that doesn't carry deletion tombstones).
+              // Same fix: unlink instead of failing forever.
+              await admin
+                .from('nodes')
+                .update({ google_event_id: null, calendar_sync_enabled: false })
+                .eq('id', node.id);
+            } else {
+              console.error('Failed to update Google event for node', node.id, await res.text());
+            }
           } else {
             const res = await fetch(
               `${CALENDAR_EVENTS_BASE}/${encodeURIComponent(calendarId)}/events`,

@@ -66,3 +66,10 @@ Deleting a task or marking it (and its subtree) complete in CPM now deletes the
 matching Google Calendar event via `google-calendar-delete-events` — this is
 fire-and-forget from the frontend, so it fails silently if that function isn't
 deployed yet (see the deploy step above).
+
+The reverse direction is also handled: if a task's event is deleted directly
+in Google Calendar, the next "Sync Now" detects it (either as a cancelled
+tombstone from the incremental sync, or a 404/410 when trying to push an
+update to it) and turns that task's "Sync to Calendar" toggle off and clears
+its stored event id — it does not delete the CPM task, and does not recreate
+the Google event. The task just stops being treated as linked.
