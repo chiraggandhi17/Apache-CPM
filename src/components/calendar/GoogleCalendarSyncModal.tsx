@@ -4,14 +4,17 @@ import { useNodes } from '../../context/NodeContext';
 import { useToast } from '../../context/ToastContext';
 import { useDialog } from '../../context/DialogContext';
 import { supabase } from '../../lib/supabase';
+import { NodeType } from '../../types/domain';
 import { generateGoogleCalendarUrl, CalendarEventPayload } from '../../utils/calendar-links';
 import { formatLocalDate } from '../../utils/date-format';
 import {
-  startGoogleOAuth, getGoogleCalendarStatus, disconnectGoogleCalendar, syncGoogleCalendarNow, GoogleCalendarStatus,
+  startGoogleOAuth, getGoogleCalendarStatus, disconnectGoogleCalendar, syncGoogleCalendarNow,
+  pullGoogleCalendarRange, GoogleCalendarStatus,
 } from '../../utils/google-calendar-api';
+import { NodeForm } from '../nodes/NodeForm';
 import {
   X, Calendar, ExternalLink, Sparkles, Search, Info, Link2,
-  RefreshCw, Unlink, Inbox, Check, XCircle,
+  RefreshCw, Unlink, Inbox, Check, XCircle, CheckSquare, Square, Layers, Settings2,
 } from 'lucide-react';
 
 interface GoogleCalendarSyncModalProps {
@@ -27,6 +30,24 @@ interface PendingGoogleEvent {
   start_at: string;
   end_at: string | null;
   is_all_day: boolean;
+}
+
+const LEVEL_LABELS: Record<Exclude<NodeType, 'reminder'>, string> = {
+  department: 'Department (L1)',
+  season: 'Season (L2)',
+  project: 'Project (L3)',
+  task: 'Task (L4)',
+  subtask: 'Subtask (L5)',
+};
+const LEVEL_ORDER: Array<keyof typeof LEVEL_LABELS> = ['department', 'season', 'project', 'task', 'subtask'];
+
+function parentTypeFor(level: keyof typeof LEVEL_LABELS): keyof typeof LEVEL_LABELS | null {
+  const idx = LEVEL_ORDER.indexOf(level);
+  return idx > 0 ? LEVEL_ORDER[idx - 1] : null;
+}
+
+function toISODateInput(d: Date): string {
+  return d.toISOString().slice(0, 10);
 }
 
 export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = ({ eventPayload, onClose }) => {
@@ -104,15 +125,62 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
     }
   };
 
+  // --- Pull a specific date range instead of the default auto window ---
+  const [showRangePicker, setShowRangePicker] = useState(false);
+  const [rangeFrom, setRangeFrom] = useState(() => toISODateInput(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)));
+  const [rangeTo, setRangeTo] = useState(() => toISODateInput(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)));
+  const [pullingRange, setPullingRange] = useState(false);
+
+  const handlePullRange = async () => {
+    if (!rangeFrom || !rangeTo) return;
+    if (new Date(rangeFrom) > new Date(rangeTo)) {
+      toast.error('The start date is after the end date.');
+      return;
+    }
+    setPullingRange(true);
+    try {
+      const result = await pullGoogleCalendarRange(rangeFrom, rangeTo);
+      toast.success(`Found ${result.pulled} event${result.pulled === 1 ? '' : 's'} between ${formatLocalDate(rangeFrom, 'MMM d')} and ${formatLocalDate(rangeTo, 'MMM d, yyyy')}.`);
+      await refreshStatus();
+      await loadPendingEvents();
+    } catch (err: any) {
+      toast.error('Pull failed: ' + err.message);
+    } finally {
+      setPullingRange(false);
+    }
+  };
+
   // --- Pending events review inbox (populated by the sync Edge Function) ---
   const [pendingEvents, setPendingEvents] = useState<PendingGoogleEvent[]>([]);
   const [loadingPending, setLoadingPending] = useState(false);
-  const [reviewParentId, setReviewParentId] = useState<string>('');
+  const [pendingSearch, setPendingSearch] = useState('');
+  const [selectedPendingIds, setSelectedPendingIds] = useState<Set<string>>(new Set());
 
-  const importableParents = useMemo(
-    () => nodes.filter(n => n.type === 'department' || n.type === 'season' || n.type === 'project'),
-    [nodes]
-  );
+  // Batch placement (applies to every currently-selected pending event)
+  const [batchLevel, setBatchLevel] = useState<keyof typeof LEVEL_LABELS>('task');
+  const [batchParentId, setBatchParentId] = useState<string>('');
+  const [batchWorking, setBatchWorking] = useState(false);
+
+  // Per-row "place this one carefully" flow: pick level + parent, then hand
+  // off to the full task form (with color, critical flag, reminders, etc.)
+  const [placingEventId, setPlacingEventId] = useState<string | null>(null);
+  const [placeLevel, setPlaceLevel] = useState<keyof typeof LEVEL_LABELS>('task');
+  const [placeParentId, setPlaceParentId] = useState<string>('');
+  const [formEvent, setFormEvent] = useState<PendingGoogleEvent | null>(null);
+  const [formParentId, setFormParentId] = useState<string | null>(null);
+  const [formParentType, setFormParentType] = useState<NodeType | undefined>(undefined);
+
+  const batchParentOptions = useMemo(() => {
+    const pType = parentTypeFor(batchLevel);
+    if (!pType) return [];
+    return nodes.filter(n => n.type === pType);
+  }, [nodes, batchLevel]);
+
+  const placeParentOptions = useMemo(() => {
+    const pType = parentTypeFor(placeLevel);
+    if (!pType) return [];
+    return nodes.filter(n => n.type === pType);
+  }, [nodes, placeLevel]);
 
   const loadPendingEvents = useCallback(async () => {
     if (!user) return;
@@ -131,30 +199,125 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
     if (status?.connected) loadPendingEvents();
   }, [status?.connected, loadPendingEvents]);
 
-  const handleAcceptPendingEvent = async (ev: PendingGoogleEvent) => {
+  const filteredPendingEvents = useMemo(() => {
+    if (!pendingSearch.trim()) return pendingEvents;
+    const q = pendingSearch.toLowerCase();
+    return pendingEvents.filter(ev => ev.title.toLowerCase().includes(q));
+  }, [pendingEvents, pendingSearch]);
+
+  const togglePendingSelected = (id: string) => {
+    setSelectedPendingIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllFiltered = () => {
+    const filteredIds = filteredPendingEvents.map(ev => ev.id);
+    const allSelected = filteredIds.length > 0 && filteredIds.every(id => selectedPendingIds.has(id));
+    setSelectedPendingIds(prev => {
+      const next = new Set(prev);
+      if (allSelected) filteredIds.forEach(id => next.delete(id));
+      else filteredIds.forEach(id => next.add(id));
+      return next;
+    });
+  };
+
+  const removePendingLocally = (ids: string[]) => {
+    const idSet = new Set(ids);
+    setPendingEvents(prev => prev.filter(p => !idSet.has(p.id)));
+    setSelectedPendingIds(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.delete(id));
+      return next;
+    });
+  };
+
+  const handleDismissSelected = async () => {
+    const ids = Array.from(selectedPendingIds);
+    if (ids.length === 0) return;
+    await supabase.from('google_calendar_pending_events').update({ status: 'dismissed' }).in('id', ids);
+    removePendingLocally(ids);
+    toast.success(`Dismissed ${ids.length} event${ids.length === 1 ? '' : 's'}.`);
+  };
+
+  const handleDismissAll = async () => {
+    if (pendingEvents.length === 0) return;
+    const ok = await confirm({
+      title: 'Dismiss all new events?',
+      message: `This dismisses all ${pendingEvents.length} events currently waiting for review. You can bring them back with "Sync Now" or a range pull later — Google won't re-offer a dismissed event unless it changes.`,
+      confirmLabel: 'Dismiss All',
+    });
+    if (!ok) return;
+    const ids = pendingEvents.map(ev => ev.id);
+    await supabase.from('google_calendar_pending_events').update({ status: 'dismissed' }).in('id', ids);
+    removePendingLocally(ids);
+  };
+
+  const handleAddSelectedAsBatch = async () => {
+    const ids = Array.from(selectedPendingIds);
+    const toAdd = pendingEvents.filter(ev => ids.includes(ev.id));
+    if (toAdd.length === 0) return;
+    if (parentTypeFor(batchLevel) && !batchParentId) {
+      toast.error(`Pick a parent ${parentTypeFor(batchLevel)} for these ${LEVEL_LABELS[batchLevel].toLowerCase()}s first.`);
+      return;
+    }
+
+    setBatchWorking(true);
     try {
-      await addNode({
-        id: crypto.randomUUID(),
-        parent_id: reviewParentId || null,
-        type: 'task',
-        title: ev.title,
-        description: ev.description,
-        planned_date: ev.end_at || ev.start_at,
-        start_date: ev.is_all_day ? null : ev.start_at,
-        calendar_sync_enabled: true,
-        google_event_id: ev.google_event_id,
-      });
-      await supabase.from('google_calendar_pending_events').update({ status: 'imported' }).eq('id', ev.id);
-      setPendingEvents(prev => prev.filter(p => p.id !== ev.id));
-      toast.success(`Added "${ev.title}" to CPM.`);
+      for (const ev of toAdd) {
+        await addNode({
+          id: crypto.randomUUID(),
+          parent_id: batchParentId || null,
+          type: batchLevel,
+          title: ev.title,
+          description: ev.description,
+          planned_date: ev.end_at || ev.start_at,
+          start_date: ev.is_all_day ? null : ev.start_at,
+          calendar_sync_enabled: true,
+          google_event_id: ev.google_event_id,
+        });
+        await supabase.from('google_calendar_pending_events').update({ status: 'imported' }).eq('id', ev.id);
+      }
+      removePendingLocally(toAdd.map(ev => ev.id));
+      toast.success(`Added ${toAdd.length} task${toAdd.length === 1 ? '' : 's'} to CPM.`);
     } catch (err: any) {
-      toast.error('Failed to add task: ' + err.message);
+      toast.error('Batch add failed: ' + err.message);
+    } finally {
+      setBatchWorking(false);
     }
   };
 
-  const handleDismissPendingEvent = async (ev: PendingGoogleEvent) => {
+  const handleDismissOne = async (ev: PendingGoogleEvent) => {
     await supabase.from('google_calendar_pending_events').update({ status: 'dismissed' }).eq('id', ev.id);
-    setPendingEvents(prev => prev.filter(p => p.id !== ev.id));
+    removePendingLocally([ev.id]);
+  };
+
+  const beginPlaceOne = (ev: PendingGoogleEvent) => {
+    setPlacingEventId(ev.id);
+    setPlaceLevel('task');
+    setPlaceParentId('');
+  };
+
+  const continueToFullForm = (ev: PendingGoogleEvent) => {
+    const pType = parentTypeFor(placeLevel);
+    if (pType && !placeParentId) {
+      toast.error(`Pick a parent ${pType} first.`);
+      return;
+    }
+    const parentNode = placeParentId ? nodes.find(n => n.id === placeParentId) : null;
+    setFormEvent(ev);
+    setFormParentId(placeParentId || null);
+    setFormParentType(parentNode?.type);
+    setPlacingEventId(null);
+  };
+
+  const handleFormSaved = (ev: PendingGoogleEvent) => {
+    supabase.from('google_calendar_pending_events').update({ status: 'imported' }).eq('id', ev.id).then(() => {});
+    removePendingLocally([ev.id]);
+    toast.success(`Added "${ev.title}" to CPM.`);
   };
 
   // --- Which-tasks-are-linked management (controls what gets pushed) ---
@@ -193,6 +356,7 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
   };
 
   const directGoogleUrl = eventPayload ? generateGoogleCalendarUrl(eventPayload) : null;
+  const allFilteredSelected = filteredPendingEvents.length > 0 && filteredPendingEvents.every(ev => selectedPendingIds.has(ev.id));
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
@@ -241,7 +405,7 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
                 <p className="text-[11px] text-teal-800">
                   Last synced: {status.lastSyncedAt ? formatLocalDate(status.lastSyncedAt, 'MMM d, yyyy h:mm a') : 'Never — click Sync Now'}
                 </p>
-                <div className="flex items-center gap-2 pt-1">
+                <div className="flex items-center gap-2 pt-1 flex-wrap">
                   <button
                     type="button"
                     onClick={handleSyncNow}
@@ -253,6 +417,14 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
                   </button>
                   <button
                     type="button"
+                    onClick={() => setShowRangePicker(v => !v)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-teal-50 text-teal-800 font-semibold text-xs rounded-xl transition-colors shadow-2xs border border-teal-200"
+                  >
+                    <Settings2 className="w-3.5 h-3.5" />
+                    <span>Pull a Specific Range</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleDisconnect}
                     disabled={disconnecting}
                     className="inline-flex items-center gap-2 px-3 py-2 bg-white hover:bg-rose-50 text-rose-600 font-semibold text-xs rounded-xl transition-colors shadow-2xs border border-rose-200"
@@ -261,6 +433,37 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
                     <span>Disconnect</span>
                   </button>
                 </div>
+
+                {showRangePicker && (
+                  <div className="pt-2 mt-1 border-t border-teal-200/70 space-y-2">
+                    <p className="text-[11px] text-teal-900">
+                      Instead of the default window, just look for events between two dates — useful for sweeping in an older season or a far-future launch without waiting on everything else.
+                    </p>
+                    <div className="flex items-center flex-wrap gap-2">
+                      <input
+                        type="date"
+                        value={rangeFrom}
+                        onChange={e => setRangeFrom(e.target.value)}
+                        className="text-xs px-2.5 py-1.5 bg-white border border-teal-200 rounded-lg outline-none focus:border-teal-400"
+                      />
+                      <span className="text-[11px] text-teal-800 font-semibold">to</span>
+                      <input
+                        type="date"
+                        value={rangeTo}
+                        onChange={e => setRangeTo(e.target.value)}
+                        className="text-xs px-2.5 py-1.5 bg-white border border-teal-200 rounded-lg outline-none focus:border-teal-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={handlePullRange}
+                        disabled={pullingRange}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 text-white font-semibold text-xs rounded-lg transition-colors"
+                      >
+                        <span>{pullingRange ? 'Pulling...' : 'Pull This Range'}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </>
             ) : (
               <>
@@ -307,59 +510,185 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
           {/* Pending events review inbox — only relevant once connected */}
           {status?.connected && (
             <div className="bg-indigo-50/60 p-4 rounded-2xl border border-indigo-200 space-y-2.5">
-              <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
-                <Inbox className="w-3.5 h-3.5 text-indigo-600" /> New from Google Calendar ({pendingEvents.length})
-              </span>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                  <Inbox className="w-3.5 h-3.5 text-indigo-600" /> New from Google Calendar ({pendingEvents.length})
+                </span>
+                {pendingEvents.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleDismissAll}
+                    className="text-[11px] font-bold text-indigo-700 hover:underline shrink-0"
+                  >
+                    Dismiss All
+                  </button>
+                )}
+              </div>
               <p className="text-xs text-indigo-900 leading-relaxed">
                 Events found in your Google Calendar that aren't in CPM yet. Nothing is added automatically — review and choose.
               </p>
 
               {pendingEvents.length > 0 && (
-                <div>
-                  <label className="block text-[11px] font-bold text-indigo-900 mb-1">Add accepted events into</label>
-                  <select
-                    value={reviewParentId}
-                    onChange={e => setReviewParentId(e.target.value)}
-                    className="w-full text-xs px-3 py-2 bg-[var(--card-bg)] border border-indigo-200 rounded-xl outline-none focus:border-indigo-400"
-                  >
-                    <option value="">Top level (no parent project)</option>
-                    {importableParents.map(p => (
-                      <option key={p.id} value={p.id}>{p.title}</option>
-                    ))}
-                  </select>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={pendingSearch}
+                    onChange={e => setPendingSearch(e.target.value)}
+                    placeholder="Search new events..."
+                    className="w-full text-xs pl-8 pr-3 py-1.5 bg-[var(--card-bg)] border border-indigo-200 rounded-xl outline-none focus:border-indigo-400"
+                  />
+                  <Search className="w-3.5 h-3.5 text-indigo-400 absolute left-2.5 top-2" />
                 </div>
               )}
 
-              <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1">
+              {filteredPendingEvents.length > 0 && (
+                <button
+                  type="button"
+                  onClick={toggleSelectAllFiltered}
+                  className="text-[11px] font-semibold text-indigo-800 flex items-center gap-1.5"
+                >
+                  {allFilteredSelected ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
+                  <span>{selectedPendingIds.size > 0 ? `${selectedPendingIds.size} selected` : 'Select all'}</span>
+                </button>
+              )}
+
+              {selectedPendingIds.size > 0 && (
+                <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-200 space-y-2">
+                  <p className="text-[11px] font-bold text-indigo-950">
+                    Add {selectedPendingIds.size} selected as:
+                  </p>
+                  <div className="flex items-center flex-wrap gap-2">
+                    <select
+                      value={batchLevel}
+                      onChange={e => { setBatchLevel(e.target.value as keyof typeof LEVEL_LABELS); setBatchParentId(''); }}
+                      className="text-xs px-2.5 py-1.5 bg-[var(--card-bg)] border border-indigo-200 rounded-lg outline-none focus:border-indigo-400 font-semibold"
+                    >
+                      {LEVEL_ORDER.map(lvl => (
+                        <option key={lvl} value={lvl}>{LEVEL_LABELS[lvl]}</option>
+                      ))}
+                    </select>
+                    {parentTypeFor(batchLevel) && (
+                      <select
+                        value={batchParentId}
+                        onChange={e => setBatchParentId(e.target.value)}
+                        className="text-xs px-2.5 py-1.5 bg-[var(--card-bg)] border border-indigo-200 rounded-lg outline-none focus:border-indigo-400 flex-1 min-w-[10rem]"
+                      >
+                        <option value="">Choose a parent {parentTypeFor(batchLevel)}...</option>
+                        {batchParentOptions.map(p => (
+                          <option key={p.id} value={p.id}>{p.title}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleAddSelectedAsBatch}
+                      disabled={batchWorking}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-semibold text-xs rounded-lg transition-colors"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>{batchWorking ? 'Adding...' : 'Add Selected'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDismissSelected}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[var(--card-bg)] hover:bg-[var(--badge-bg)] border border-[var(--border)] text-[var(--text-secondary)] font-semibold text-xs rounded-lg transition-colors"
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                      <span>Dismiss Selected</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
                 {loadingPending ? (
                   <p className="text-xs text-indigo-800 italic py-2 text-center">Loading...</p>
-                ) : pendingEvents.length === 0 ? (
-                  <p className="text-xs text-indigo-800 italic py-2 text-center">Nothing new — click Sync Now above to check again.</p>
+                ) : filteredPendingEvents.length === 0 ? (
+                  <p className="text-xs text-indigo-800 italic py-2 text-center">
+                    {pendingEvents.length === 0 ? 'Nothing new — click Sync Now above to check again.' : 'No matching events.'}
+                  </p>
                 ) : (
-                  pendingEvents.map(ev => (
-                    <div key={ev.id} className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-[var(--card-bg)] border border-indigo-100">
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-[var(--text-primary)] truncate">{ev.title}</p>
-                        <p className="text-[10px] text-[var(--text-muted)] font-mono">{formatLocalDate(ev.start_at, 'MMM d, yyyy')}</p>
+                  filteredPendingEvents.map(ev => (
+                    <div key={ev.id} className="rounded-lg bg-[var(--card-bg)] border border-indigo-100 overflow-hidden">
+                      <div className="flex items-center gap-2 px-2.5 py-1.5">
+                        <input
+                          type="checkbox"
+                          checked={selectedPendingIds.has(ev.id)}
+                          onChange={() => togglePendingSelected(ev.id)}
+                          className="rounded shrink-0"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold text-[var(--text-primary)] truncate">{ev.title}</p>
+                          <p className="text-[10px] text-[var(--text-muted)] font-mono">{formatLocalDate(ev.start_at, 'MMM d, yyyy')}</p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => beginPlaceOne(ev)}
+                            title="Add to CPM (choose level & parent)"
+                            className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDismissOne(ev)}
+                            title="Dismiss"
+                            className="p-1.5 rounded-lg bg-[var(--badge-bg)] hover:bg-[var(--border-subtle)] text-[var(--text-muted)] border border-[var(--border)]"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleAcceptPendingEvent(ev)}
-                          title="Add to CPM"
-                          className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDismissPendingEvent(ev)}
-                          title="Dismiss"
-                          className="p-1.5 rounded-lg bg-[var(--badge-bg)] hover:bg-[var(--border-subtle)] text-[var(--text-muted)] border border-[var(--border)]"
-                        >
-                          <XCircle className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+
+                      {placingEventId === ev.id && (
+                        <div className="px-2.5 pb-2.5 pt-1 bg-emerald-50/60 border-t border-emerald-100 space-y-2">
+                          <p className="text-[10px] font-bold text-emerald-900 flex items-center gap-1">
+                            <Layers className="w-3 h-3" /> Add as which level?
+                          </p>
+                          <div className="flex items-center flex-wrap gap-1.5">
+                            <select
+                              value={placeLevel}
+                              onChange={e => { setPlaceLevel(e.target.value as keyof typeof LEVEL_LABELS); setPlaceParentId(''); }}
+                              className="text-[11px] px-2 py-1 bg-[var(--card-bg)] border border-emerald-200 rounded-lg outline-none focus:border-emerald-400 font-semibold"
+                            >
+                              {LEVEL_ORDER.map(lvl => (
+                                <option key={lvl} value={lvl}>{LEVEL_LABELS[lvl]}</option>
+                              ))}
+                            </select>
+                            {parentTypeFor(placeLevel) && (
+                              <select
+                                value={placeParentId}
+                                onChange={e => setPlaceParentId(e.target.value)}
+                                className="text-[11px] px-2 py-1 bg-[var(--card-bg)] border border-emerald-200 rounded-lg outline-none focus:border-emerald-400 flex-1 min-w-[8rem]"
+                              >
+                                <option value="">Choose a parent {parentTypeFor(placeLevel)}...</option>
+                                {placeParentOptions.map(p => (
+                                  <option key={p.id} value={p.id}>{p.title}</option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => continueToFullForm(ev)}
+                              className="text-[11px] font-bold text-emerald-700 hover:underline"
+                            >
+                              Continue to full task form →
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPlacingEventId(null)}
+                              className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)] underline"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))
                 )}
@@ -437,6 +766,19 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
 
         </div>
       </div>
+
+      {formEvent && (
+        <NodeForm
+          parentId={formParentId}
+          parentType={formParentType}
+          initialTitle={formEvent.title}
+          initialDescription={formEvent.description}
+          initialPlannedDate={(formEvent.end_at || formEvent.start_at).slice(0, 10)}
+          linkedGoogleEventId={formEvent.google_event_id}
+          onSaved={() => handleFormSaved(formEvent)}
+          onClose={() => setFormEvent(null)}
+        />
+      )}
     </div>
   );
 };

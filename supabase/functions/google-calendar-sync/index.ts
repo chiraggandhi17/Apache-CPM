@@ -94,6 +94,15 @@ Deno.serve(async (req: Request) => {
     const userId = userData.user.id;
     const admin = createClient(supabaseUrl, serviceRoleKey);
 
+    // Optional explicit range: when the user picks "Pull This Range" in the
+    // UI instead of the default "Sync Now", we do a plain one-off pull
+    // scoped to those dates — no push, and we don't touch the stored
+    // syncToken (that cursor is reserved for the regular incremental sync).
+    const body = await req.json().catch(() => ({}));
+    const rangeStart: string | null = typeof body?.rangeStart === 'string' ? body.rangeStart : null;
+    const rangeEnd: string | null = typeof body?.rangeEnd === 'string' ? body.rangeEnd : null;
+    const isRangeMode = Boolean(rangeStart && rangeEnd);
+
     const { data: connection } = await admin
       .from('google_calendar_connections')
       .select('*')
@@ -116,7 +125,13 @@ Deno.serve(async (req: Request) => {
     let nextSyncToken: string | null = connection.sync_token;
     {
       const listUrl = new URL(`${CALENDAR_EVENTS_BASE}/${encodeURIComponent(calendarId)}/events`);
-      if (connection.sync_token) {
+      if (isRangeMode) {
+        // Explicit user-picked window — Google doesn't allow combining
+        // syncToken with timeMin/timeMax, so this is always a plain listing.
+        listUrl.searchParams.set('timeMin', new Date(rangeStart!).toISOString());
+        listUrl.searchParams.set('timeMax', new Date(rangeEnd!).toISOString());
+        listUrl.searchParams.set('singleEvents', 'true');
+      } else if (connection.sync_token) {
         listUrl.searchParams.set('syncToken', connection.sync_token);
       } else {
         const timeMin = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -201,8 +216,10 @@ Deno.serve(async (req: Request) => {
     }
 
     // ---------- PUSH: linked CPM tasks → Google Calendar ----------
+    // Skipped entirely in range mode — that action is "just show me what's
+    // in Google for this window," not a full two-way sync.
     let pushedCount = 0;
-    {
+    if (!isRangeMode) {
       const { data: linkedNodes } = await admin
         .from('nodes')
         .select('id, title, description, is_critical, department, start_date, planned_date, google_event_id, calendar_sync_enabled')
@@ -250,9 +267,15 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Range pulls don't advance the incremental cursor — they're an
+    // independent, explicit lookup, not the ongoing sync.
     await admin
       .from('google_calendar_connections')
-      .update({ sync_token: nextSyncToken, last_synced_at: new Date().toISOString() })
+      .update(
+        isRangeMode
+          ? { last_synced_at: new Date().toISOString() }
+          : { sync_token: nextSyncToken, last_synced_at: new Date().toISOString() }
+      )
       .eq('user_id', userId);
 
     return new Response(JSON.stringify({ success: true, pulled: pulledCount, pushed: pushedCount }), {

@@ -33,6 +33,15 @@ export async function syncGoogleCalendarNow(): Promise<{ pulled: number; pushed:
 }
 
 /**
+ * One-off pull scoped to an explicit date range instead of the default
+ * auto window — lets the user say "just show me what's in Google between
+ * these two dates" without triggering a full push/incremental sync.
+ */
+export async function pullGoogleCalendarRange(rangeStart: string, rangeEnd: string): Promise<{ pulled: number }> {
+  return invoke<{ pulled: number }>('google-calendar-sync', { body: { rangeStart, rangeEnd } });
+}
+
+/**
  * Best-effort cleanup: deletes the given Google Calendar events. Called
  * right when a task is deleted or marked complete in CPM so its calendar
  * event doesn't linger until the next "Sync Now". Silently no-ops if the

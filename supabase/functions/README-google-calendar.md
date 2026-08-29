@@ -73,3 +73,23 @@ tombstone from the incremental sync, or a 404/410 when trying to push an
 update to it) and turns that task's "Sync to Calendar" toggle off and clears
 its stored event id — it does not delete the CPM task, and does not recreate
 the Google event. The task just stops being treated as linked.
+
+## Reviewing pulled events without getting flooded
+
+"Sync Now" pulls a default window (last 30 days to next 180 days on first
+run, then only what changed since via the incremental syncToken). For
+someone with a busy personal calendar that can still mean a lot of unrelated
+events landing in the "New from Google Calendar" review inbox. Two things
+help with that:
+
+- **Pull a Specific Range** — a small date-range picker next to "Sync Now"
+  calls `google-calendar-sync` with an explicit `{ rangeStart, rangeEnd }`
+  body. This is a one-off lookup (no push, doesn't touch the syncToken) for
+  cases like sweeping in an older season or a far-future launch on demand.
+- **Bulk review** — the pending list supports multi-select with a search
+  box, "Dismiss All" / "Dismiss Selected", and "Add Selected as..." which
+  applies one chosen level (Department...Subtask) and one parent to every
+  selected event at once — each keeps its own original date/time. For an
+  event that needs individual placement instead, "Add to CPM" on that one
+  row asks for its level + parent, then opens the full task form (color,
+  critical flag, reminders, assignee, etc.) pre-filled from the event.

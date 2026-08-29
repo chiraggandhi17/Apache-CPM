@@ -21,8 +21,15 @@ interface NodeFormProps {
   parentDate?: string | null;
   /** Pre-fills a fixed planned date (e.g. from clicking a day on the calendar) and forces "single date" mode. */
   initialPlannedDate?: string | null;
+  /** Pre-fills title/description for a brand-new node (e.g. importing a Google Calendar event) without entering edit mode. Ignored when initialNode is set. */
+  initialTitle?: string;
+  initialDescription?: string | null;
+  /** Stamps a new node with the Google Calendar event it was created from, so it's already linked/synced. */
+  linkedGoogleEventId?: string | null;
   initialNode?: NodeItem | null;
   onClose: () => void;
+  /** Called after a successful create/update, before onClose. Use to react to the new/edited node without re-deriving it. */
+  onSaved?: () => void;
 }
 
 export const NodeForm: React.FC<NodeFormProps> = ({
@@ -30,8 +37,12 @@ export const NodeForm: React.FC<NodeFormProps> = ({
   parentType,
   parentDate = null,
   initialPlannedDate = null,
+  initialTitle,
+  initialDescription = null,
+  linkedGoogleEventId = null,
   initialNode = null,
   onClose,
+  onSaved,
 }) => {
   const { addNode, updateNode, nodes, reminders, addReminder, dismissReminder } = useNodes();
   const { isIndividual, profile } = useAuth();
@@ -58,7 +69,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
     ? getUnusedProjectColor(nodes)
     : null;
 
-  const [title, setTitle] = useState(initialNode?.title || '');
+  const [title, setTitle] = useState(initialNode?.title || initialTitle || '');
   const [type, setType] = useState<NodeType>(getSuggestedType());
   const [startDate, setStartDate] = useState(
     initialNode?.start_date ? initialNode.start_date.substring(0, 10) : ''
@@ -147,7 +158,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
   };
 
   const [vendorContact, setVendorContact] = useState(initialNode?.vendor_contact || '');
-  const [description, setDescription] = useState(initialNode?.description || '');
+  const [description, setDescription] = useState(initialNode?.description || initialDescription || '');
   const [calendarSyncEnabled, setCalendarSyncEnabled] = useState(initialNode?.calendar_sync_enabled !== false);
 
   // Reminder alert state (available in both Create & Edit)
@@ -311,6 +322,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
           calendar_sync_enabled: calendarSyncEnabled,
           vendor_contact: vendorContact || null,
           description: description || null,
+          google_event_id: linkedGoogleEventId || null,
         });
       }
 
@@ -334,6 +346,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
         });
       }
 
+      onSaved?.();
       onClose();
     } catch (err) {
       console.error('Error saving node & reminder:', err);
