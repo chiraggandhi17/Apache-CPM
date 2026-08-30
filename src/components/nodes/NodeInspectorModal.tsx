@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { NodeItem } from '../../types/domain';
 import { useNodes, NodeAuditLog } from '../../context/NodeContext';
 import { StatusBadge } from '../shared/StatusBadge';
 import { CriticalFlag } from '../shared/CriticalFlag';
 import { formatLocalDate } from '../../utils/date-format';
 import { getAncestorPath, getSiblingNodes } from '../../utils/hierarchy';
-import { GoogleCalendarSyncModal } from '../calendar/GoogleCalendarSyncModal';
+// Lazy: keeps this modal (and its calendar-sync dependencies) out of the
+// main bundle — it's only needed if the user actually opens Google Calendar
+// sync from a task, matching how AppShell lazy-loads the same component.
+const GoogleCalendarSyncModal = lazy(() => import('../calendar/GoogleCalendarSyncModal').then(m => ({ default: m.GoogleCalendarSyncModal })));
 import { NodeForm } from './NodeForm';
 import { SubtreeCompletionModal } from './SubtreeCompletionModal';
 import { useToast } from '../../context/ToastContext';
@@ -596,16 +599,18 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
 
       {/* GOOGLE CALENDAR MODAL */}
       {showCalModal && (
-        <GoogleCalendarSyncModal
-          eventPayload={{
-            title: currentNode.title,
-            description: currentNode.description,
-            startDate: currentNode.planned_date || new Date().toISOString(),
-            department: currentNode.department,
-            isCritical: currentNode.is_critical,
-          }}
-          onClose={() => setShowCalModal(false)}
-        />
+        <Suspense fallback={null}>
+          <GoogleCalendarSyncModal
+            eventPayload={{
+              title: currentNode.title,
+              description: currentNode.description,
+              startDate: currentNode.planned_date || new Date().toISOString(),
+              department: currentNode.department,
+              isCritical: currentNode.is_critical,
+            }}
+            onClose={() => setShowCalModal(false)}
+          />
+        </Suspense>
       )}
 
       {/* ACTIVITY AUDIT LOGS MODAL */}

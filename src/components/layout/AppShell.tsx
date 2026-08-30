@@ -20,7 +20,9 @@ const GoogleCalendarSyncModal = lazy(() => import('../calendar/GoogleCalendarSyn
 import { useToast } from '../../context/ToastContext';
 import { TierPricingModal } from '../shared/TierPricingModal';
 import { PersonalUserSettingsModal } from '../settings/PersonalUserSettingsModal';
-import { ExportModal } from '../shared/ExportModal';
+// ExportModal pulls in the `xlsx` library, which is large on its own —
+// lazy-load it the same way as the panels above.
+const ExportModal = lazy(() => import('../shared/ExportModal').then(m => ({ default: m.ExportModal })));
 import { ProtectedAppGuard } from '../auth/Guards';
 import { LoginPage } from '../auth/LoginPage';
 import { 
@@ -718,9 +720,11 @@ export const AppShellContent: React.FC = () => {
 
       {/* Export Excel / CSV Modal */}
       {showExportModal && (
-        <ExportModal
-          onClose={() => setShowExportModal(false)}
-        />
+        <Suspense fallback={null}>
+          <ExportModal
+            onClose={() => setShowExportModal(false)}
+          />
+        </Suspense>
       )}
 
     </div>
