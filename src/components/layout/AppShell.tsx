@@ -1,16 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useNodes } from '../../context/NodeContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { TodayView } from '../today/TodayView';
 import { NodeTree } from '../nodes/NodeTree';
-import { CalendarView } from '../calendar/CalendarView';
 import { NodeInspectorModal } from '../nodes/NodeInspectorModal';
 import { GlobalSearchPalette } from '../shared/GlobalSearchPalette';
 import { ManageAlertsModal } from '../reminders/ManageAlertsModal';
-import { SuperAdminDashboard } from '../admin/SuperAdminDashboard';
-import { OrgAdminDashboard } from '../admin/OrgAdminDashboard';
-import { GoogleCalendarSyncModal } from '../calendar/GoogleCalendarSyncModal';
+
+// Code-split: each of these is heavy (FullCalendar + its plugins, or an
+// admin-only dashboard, or a modal opened by an explicit click) and none of
+// them are needed for the app's default first paint — loading them on
+// demand instead of in the main bundle is most of the win on the "chunks
+// larger than 500kB" build warning.
+const CalendarView = lazy(() => import('../calendar/CalendarView').then(m => ({ default: m.CalendarView })));
+const SuperAdminDashboard = lazy(() => import('../admin/SuperAdminDashboard').then(m => ({ default: m.SuperAdminDashboard })));
+const OrgAdminDashboard = lazy(() => import('../admin/OrgAdminDashboard').then(m => ({ default: m.OrgAdminDashboard })));
+const GoogleCalendarSyncModal = lazy(() => import('../calendar/GoogleCalendarSyncModal').then(m => ({ default: m.GoogleCalendarSyncModal })));
 import { useToast } from '../../context/ToastContext';
 import { TierPricingModal } from '../shared/TierPricingModal';
 import { PersonalUserSettingsModal } from '../settings/PersonalUserSettingsModal';
@@ -24,6 +30,15 @@ import {
 } from 'lucide-react';
 
 type NavTab = 'today' | 'browse' | 'calendar' | 'super_admin' | 'super_observability' | 'super_errors' | 'super_backups' | 'org_admin' | 'org_teams' | 'org_backup';
+
+// Shown briefly while a lazy-loaded panel's code downloads (calendar, admin
+// dashboards) — these are small/fast chunks on a real connection, so this is
+// just a flicker guard rather than a real loading state.
+const LazyPanelFallback: React.FC = () => (
+  <div className="flex items-center justify-center py-24 text-[var(--text-muted)] text-sm">
+    Loading...
+  </div>
+);
 
 export const AppShellContent: React.FC = () => {
   const { selectedNode, setSelectedNode, totalScheduledAlertsCount, triggeredAlertsCount } = useNodes();
@@ -580,20 +595,32 @@ export const AppShellContent: React.FC = () => {
       {/* Main Content Area */}
       <main className="flex-1 p-3 sm:p-6 md:p-8 pb-24 md:pb-8 max-w-7xl mx-auto w-full overflow-y-auto">
         {/* Super Admin Sections */}
-        {activeTab === 'super_admin' && <SuperAdminDashboard currentSection="organizations" />}
-        {activeTab === 'super_observability' && <SuperAdminDashboard currentSection="observability" />}
-        {activeTab === 'super_errors' && <SuperAdminDashboard currentSection="errors" />}
-        {activeTab === 'super_backups' && <SuperAdminDashboard currentSection="backups" />}
+        {(activeTab === 'super_admin' || activeTab === 'super_observability' || activeTab === 'super_errors' || activeTab === 'super_backups') && (
+          <Suspense fallback={<LazyPanelFallback />}>
+            {activeTab === 'super_admin' && <SuperAdminDashboard currentSection="organizations" />}
+            {activeTab === 'super_observability' && <SuperAdminDashboard currentSection="observability" />}
+            {activeTab === 'super_errors' && <SuperAdminDashboard currentSection="errors" />}
+            {activeTab === 'super_backups' && <SuperAdminDashboard currentSection="backups" />}
+          </Suspense>
+        )}
 
         {/* Org Admin Sections */}
-        {activeTab === 'org_admin' && <OrgAdminDashboard currentSection="users" />}
-        {activeTab === 'org_teams' && <OrgAdminDashboard currentSection="teams" />}
-        {activeTab === 'org_backup' && <OrgAdminDashboard currentSection="backup" />}
+        {(activeTab === 'org_admin' || activeTab === 'org_teams' || activeTab === 'org_backup') && (
+          <Suspense fallback={<LazyPanelFallback />}>
+            {activeTab === 'org_admin' && <OrgAdminDashboard currentSection="users" />}
+            {activeTab === 'org_teams' && <OrgAdminDashboard currentSection="teams" />}
+            {activeTab === 'org_backup' && <OrgAdminDashboard currentSection="backup" />}
+          </Suspense>
+        )}
 
         {/* Operational CPM Views */}
         {activeTab === 'today' && <TodayView onSelectNode={setSelectedNode} />}
         {activeTab === 'browse' && <NodeTree onSelectNode={setSelectedNode} />}
-        {activeTab === 'calendar' && <CalendarView onSelectNode={setSelectedNode} />}
+        {activeTab === 'calendar' && (
+          <Suspense fallback={<LazyPanelFallback />}>
+            <CalendarView onSelectNode={setSelectedNode} />
+          </Suspense>
+        )}
       </main>
 
       {/* FIXED MOBILE BOTTOM QUICK TAB BAR (Only shown on small screens md:hidden) */}
@@ -668,9 +695,11 @@ export const AppShellContent: React.FC = () => {
 
       {/* Google Calendar Sync Modal */}
       {showGoogleCalSync && (
-        <GoogleCalendarSyncModal
-          onClose={() => setShowGoogleCalSync(false)}
-        />
+        <Suspense fallback={null}>
+          <GoogleCalendarSyncModal
+            onClose={() => setShowGoogleCalSync(false)}
+          />
+        </Suspense>
       )}
 
       {/* Tier Pricing & Upgrade Modal */}
