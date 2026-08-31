@@ -7,6 +7,7 @@ import { addDays, addHours, parseISO, formatISO, isValid, isBefore, isToday as i
 import { sendBrowserNotification } from '../utils/notifications';
 import { computeNextOccurrence } from '../utils/recurrence';
 import { deleteGoogleCalendarEvents } from '../utils/google-calendar-api';
+import { getChildType, getRootAncestorId } from '../utils/hierarchy';
 import { playNotificationSound } from '../utils/sound';
 import { useToast } from './ToastContext';
 
@@ -17,7 +18,7 @@ export interface NodeAuditLog {
   user_id: string | null;
   user_email: string;
   user_name: string | null;
-  action: 'created' | 'date_shifted' | 'status_changed' | 'details_updated' | 'deleted';
+  action: 'created' | 'date_shifted' | 'status_changed' | 'details_updated' | 'deleted' | 'moved';
   change_summary: string;
   previous_values: Record<string, any> | null;
   new_values: Record<string, any> | null;
@@ -30,6 +31,27 @@ export interface NodeAccessInfo {
   isCrossDepartment: boolean;
   owningDepartment: string;
   tooltipText: string;
+}
+
+export interface MoveConflictItem {
+  nodeId: string;
+  title: string;
+  currentDate: string; // ISO planned_date that exceeds the new ancestor limit
+  limitDate: string;   // ISO planned_date of the nearest new ancestor with a date
+}
+
+export interface MoveInvalidReason {
+  code: 'same_parent' | 'self' | 'descendant' | 'cross_root';
+  message: string;
+}
+
+export interface MovePreview {
+  nodeId: string;
+  nodeTitle: string;
+  newParentId: string;
+  newParentTitle: string;
+  affectedCount: number; // moved node + all its descendants
+  conflicts: MoveConflictItem[];
 }
 
 interface NodeContextType {
@@ -49,6 +71,8 @@ interface NodeContextType {
   cleanupGoogleEventsFor: (removedNodes: NodeItem[]) => void;
   completeNodeAndSubtree: (nodeId: string) => Promise<void>;
   getTree: () => TreeNode[];
+  previewMove: (nodeId: string, newParentId: string) => MovePreview | MoveInvalidReason;
+  commitMove: (nodeId: string, newParentId: string, dateOverrides?: Record<string, string>) => Promise<void>;
   getTodayUpcomingFeed: () => {
     overdue: TodayItem[];
     today: TodayItem[];
@@ -498,6 +522,151 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await logNodeActivity(id, 'status_changed', `Marked as DONE (Subtree completion cascade)`);
       }
     }
+
+    await fetchNodesAndReminders();
+  };
+
+  /**
+   * Finds the nearest ancestor's planned_date walking up from startParentId,
+   * following real parent_id links except at `remapNodeId` (if reached),
+   * where it continues instead from `remapToParentId`. This lets us compute
+   * "what date limit would apply after a reparent" without mutating state —
+   * used by previewMove for conflict detection.
+   */
+  const findEffectiveDateLimit = (
+    startParentId: string | null,
+    remapNodeId?: string,
+    remapToParentId?: string | null
+  ): string | null => {
+    let curId = startParentId;
+    while (curId) {
+      const node = nodes.find(n => n.id === curId);
+      if (!node) break;
+      if (node.planned_date) return node.planned_date;
+      curId = node.id === remapNodeId ? (remapToParentId ?? null) : node.parent_id;
+    }
+    return null;
+  };
+
+  /**
+   * Dry-run for dragging `nodeId` to become a child of `newParentId`. Validates
+   * the move (no-op, self-drop, cyclical drop, cross-Level-1-tree drop) and
+   * computes every date conflict the move would create — the moved node and
+   * any descendant whose own target date would now exceed its nearest new
+   * ancestor's target date — without writing anything. commitMove() applies it.
+   */
+  const previewMove = (nodeId: string, newParentId: string): MovePreview | MoveInvalidReason => {
+    const movedNode = nodes.find(n => n.id === nodeId);
+    const newParent = nodes.find(n => n.id === newParentId);
+
+    if (!movedNode || !newParent) {
+      return { code: 'self', message: 'That item could not be found.' };
+    }
+    if (nodeId === newParentId) {
+      return { code: 'self', message: "A task can't be moved onto itself." };
+    }
+    if (movedNode.parent_id === newParentId) {
+      return { code: 'same_parent', message: 'Already positioned there.' };
+    }
+
+    const descendants = getDescendantNodes(nodeId);
+    if (descendants.some(d => d.id === newParentId)) {
+      return { code: 'descendant', message: "A task can't be moved into its own subtask." };
+    }
+
+    const rootOfMoved = getRootAncestorId(nodeId, nodes);
+    const rootOfTarget = getRootAncestorId(newParentId, nodes);
+    if (!rootOfMoved || !rootOfTarget || rootOfMoved !== rootOfTarget) {
+      return { code: 'cross_root', message: 'Tasks can only be repositioned within the same top-level department tree.' };
+    }
+
+    const conflicts: MoveConflictItem[] = [];
+
+    // The moved node itself: its new limit comes from walking up the new parent's real chain.
+    if (movedNode.planned_date) {
+      const limit = findEffectiveDateLimit(newParentId);
+      if (limit && new Date(movedNode.planned_date) > new Date(limit)) {
+        conflicts.push({ nodeId: movedNode.id, title: movedNode.title, currentDate: movedNode.planned_date, limitDate: limit });
+      }
+    }
+
+    // Each descendant: walk its real chain, but once it would reach the moved
+    // node, redirect upward through the new parent instead of the old one.
+    for (const d of descendants) {
+      if (!d.planned_date) continue;
+      const limit = findEffectiveDateLimit(d.parent_id, nodeId, newParentId);
+      if (limit && new Date(d.planned_date) > new Date(limit)) {
+        conflicts.push({ nodeId: d.id, title: d.title, currentDate: d.planned_date, limitDate: limit });
+      }
+    }
+
+    return {
+      nodeId,
+      nodeTitle: movedNode.title,
+      newParentId,
+      newParentTitle: newParent.title,
+      affectedCount: 1 + descendants.length,
+      conflicts,
+    };
+  };
+
+  /**
+   * Applies a previously-previewed move: reparents `nodeId` under `newParentId`,
+   * cascades `type` for it and every descendant so hierarchy levels stay in sync
+   * with their new tree position (capped at 'subtask', there is no Level 6), and
+   * applies any user-supplied date fixes for conflicts surfaced by previewMove.
+   */
+  const commitMove = async (nodeId: string, newParentId: string, dateOverrides: Record<string, string> = {}) => {
+    const movedNode = nodes.find(n => n.id === nodeId);
+    const newParent = nodes.find(n => n.id === newParentId);
+    if (!movedNode || !newParent) return;
+
+    const oldParentTitle = nodes.find(n => n.id === movedNode.parent_id)?.title || 'Root';
+    const descendants = getDescendantNodes(nodeId);
+    const movedNewType = getChildType(newParent.type);
+
+    // Recompute each descendant's new type at the same relative depth below
+    // the moved node, so a Level 5 subtask that gets dragged to become a
+    // Level 4 task (say) correctly shifts everything beneath it too.
+    const depthOf = new Map<string, number>();
+    depthOf.set(nodeId, 0);
+    for (const d of descendants) {
+      const parentDepth = depthOf.get(d.parent_id || '');
+      depthOf.set(d.id, (parentDepth ?? 0) + 1);
+    }
+    const typeOrder: NodeItem['type'][] = ['department', 'season', 'project', 'task', 'subtask'];
+    const baseIndex = typeOrder.indexOf(movedNewType);
+
+    const newSiblings = nodes.filter(n => n.parent_id === newParentId);
+    const nextSortOrder = newSiblings.length > 0 ? Math.max(...newSiblings.map(n => n.sort_order || 0)) + 1 : 1;
+
+    const movedUpdate: Record<string, any> = {
+      parent_id: newParentId,
+      type: movedNewType,
+      sort_order: nextSortOrder,
+      updated_at: new Date().toISOString(),
+    };
+    if (dateOverrides[nodeId]) movedUpdate.planned_date = dateOverrides[nodeId];
+    await supabase.from('nodes').update(movedUpdate).eq('id', nodeId);
+
+    for (const d of descendants) {
+      const depth = depthOf.get(d.id) ?? 1;
+      const newType = typeOrder[Math.min(typeOrder.length - 1, baseIndex + depth)];
+      const update: Record<string, any> = { updated_at: new Date().toISOString() };
+      if (newType !== d.type) update.type = newType;
+      if (dateOverrides[d.id]) update.planned_date = dateOverrides[d.id];
+      if (Object.keys(update).length > 1) {
+        await supabase.from('nodes').update(update).eq('id', d.id);
+      }
+    }
+
+    await logNodeActivity(
+      nodeId,
+      'moved',
+      `Moved "${movedNode.title}" from "${oldParentTitle}" to "${newParent.title}"`,
+      { parent_id: movedNode.parent_id, type: movedNode.type },
+      { parent_id: newParentId, type: movedNewType }
+    );
 
     await fetchNodesAndReminders();
   };
@@ -1014,6 +1183,8 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         cleanupGoogleEventsFor,
         completeNodeAndSubtree,
         getTree,
+        previewMove,
+        commitMove,
         getTodayUpcomingFeed,
         fetchNodeAuditLogs,
         logNodeActivity,

@@ -72,3 +72,33 @@ export function getNodeLevel(node: NodeItem, allNodes: NodeItem[]): number {
   }
   return Math.min(5, depth);
 }
+
+/**
+ * Returns the type a new child would take under a parent of the given type,
+ * following the fixed Department -> Season -> Project -> Task -> Subtask
+ * progression. Task/Subtask (and anything nested under a Subtask) all
+ * terminate at 'subtask' since there is no Level 6.
+ */
+export function getChildType(parentType: NodeType): NodeType {
+  if (parentType === 'department') return 'season';
+  if (parentType === 'season') return 'project';
+  if (parentType === 'project') return 'task';
+  return 'subtask';
+}
+
+/**
+ * Walks a node's parent_id chain to the top and returns the id of its
+ * Level 1 (root/department) ancestor — or the node's own id if it has no
+ * parent. Used to keep drag-and-drop reparenting confined to the same
+ * Level 1 tree.
+ */
+export function getRootAncestorId(nodeId: string, allNodes: NodeItem[]): string | null {
+  let current = allNodes.find(n => n.id === nodeId);
+  if (!current) return null;
+  while (current.parent_id) {
+    const parent = allNodes.find(n => n.id === current!.parent_id);
+    if (!parent) break;
+    current = parent;
+  }
+  return current.id;
+}

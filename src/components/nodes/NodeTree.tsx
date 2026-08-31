@@ -6,6 +6,8 @@ import { useDialog } from '../../context/DialogContext';
 import { TreeNode } from '../../types/domain';
 import { NodeRow } from './NodeRow';
 import { NodeForm } from './NodeForm';
+import { MoveConflictModal } from './MoveConflictModal';
+import { MovePreview } from '../../context/NodeContext';
 import { matchesSearchQuery } from '../../utils/search';
 import { Plus, FolderPlus, Layers, Search, Filter, AlertCircle, Sparkles, CheckSquare, Square, X, Trash2, CheckCircle2, Circle, Maximize2, Minimize2 } from 'lucide-react';
 
@@ -14,7 +16,7 @@ interface NodeTreeProps {
 }
 
 export const NodeTree: React.FC<NodeTreeProps> = ({ onSelectNode }) => {
-  const { getTree, nodes, updateStatus, deleteNode, hideNodeLocally, restoreNodesLocally, cleanupGoogleEventsFor, getDescendantNodes } = useNodes();
+  const { getTree, nodes, updateStatus, deleteNode, hideNodeLocally, restoreNodesLocally, cleanupGoogleEventsFor, getDescendantNodes, previewMove, commitMove } = useNodes();
   const { isIndividual } = useAuth();
   const toast = useToast();
   const { confirm } = useDialog();
@@ -70,6 +72,41 @@ export const NodeTree: React.FC<NodeTreeProps> = ({ onSelectNode }) => {
       }
       return next;
     });
+  };
+
+  // Drag-and-drop reposition: drag any non-root task onto another task within
+  // the same Level 1 tree to reparent it there (and, since level is derived
+  // from tree position, its hierarchy level updates along with it).
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [movePreview, setMovePreview] = useState<MovePreview | null>(null);
+
+  const handleDragStartNode = (nodeId: string) => setDraggingId(nodeId);
+  const handleDragOverNode = (nodeId: string) => setDragOverId(nodeId);
+  const handleDragEndNode = () => {
+    setDraggingId(null);
+    setDragOverId(null);
+  };
+
+  const handleDropOnNode = (targetId: string) => {
+    const sourceId = draggingId;
+    setDraggingId(null);
+    setDragOverId(null);
+    if (!sourceId || sourceId === targetId) return;
+
+    const result = previewMove(sourceId, targetId);
+    if ('conflicts' in result) {
+      setMovePreview(result);
+    } else {
+      toast.error(result.message);
+    }
+  };
+
+  const handleConfirmMove = async (dateOverrides: Record<string, string>) => {
+    if (!movePreview) return;
+    await commitMove(movePreview.nodeId, movePreview.newParentId, dateOverrides);
+    toast.success(`Moved "${movePreview.nodeTitle}" under "${movePreview.newParentTitle}".`);
+    setMovePreview(null);
   };
 
   const toggleSelectMode = () => {
@@ -300,6 +337,12 @@ export const NodeTree: React.FC<NodeTreeProps> = ({ onSelectNode }) => {
               expandedIds={expandedIds}
               onToggleExpand={handleToggleExpand}
               onExpandSubtree={handleExpandSubtree}
+              draggingId={draggingId}
+              dragOverId={dragOverId}
+              onDragStartNode={handleDragStartNode}
+              onDragOverNode={handleDragOverNode}
+              onDragEndNode={handleDragEndNode}
+              onDropOnNode={handleDropOnNode}
             />
           ))}
         </div>
@@ -353,6 +396,14 @@ export const NodeTree: React.FC<NodeTreeProps> = ({ onSelectNode }) => {
         <NodeForm
           parentId={null}
           onClose={() => setShowAddRoot(false)}
+        />
+      )}
+
+      {movePreview && (
+        <MoveConflictModal
+          preview={movePreview}
+          onConfirm={handleConfirmMove}
+          onCancel={() => setMovePreview(null)}
         />
       )}
     </div>

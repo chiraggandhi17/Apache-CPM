@@ -10,7 +10,7 @@ import { useToast } from '../../context/ToastContext';
 import { SubtreeCompletionModal } from './SubtreeCompletionModal';
 import { 
   ChevronRight, ChevronDown, Plus, Folder, Calendar, CheckSquare, 
-  Layers, Clock, Check, Lock, Edit3, Trash2, Bell, Building2, FolderKanban, Box, Zap, CornerDownRight, Maximize2
+  Layers, Clock, Check, Lock, Edit3, Trash2, Bell, Building2, FolderKanban, Box, Zap, CornerDownRight, Maximize2, GripVertical
 } from 'lucide-react';
 
 interface NodeRowProps {
@@ -22,6 +22,12 @@ interface NodeRowProps {
   expandedIds?: Set<string>;
   onToggleExpand?: (nodeId: string) => void;
   onExpandSubtree?: (nodeId: string) => void;
+  draggingId?: string | null;
+  dragOverId?: string | null;
+  onDragStartNode?: (nodeId: string) => void;
+  onDragOverNode?: (nodeId: string) => void;
+  onDragEndNode?: () => void;
+  onDropOnNode?: (nodeId: string) => void;
 }
 
 const getNodeIcon = (type: NodeType): React.ReactNode => {
@@ -36,7 +42,10 @@ const getNodeIcon = (type: NodeType): React.ReactNode => {
   }
 };
 
-export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode, selectMode = false, selectedIds, onToggleSelect, expandedIds, onToggleExpand, onExpandSubtree }) => {
+export const NodeRow: React.FC<NodeRowProps> = ({
+  node, onSelectNode, selectMode = false, selectedIds, onToggleSelect, expandedIds, onToggleExpand, onExpandSubtree,
+  draggingId, dragOverId, onDragStartNode, onDragOverNode, onDragEndNode, onDropOnNode,
+}) => {
   const { 
     nodes, reminders, toggleCritical, updateStatus, toggleDone, deleteNode, 
     getNodeAccessInfo, getDescendantNodes, completeNodeAndSubtree,
@@ -93,14 +102,48 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode, selectMode
     setShowCompletionModal(false);
   };
 
+  // Drag-and-drop reposition: only editable, non-root (non-department) rows can
+  // be picked up — a Level 1 department has nothing above it within its own
+  // tree to be reparented under. Any row can still be a drop target.
+  const isDraggable = isEditable && !selectMode && node.type !== 'department';
+  const isBeingDragged = draggingId === node.id;
+  const isDropTarget = Boolean(draggingId) && draggingId !== node.id && dragOverId === node.id;
+
   return (
     <div className="space-y-1">
       <div
+        draggable={isDraggable}
+        onDragStart={e => {
+          e.stopPropagation();
+          e.dataTransfer.effectAllowed = 'move';
+          try { e.dataTransfer.setData('text/plain', node.id); } catch { /* noop */ }
+          onDragStartNode?.(node.id);
+        }}
+        onDragOver={e => {
+          if (!draggingId || draggingId === node.id) return;
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = 'move';
+          onDragOverNode?.(node.id);
+        }}
+        onDrop={e => {
+          if (!draggingId) return;
+          e.preventDefault();
+          e.stopPropagation();
+          onDropOnNode?.(node.id);
+        }}
+        onDragEnd={e => {
+          e.stopPropagation();
+          onDragEndNode?.();
+        }}
         onClick={() => (selectMode ? onToggleSelect?.(node.id) : onSelectNode(node))}
         style={{ paddingLeft: `${node.depth * 20 + 12}px` }}
-        className={`group relative flex items-center justify-between py-2.5 pr-3 rounded-xl border border-[var(--border)] bg-[var(--card-bg)] hover:bg-[var(--canvas-bg)] transition-all cursor-pointer shadow-2xs ${
-          node.is_overdue ? 'ring-1 ring-rose-300 border-rose-200' : ''
-        } ${isCompleted ? 'opacity-70 bg-[var(--canvas-bg)]' : ''}`}
+        className={`group relative flex items-center justify-between py-2.5 pr-3 rounded-xl border transition-all cursor-pointer shadow-2xs ${
+          isDropTarget
+            ? 'border-indigo-400 bg-indigo-50/80 ring-2 ring-indigo-300'
+            : 'border-[var(--border)] bg-[var(--card-bg)] hover:bg-[var(--canvas-bg)]'
+        } ${node.is_overdue && !isDropTarget ? 'ring-1 ring-rose-300 border-rose-200' : ''}
+        ${isCompleted ? 'opacity-70 bg-[var(--canvas-bg)]' : ''} ${isBeingDragged ? 'opacity-40' : ''}`}
       >
         <span
           className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full shadow-2xs"
@@ -108,6 +151,16 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode, selectMode
         />
 
         <div className="flex items-center gap-2.5 min-w-0 pr-2">
+          {/* Drag handle — grab to reposition this task anywhere in its Level 1 tree */}
+          {isDraggable && (
+            <span
+              className="text-[var(--text-muted)]/50 group-hover:text-[var(--text-muted)] cursor-grab active:cursor-grabbing shrink-0 -mr-0.5"
+              title="Drag to reposition"
+            >
+              <GripVertical className="w-3.5 h-3.5" />
+            </span>
+          )}
+
           {/* Bulk-select checkbox */}
           {selectMode && (
             <button
@@ -329,6 +382,12 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode, selectMode
               expandedIds={expandedIds}
               onToggleExpand={onToggleExpand}
               onExpandSubtree={onExpandSubtree}
+              draggingId={draggingId}
+              dragOverId={dragOverId}
+              onDragStartNode={onDragStartNode}
+              onDragOverNode={onDragOverNode}
+              onDragEndNode={onDragEndNode}
+              onDropOnNode={onDropOnNode}
             />
           ))}
         </div>
