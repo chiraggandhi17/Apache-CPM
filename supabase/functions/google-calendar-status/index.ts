@@ -39,14 +39,21 @@ Deno.serve(async (req: Request) => {
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
     const { data: connection } = await adminClient
       .from('google_calendar_connections')
-      .select('google_email, last_synced_at, created_at')
+      .select('google_email, last_synced_at, created_at, default_sync_new_tasks, setup_completed')
       .eq('user_id', userData.user.id)
       .maybeSingle();
 
     return new Response(
       JSON.stringify(
         connection
-          ? { connected: true, googleEmail: connection.google_email, lastSyncedAt: connection.last_synced_at, connectedAt: connection.created_at }
+          ? {
+              connected: true,
+              googleEmail: connection.google_email,
+              lastSyncedAt: connection.last_synced_at,
+              connectedAt: connection.created_at,
+              defaultSyncNewTasks: connection.default_sync_new_tasks,
+              setupCompleted: connection.setup_completed,
+            }
           : { connected: false }
       ),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

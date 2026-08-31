@@ -443,17 +443,21 @@ END $$;
 -- GOOGLE CALENDAR OAUTH TWO-WAY SYNC (see migration 00013)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.google_calendar_connections (
-  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id             UUID NOT NULL UNIQUE REFERENCES public.profiles(id) ON DELETE CASCADE,
-  google_email        TEXT,
-  refresh_token       TEXT NOT NULL,
-  access_token        TEXT,
-  access_token_expiry TIMESTAMPTZ,
-  google_calendar_id  TEXT NOT NULL DEFAULT 'primary',
-  sync_token          TEXT,
-  last_synced_at      TIMESTAMPTZ,
-  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id                 UUID NOT NULL UNIQUE REFERENCES public.profiles(id) ON DELETE CASCADE,
+  google_email            TEXT,
+  refresh_token           TEXT NOT NULL,
+  access_token            TEXT,
+  access_token_expiry     TIMESTAMPTZ,
+  google_calendar_id      TEXT NOT NULL DEFAULT 'primary',
+  sync_token              TEXT,
+  last_synced_at          TIMESTAMPTZ,
+  -- Set once right after connecting (see migration 00014) and editable any
+  -- time after: whether a brand-new task starts with "Sync to Calendar" on.
+  default_sync_new_tasks  BOOLEAN NOT NULL DEFAULT true,
+  setup_completed         BOOLEAN NOT NULL DEFAULT false,
+  created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 ALTER TABLE public.google_calendar_connections ENABLE ROW LEVEL SECURITY;
@@ -479,6 +483,12 @@ CREATE TABLE IF NOT EXISTS public.google_calendar_pending_events (
   end_at            TIMESTAMPTZ,
   is_all_day        BOOLEAN NOT NULL DEFAULT false,
   status            TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'imported', 'dismissed')),
+  -- 'new': a Google event with no linked CPM task yet (the original import
+  -- inbox). 'edited': an already-linked task whose Google event changed on
+  -- Google's side — node_id points at the CPM task so the review UI can show
+  -- "CPM says X / Google now says Y" and apply or dismiss the change.
+  kind              TEXT NOT NULL DEFAULT 'new' CHECK (kind IN ('new', 'edited')),
+  node_id           UUID REFERENCES public.nodes(id) ON DELETE CASCADE,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (user_id, google_event_id)
 );
@@ -493,6 +503,7 @@ CREATE POLICY "Users manage their own pending calendar events"
   WITH CHECK (auth.uid() = user_id);
 
 CREATE INDEX IF NOT EXISTS idx_gcal_pending_user ON public.google_calendar_pending_events(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_gcal_pending_node_id ON public.google_calendar_pending_events(node_id) WHERE node_id IS NOT NULL;
 
 -- Links a CPM task to the Google Calendar event it's synced to, so repeat
 -- pushes update the same event instead of creating duplicates.

@@ -3,6 +3,7 @@ import { NodeItem, NodeType, NodeStatus } from '../../types/domain';
 import { useNodes } from '../../context/NodeContext';
 import { useAuth, UserProfile } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { useGoogleCalendar } from '../../context/GoogleCalendarContext';
 import { supabase } from '../../lib/supabase';
 import { ColorPicker } from '../shared/ColorPicker';
 import { InlineCalendar, AncestorHighlight } from '../shared/InlineCalendar';
@@ -50,6 +51,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
   const { addNode, updateNode, nodes, reminders, addReminder, dismissReminder, getDescendantNodes, previewMove, commitMove } = useNodes();
   const { isIndividual, profile } = useAuth();
   const toast = useToast();
+  const { isConnected: isGoogleConnected, defaultSyncForNewTasks } = useGoogleCalendar();
   const isEditing = Boolean(initialNode);
 
   const getSuggestedType = (): NodeType => {
@@ -206,7 +208,15 @@ export const NodeForm: React.FC<NodeFormProps> = ({
 
   const [vendorContact, setVendorContact] = useState(initialNode?.vendor_contact || '');
   const [description, setDescription] = useState(initialNode?.description || initialDescription || '');
-  const [calendarSyncEnabled, setCalendarSyncEnabled] = useState(initialNode?.calendar_sync_enabled !== false);
+  const [calendarSyncEnabled, setCalendarSyncEnabled] = useState(
+    initialNode
+      ? initialNode.calendar_sync_enabled !== false
+      // Already a Google-sourced event being imported (e.g. from the Calendar
+      // review inbox) — it's already linked either way, so default sync ON
+      // regardless of the general new-task preference; an unsynced-but-linked
+      // node would otherwise never push its edits back to Google.
+      : linkedGoogleEventId ? true : defaultSyncForNewTasks
+  );
 
   // Reminder alert state (available in both Create & Edit)
   const existingNodeReminders = isEditing && initialNode 
@@ -1167,18 +1177,26 @@ export const NodeForm: React.FC<NodeFormProps> = ({
             </div>
           </div>
 
-          {/* Calendar Linking Toggle */}
-          <div className="flex items-center justify-between p-3 bg-[var(--input-bg)] rounded-xl border border-[var(--border)]">
-            <label className="flex items-center gap-1.5 font-bold text-[var(--text-secondary)] cursor-pointer">
+          {/* Calendar Linking Toggle — disabled entirely until Google Calendar is connected */}
+          <div className={`flex items-center justify-between p-3 rounded-xl border ${
+            isGoogleConnected ? 'bg-[var(--input-bg)] border-[var(--border)]' : 'bg-[var(--badge-bg)] border-[var(--border)] opacity-70'
+          }`}>
+            <label className={`flex items-center gap-1.5 font-bold text-[var(--text-secondary)] ${isGoogleConnected ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
               <Calendar className="w-3.5 h-3.5 text-[var(--text-muted)]" />
               <span>Sync to Calendar</span>
-              <span className="font-normal text-[var(--text-muted)] hidden sm:inline">(push to Google Calendar if connected)</span>
+              <span className="font-normal text-[var(--text-muted)] hidden sm:inline">
+                {isGoogleConnected ? '(push to Google Calendar)' : '(connect Google Calendar to enable)'}
+              </span>
             </label>
             <button
               type="button"
+              disabled={!isGoogleConnected}
               onClick={() => setCalendarSyncEnabled(!calendarSyncEnabled)}
+              title={isGoogleConnected ? undefined : 'Connect Google Calendar (Calendar tab) to enable syncing'}
               className={`w-9 h-5 rounded-full transition-colors flex items-center px-0.5 shrink-0 ${
-                calendarSyncEnabled ? 'bg-[var(--accent)] justify-end' : 'bg-[var(--border)] justify-start'
+                !isGoogleConnected
+                  ? 'bg-[var(--border)] justify-start cursor-not-allowed opacity-60'
+                  : calendarSyncEnabled ? 'bg-[var(--accent)] justify-end' : 'bg-[var(--border)] justify-start'
               }`}
             >
               <span className="w-4 h-4 rounded-full bg-white shadow-sm block" />

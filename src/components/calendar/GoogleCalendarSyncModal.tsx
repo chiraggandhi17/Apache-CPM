@@ -3,18 +3,19 @@ import { useAuth } from '../../context/AuthContext';
 import { useNodes } from '../../context/NodeContext';
 import { useToast } from '../../context/ToastContext';
 import { useDialog } from '../../context/DialogContext';
+import { useGoogleCalendar } from '../../context/GoogleCalendarContext';
 import { supabase } from '../../lib/supabase';
 import { NodeType } from '../../types/domain';
 import { generateGoogleCalendarUrl, CalendarEventPayload } from '../../utils/calendar-links';
 import { formatLocalDate } from '../../utils/date-format';
 import {
-  startGoogleOAuth, getGoogleCalendarStatus, disconnectGoogleCalendar, syncGoogleCalendarNow,
-  pullGoogleCalendarRange, GoogleCalendarStatus,
+  startGoogleOAuth, disconnectGoogleCalendar, syncGoogleCalendarNow, pullGoogleCalendarRange,
 } from '../../utils/google-calendar-api';
 import { NodeForm } from '../nodes/NodeForm';
 import {
   X, Calendar, ExternalLink, Sparkles, Search, Info, Link2,
   RefreshCw, Unlink, Inbox, Check, XCircle, CheckSquare, Square, Layers, Settings2, AlertTriangle,
+  ListChecks, Wrench, ArrowRightLeft,
 } from 'lucide-react';
 
 interface GoogleCalendarSyncModalProps {
@@ -30,6 +31,8 @@ interface PendingGoogleEvent {
   start_at: string;
   end_at: string | null;
   is_all_day: boolean;
+  kind: 'new' | 'edited';
+  node_id: string | null;
 }
 
 const LEVEL_LABELS: Record<Exclude<NodeType, 'reminder'>, string> = {
@@ -56,27 +59,28 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
   const toast = useToast();
   const { confirm } = useDialog();
 
-  // --- Google account connection state ---
-  const [status, setStatus] = useState<GoogleCalendarStatus | null>(null);
-  const [loadingStatus, setLoadingStatus] = useState(true);
+  // --- Google account connection state (shared app-wide — see GoogleCalendarContext) ---
+  const { status, loadingStatus, refreshStatus, updatePreferences } = useGoogleCalendar();
   const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [savingPrefs, setSavingPrefs] = useState(false);
 
-  const refreshStatus = useCallback(async () => {
-    setLoadingStatus(true);
-    try {
-      const s = await getGoogleCalendarStatus();
-      setStatus(s);
-    } catch (err: any) {
-      console.error('Failed to load Google Calendar status:', err);
-      setStatus({ connected: false });
-    } finally {
-      setLoadingStatus(false);
-    }
-  }, []);
-
+  // Re-check on open in case this modal is shown right after an OAuth
+  // redirect (the shared context's own initial fetch may have run before
+  // the connection existed yet).
   useEffect(() => { refreshStatus(); }, [refreshStatus]);
+
+  const handleToggleDefaultSync = async () => {
+    setSavingPrefs(true);
+    try {
+      await updatePreferences({ defaultSyncNewTasks: !(status?.defaultSyncNewTasks !== false), setupCompleted: true });
+    } catch (err: any) {
+      toast.error('Failed to save preference: ' + err.message);
+    } finally {
+      setSavingPrefs(false);
+    }
+  };
 
   const handleConnect = async () => {
     setConnecting(true);
@@ -150,6 +154,11 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
     }
   };
 
+  // Two tabs instead of stacking "Review" + "Manage" vertically in one long
+  // scroll — keeps the modal legible regardless of how many tasks or pending
+  // events there are.
+  const [activeTab, setActiveTab] = useState<'review' | 'manage'>('review');
+
   // --- Pending events review inbox (populated by the sync Edge Function) ---
   const [pendingEvents, setPendingEvents] = useState<PendingGoogleEvent[]>([]);
   const [loadingPending, setLoadingPending] = useState(false);
@@ -214,7 +223,7 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
     setLoadingPending(true);
     const { data, error } = await supabase
       .from('google_calendar_pending_events')
-      .select('id, google_event_id, title, description, start_at, end_at, is_all_day')
+      .select('id, google_event_id, title, description, start_at, end_at, is_all_day, kind, node_id')
       .eq('user_id', user.id)
       .eq('status', 'pending')
       .order('start_at', { ascending: true });
@@ -226,11 +235,40 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
     if (status?.connected) loadPendingEvents();
   }, [status?.connected, loadPendingEvents]);
 
+  // "New" (unlinked) events go through the existing search/select/batch-add
+  // flow below. "Edited" events (an already-linked task whose Google event
+  // changed) get their own compact apply/keep row instead — no batch
+  // selection, since there's no "add as..." choice to make for those.
+  const newPendingEvents = useMemo(() => pendingEvents.filter(ev => ev.kind !== 'edited'), [pendingEvents]);
+  const editConflictEvents = useMemo(() => pendingEvents.filter(ev => ev.kind === 'edited'), [pendingEvents]);
+
   const filteredPendingEvents = useMemo(() => {
-    if (!pendingSearch.trim()) return pendingEvents;
+    if (!pendingSearch.trim()) return newPendingEvents;
     const q = pendingSearch.toLowerCase();
-    return pendingEvents.filter(ev => ev.title.toLowerCase().includes(q));
-  }, [pendingEvents, pendingSearch]);
+    return newPendingEvents.filter(ev => ev.title.toLowerCase().includes(q));
+  }, [newPendingEvents, pendingSearch]);
+
+  const handleApplyGoogleEdit = async (ev: PendingGoogleEvent) => {
+    if (!ev.node_id) return;
+    // toGoogleEventBody() prefixes a critical task's summary with "⚡ " —
+    // strip it back off so applying a Google-side edit doesn't bake that
+    // emoji literally into the CPM title.
+    const cleanTitle = ev.title.startsWith('⚡ ') ? ev.title.slice(2) : ev.title;
+    await updateNode(ev.node_id, {
+      title: cleanTitle,
+      start_date: ev.is_all_day ? null : ev.start_at,
+      planned_date: ev.end_at || ev.start_at,
+    });
+    await supabase.from('google_calendar_pending_events').update({ status: 'imported' }).eq('id', ev.id);
+    removePendingLocally([ev.id]);
+    toast.success(`Updated "${ev.title}" from Google's change.`);
+  };
+
+  const handleKeepCpmVersion = async (ev: PendingGoogleEvent) => {
+    await supabase.from('google_calendar_pending_events').update({ status: 'dismissed' }).eq('id', ev.id);
+    removePendingLocally([ev.id]);
+    toast.success('Kept the CPM version — the next sync pushes it back to Google.');
+  };
 
   const togglePendingSelected = (id: string) => {
     setSelectedPendingIds(prev => {
@@ -271,14 +309,14 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
   };
 
   const handleDismissAll = async () => {
-    if (pendingEvents.length === 0) return;
+    if (newPendingEvents.length === 0) return;
     const ok = await confirm({
       title: 'Dismiss all new events?',
-      message: `This dismisses all ${pendingEvents.length} events currently waiting for review. You can bring them back with "Sync Now" or a range pull later — Google won't re-offer a dismissed event unless it changes.`,
+      message: `This dismisses all ${newPendingEvents.length} events currently waiting for review. You can bring them back with "Sync Now" or a range pull later — Google won't re-offer a dismissed event unless it changes.`,
       confirmLabel: 'Dismiss All',
     });
     if (!ok) return;
-    const ids = pendingEvents.map(ev => ev.id);
+    const ids = newPendingEvents.map(ev => ev.id);
     await supabase.from('google_calendar_pending_events').update({ status: 'dismissed' }).in('id', ids);
     removePendingLocally(ids);
   };
@@ -458,6 +496,24 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
                 <p className="text-[11px] text-teal-800">
                   Last synced: {status.lastSyncedAt ? formatLocalDate(status.lastSyncedAt, 'MMM d, yyyy h:mm a') : 'Never — click Sync Now'}
                 </p>
+
+                {/* Default sync preference — set right here on connect, editable any time after */}
+                <div className="flex items-center justify-between gap-2 bg-white/70 px-3 py-2 rounded-xl border border-teal-200/70">
+                  <span className="text-[11px] font-semibold text-teal-950">
+                    New tasks sync to Calendar by default
+                  </span>
+                  <button
+                    type="button"
+                    disabled={savingPrefs}
+                    onClick={handleToggleDefaultSync}
+                    className={`w-8 h-4.5 rounded-full transition-colors flex items-center px-0.5 shrink-0 disabled:opacity-60 ${
+                      status.defaultSyncNewTasks !== false ? 'bg-teal-600 justify-end' : 'bg-[var(--border)] justify-start'
+                    }`}
+                  >
+                    <span className="w-3.5 h-3.5 rounded-full bg-white shadow-sm block" />
+                  </button>
+                </div>
+
                 <div className="flex items-center gap-2 pt-1 flex-wrap">
                   <button
                     type="button"
@@ -560,14 +616,108 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
             </div>
           )}
 
-          {/* Pending events review inbox — only relevant once connected */}
+          {/* Tab switcher — Review (what Google has that CPM needs a decision
+              on) vs Manage (which CPM tasks push to Google) instead of both
+              stacked vertically in one long scroll. */}
           {status?.connected && (
+            <div className="flex items-center gap-1.5 bg-[var(--badge-bg)] p-1 rounded-2xl border border-[var(--border)]">
+              <button
+                type="button"
+                onClick={() => setActiveTab('review')}
+                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-colors ${
+                  activeTab === 'review' ? 'bg-[var(--card-bg)] text-indigo-700 shadow-2xs border border-indigo-200' : 'text-[var(--text-secondary)]'
+                }`}
+              >
+                <Inbox className="w-3.5 h-3.5" />
+                <span>Review{pendingEvents.length > 0 ? ` (${pendingEvents.length})` : ''}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('manage')}
+                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-colors ${
+                  activeTab === 'manage' ? 'bg-[var(--card-bg)] text-[var(--text-primary)] shadow-2xs border border-[var(--border)]' : 'text-[var(--text-secondary)]'
+                }`}
+              >
+                <ListChecks className="w-3.5 h-3.5" />
+                <span>Manage Synced Tasks</span>
+              </button>
+            </div>
+          )}
+
+          {/* Edited-on-Google review — an already-linked task's event changed
+              directly on Google's side. Flagged, never auto-applied. */}
+          {status?.connected && activeTab === 'review' && editConflictEvents.length > 0 && (
+            <div className="bg-amber-50/70 p-4 rounded-2xl border border-amber-200 space-y-2.5">
+              <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                <ArrowRightLeft className="w-3.5 h-3.5 text-amber-600" /> Changed on Google ({editConflictEvents.length})
+              </span>
+              <p className="text-xs text-amber-900 leading-relaxed">
+                These tasks' Google Calendar events were edited directly on Google — nothing was changed in CPM automatically. Review each one.
+              </p>
+              <div className="space-y-1.5">
+                {editConflictEvents.map(ev => {
+                  const cpmNode = nodes.find(n => n.id === ev.node_id);
+                  const googleTitle = ev.title.startsWith('⚡ ') ? ev.title.slice(2) : ev.title;
+                  const titleChanged = Boolean(cpmNode && cpmNode.title !== googleTitle);
+                  return (
+                    <div key={ev.id} className="rounded-lg bg-[var(--card-bg)] border border-amber-200 p-2.5 space-y-1.5">
+                      <p className="text-xs font-bold text-[var(--text-primary)] truncate">{cpmNode?.title || ev.title}</p>
+                      {titleChanged && (
+                        <div className="grid grid-cols-2 gap-2 text-[10px]">
+                          <div className="p-1.5 rounded-lg bg-[var(--badge-bg)] truncate">
+                            <span className="block font-bold text-[var(--text-muted)] uppercase">CPM title</span>
+                            <span className="text-[var(--text-secondary)] truncate block">{cpmNode?.title}</span>
+                          </div>
+                          <div className="p-1.5 rounded-lg bg-amber-100 truncate">
+                            <span className="block font-bold text-amber-800 uppercase">Google title</span>
+                            <span className="text-amber-900 truncate block">{googleTitle}</span>
+                          </div>
+                        </div>
+                      )}
+                      <div className="grid grid-cols-2 gap-2 text-[10px]">
+                        <div className="p-1.5 rounded-lg bg-[var(--badge-bg)]">
+                          <span className="block font-bold text-[var(--text-muted)] uppercase">CPM has</span>
+                          <span className="font-mono text-[var(--text-secondary)]">
+                            {cpmNode ? formatLocalDate(cpmNode.planned_date || cpmNode.start_date, 'MMM d, yyyy') : '—'}
+                          </span>
+                        </div>
+                        <div className="p-1.5 rounded-lg bg-amber-100">
+                          <span className="block font-bold text-amber-800 uppercase">Google now has</span>
+                          <span className="font-mono text-amber-900">{formatLocalDate(ev.start_at, 'MMM d, yyyy')}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleApplyGoogleEdit(ev)}
+                          className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold text-[11px] rounded-lg transition-colors"
+                        >
+                          <Check className="w-3 h-3" />
+                          <span>Apply Google's Change</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleKeepCpmVersion(ev)}
+                          className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1.5 bg-[var(--card-bg)] hover:bg-[var(--badge-bg)] border border-[var(--border)] text-[var(--text-secondary)] font-semibold text-[11px] rounded-lg transition-colors"
+                        >
+                          <span>Keep CPM Version</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Pending events review inbox — only relevant once connected */}
+          {status?.connected && activeTab === 'review' && (
             <div className="bg-indigo-50/60 p-4 rounded-2xl border border-indigo-200 space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
-                  <Inbox className="w-3.5 h-3.5 text-indigo-600" /> New from Google Calendar ({pendingEvents.length})
+                  <Inbox className="w-3.5 h-3.5 text-indigo-600" /> New from Google Calendar ({newPendingEvents.length})
                 </span>
-                {pendingEvents.length > 0 && (
+                {newPendingEvents.length > 0 && (
                   <button
                     type="button"
                     onClick={handleDismissAll}
@@ -759,6 +909,7 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
           )}
 
           {/* Which tasks are linked (controls what gets pushed) */}
+          {status?.connected && activeTab === 'manage' && (
           <div className="bg-[var(--badge-bg)] p-4 rounded-2xl border border-[var(--border)] space-y-3">
             <span className="text-xs font-bold text-[var(--text-primary)] block">
               Linked Tasks ({linkedCount} of {datedNodes.length})
@@ -820,6 +971,7 @@ export const GoogleCalendarSyncModal: React.FC<GoogleCalendarSyncModalProps> = (
               )}
             </div>
           </div>
+          )}
 
           <p className="text-[10px] text-[var(--text-muted)] flex items-start gap-1">
             <Info className="w-3 h-3 shrink-0 mt-0.5" />

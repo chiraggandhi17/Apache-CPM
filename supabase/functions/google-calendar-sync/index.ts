@@ -128,6 +128,7 @@ Deno.serve(async (req: Request) => {
 
     // ---------- PULL: Google Calendar → pending review inbox ----------
     let pulledCount = 0;
+    let flaggedEditCount = 0;
     let nextSyncToken: string | null = connection.sync_token;
     {
       const listUrl = new URL(`${CALENDAR_EVENTS_BASE}/${encodeURIComponent(calendarId)}/events`);
@@ -184,24 +185,69 @@ Deno.serve(async (req: Request) => {
             continue;
           }
 
-          // Already tracked by a CPM task (we pushed it there ourselves,
-          // or a previous pull already linked it) — not "new," skip it.
-          // Covers both the extendedProperties tag (belt-and-suspenders,
-          // works even before the id round-trips back onto the node) and
-          // a direct google_event_id match.
-          const cpmNodeId = event.extendedProperties?.private?.cpm_node_id;
-          if (cpmNodeId) continue;
-          const { data: linkedNode } = await admin
-            .from('nodes')
-            .select('id')
-            .eq('google_event_id', event.id)
-            .or(`user_id.eq.${userId},assignee_user_id.eq.${userId}`)
-            .maybeSingle();
-          if (linkedNode) continue;
-
           const startRaw = event.start?.dateTime || event.start?.date;
           const endRaw = event.end?.dateTime || event.end?.date;
           if (!startRaw) continue;
+
+          // Already tracked by a CPM task — either we pushed it ourselves
+          // (extendedProperties tag, belt-and-suspenders in case the id
+          // hasn't round-tripped back onto the node yet) or a previous pull
+          // already linked it. Not a "new" event, but its Google-side
+          // content may have changed since — check for an edit conflict
+          // instead of silently ignoring it.
+          const cpmNodeId = event.extendedProperties?.private?.cpm_node_id;
+          const { data: linkedNode } = await admin
+            .from('nodes')
+            .select('id, title, is_critical, start_date, planned_date, google_event_id')
+            .or(cpmNodeId ? `id.eq.${cpmNodeId}` : `google_event_id.eq.${event.id}`)
+            .or(`user_id.eq.${userId},assignee_user_id.eq.${userId}`)
+            .maybeSingle();
+
+          if (linkedNode) {
+            const expectedSummary = `${linkedNode.is_critical ? '⚡ ' : ''}${linkedNode.title}`;
+            const expectedStart = linkedNode.start_date || linkedNode.planned_date;
+            const expectedEnd = linkedNode.planned_date || linkedNode.start_date;
+            const startMatches = expectedStart && new Date(expectedStart).getTime() === new Date(startRaw).getTime();
+            const endMatches = !endRaw || !expectedEnd || new Date(expectedEnd).getTime() === new Date(endRaw).getTime();
+            const titleMatches = (event.summary || '') === expectedSummary;
+
+            if (titleMatches && startMatches && endMatches) continue; // in sync, nothing to flag
+
+            const { data: existingConflict } = await admin
+              .from('google_calendar_pending_events')
+              .select('id, status, title, start_at, end_at')
+              .eq('user_id', userId)
+              .eq('google_event_id', event.id)
+              .maybeSingle();
+
+            // Already flagged with this exact Google-side content and the
+            // user already decided (applied/dismissed) — don't re-nag every
+            // sync. A *further* edit on Google's side (content differs from
+            // what's stored) still re-opens it for review.
+            const unchanged = existingConflict
+              && existingConflict.title === (event.summary || 'Untitled Event')
+              && existingConflict.start_at === new Date(startRaw).toISOString()
+              && existingConflict.end_at === (endRaw ? new Date(endRaw).toISOString() : null);
+            if (existingConflict && existingConflict.status !== 'pending' && unchanged) continue;
+
+            await admin.from('google_calendar_pending_events').upsert(
+              {
+                user_id: userId,
+                google_event_id: event.id,
+                title: event.summary || 'Untitled Event',
+                description: event.description || null,
+                start_at: new Date(startRaw).toISOString(),
+                end_at: endRaw ? new Date(endRaw).toISOString() : null,
+                is_all_day: !event.start?.dateTime,
+                status: 'pending',
+                kind: 'edited',
+                node_id: linkedNode.id,
+              },
+              { onConflict: 'user_id,google_event_id' }
+            );
+            flaggedEditCount++;
+            continue;
+          }
 
           const { data: existing } = await admin
             .from('google_calendar_pending_events')
@@ -210,8 +256,16 @@ Deno.serve(async (req: Request) => {
             .eq('google_event_id', event.id)
             .maybeSingle();
 
-          // Don't clobber a choice the user already made on this event.
-          if (existing && existing.status !== 'pending') continue;
+          // Don't clobber a choice the user already made on this event —
+          // except a "dismissed" one during an explicit range re-pull: the
+          // user picked this exact window again, so surface it once more in
+          // case they've changed their mind. A routine incremental sync
+          // (isRangeMode === false) never resurrects a dismissed event, so
+          // background syncs stay quiet.
+          if (existing) {
+            if (existing.status === 'imported') continue;
+            if (existing.status === 'dismissed' && !isRangeMode) continue;
+          }
 
           await admin.from('google_calendar_pending_events').upsert(
             {
@@ -223,6 +277,8 @@ Deno.serve(async (req: Request) => {
               end_at: endRaw ? new Date(endRaw).toISOString() : null,
               is_all_day: !event.start?.dateTime,
               status: 'pending',
+              kind: 'new',
+              node_id: null,
             },
             { onConflict: 'user_id,google_event_id' }
           );
@@ -315,7 +371,7 @@ Deno.serve(async (req: Request) => {
       )
       .eq('user_id', userId);
 
-    return new Response(JSON.stringify({ success: true, pulled: pulledCount, pushed: pushedCount }), {
+    return new Response(JSON.stringify({ success: true, pulled: pulledCount, pushed: pushedCount, flagged: flaggedEditCount }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {

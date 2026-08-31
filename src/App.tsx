@@ -4,6 +4,7 @@ import { NodeProvider } from './context/NodeContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ToastProvider } from './context/ToastContext';
 import { DialogProvider } from './context/DialogContext';
+import { GoogleCalendarProvider } from './context/GoogleCalendarContext';
 import { AppShell } from './components/layout/AppShell';
 
 export default function App() {
@@ -12,9 +13,11 @@ export default function App() {
       <ToastProvider>
         <DialogProvider>
           <AuthProvider>
-            <NodeProvider>
-              <AppShell />
-            </NodeProvider>
+            <GoogleCalendarProvider>
+              <NodeProvider>
+                <AppShell />
+              </NodeProvider>
+            </GoogleCalendarProvider>
           </AuthProvider>
         </DialogProvider>
       </ToastProvider>

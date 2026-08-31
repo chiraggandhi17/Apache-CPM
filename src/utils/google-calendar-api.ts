@@ -5,6 +5,8 @@ export interface GoogleCalendarStatus {
   googleEmail?: string | null;
   lastSyncedAt?: string | null;
   connectedAt?: string | null;
+  defaultSyncNewTasks?: boolean;
+  setupCompleted?: boolean;
 }
 
 async function invoke<T = any>(fn: string, opts?: { method?: 'GET' | 'POST'; body?: Record<string, unknown> }): Promise<T> {
@@ -28,8 +30,13 @@ export async function disconnectGoogleCalendar(): Promise<void> {
   await invoke('google-calendar-disconnect');
 }
 
-export async function syncGoogleCalendarNow(): Promise<{ pulled: number; pushed: number }> {
-  return invoke<{ pulled: number; pushed: number }>('google-calendar-sync');
+/** Updates the current user's stored sync preferences (see GoogleCalendarStatus). */
+export async function setGoogleCalendarPreferences(prefs: { defaultSyncNewTasks?: boolean; setupCompleted?: boolean }): Promise<void> {
+  await invoke('google-calendar-preferences', { body: prefs });
+}
+
+export async function syncGoogleCalendarNow(): Promise<{ pulled: number; pushed: number; flagged: number }> {
+  return invoke<{ pulled: number; pushed: number; flagged: number }>('google-calendar-sync');
 }
 
 /**
@@ -37,8 +44,8 @@ export async function syncGoogleCalendarNow(): Promise<{ pulled: number; pushed:
  * auto window — lets the user say "just show me what's in Google between
  * these two dates" without triggering a full push/incremental sync.
  */
-export async function pullGoogleCalendarRange(rangeStart: string, rangeEnd: string): Promise<{ pulled: number }> {
-  return invoke<{ pulled: number }>('google-calendar-sync', { body: { rangeStart, rangeEnd } });
+export async function pullGoogleCalendarRange(rangeStart: string, rangeEnd: string): Promise<{ pulled: number; flagged: number }> {
+  return invoke<{ pulled: number; flagged: number }>('google-calendar-sync', { body: { rangeStart, rangeEnd } });
 }
 
 /**
