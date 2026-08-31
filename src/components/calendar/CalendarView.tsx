@@ -10,6 +10,7 @@ import { resolveColor, getReadableTextColor } from '../../lib/color-resolver';
 import { SearchableParentSelect } from '../shared/SearchableParentSelect';
 import { PortalDropdown } from '../shared/PortalDropdown';
 import { addDays, parseISO } from 'date-fns';
+import { getNodeLevel } from '../../utils/hierarchy';
 import {
   Filter, Calendar as CalendarIcon, Bell, CheckCircle2,
   Layers, ChevronLeft, ChevronRight, ChevronDown, MousePointer, Zap, Check,
@@ -77,23 +78,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
     );
   };
 
-  // Explicit type level resolution with depth fallback
-  const getNodeLevel = (node: NodeItem): number => {
-    if (node.type === 'department') return 1;
-    if (node.type === 'season') return 2;
-    if (node.type === 'project') return 3;
-    if (node.type === 'task') return 4;
-    if (node.type === 'subtask') return 5;
-
-    let depth = 1;
-    let curr: NodeItem | undefined = node;
-    while (curr && curr.parent_id) {
-      depth++;
-      curr = nodes.find(n => n.id === curr!.parent_id);
-    }
-    return Math.min(5, depth);
-  };
-
   // Calculate recursive descendant sub-task IDs for the selected parent task
   const allowedSubtreeNodeIds = useMemo(() => {
     if (!selectedParentId) return null; // Null means show all nodes
@@ -127,7 +111,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
         if (!showCompleted && n.status === 'done') return false;
 
         // Level Matrix Filter
-        const level = getNodeLevel(n);
+        const level = getNodeLevel(n, nodes);
         if (!selectedLevels.includes(level)) return false;
 
         // Level 1 Department / Stream Subtree Filter
@@ -144,7 +128,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
         }
 
         const color = resolveColor(n.color, ancestorColors);
-        const level = getNodeLevel(n);
+        const level = getNodeLevel(n, nodes);
         const isDone = n.status === 'done';
         const plannedDateStr = n.planned_date!.length >= 10 ? n.planned_date!.slice(0, 10) : n.planned_date!;
         const startDateStr = n.start_date && n.start_date.length >= 10 ? n.start_date.slice(0, 10) : plannedDateStr;
@@ -189,7 +173,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
             const parentNode = nodes.find(n => n.id === r.node_id);
             if (!parentNode) return false;
 
-            const parentLevel = getNodeLevel(parentNode);
+            const parentLevel = getNodeLevel(parentNode, nodes);
             if (!selectedLevels.includes(parentLevel)) return false;
 
             if (allowedSubtreeNodeIds && !allowedSubtreeNodeIds.has(r.node_id)) return false;
@@ -200,7 +184,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectNode }) => {
             let color = '#f59e0b';
             let parentLevel = 1;
             if (parentNode) {
-              parentLevel = getNodeLevel(parentNode);
+              parentLevel = getNodeLevel(parentNode, nodes);
               const ancestorColors: string[] = [];
               let curr: NodeItem | undefined = parentNode;
               while (curr) {

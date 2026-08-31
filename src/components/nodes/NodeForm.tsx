@@ -4,7 +4,7 @@ import { useNodes } from '../../context/NodeContext';
 import { useAuth, UserProfile } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { ColorPicker } from '../shared/ColorPicker';
-import { InlineCalendar } from '../shared/InlineCalendar';
+import { InlineCalendar, AncestorHighlight } from '../shared/InlineCalendar';
 import { CriticalFlag } from '../shared/CriticalFlag';
 import { getUnusedProjectColor } from '../../lib/color-resolver';
 import { getAncestorPath } from '../../utils/hierarchy';
@@ -12,7 +12,7 @@ import { formatLocalDate } from '../../utils/date-format';
 import { addDays, isValid, formatISO } from 'date-fns';
 import { 
   X, Calendar, User, Tag, FileText, Bell, Layers, Check, 
-  ChevronRight, ArrowLeft, ArrowRight, Trash2, Plus, Sparkles, AlertCircle 
+  ChevronRight, ArrowLeft, ArrowRight, Trash2, Plus, Sparkles, AlertCircle, RotateCcw 
 } from 'lucide-react';
 
 interface NodeFormProps {
@@ -60,6 +60,24 @@ export const NodeForm: React.FC<NodeFormProps> = ({
   const parentNode = parentId ? nodes.find(n => n.id === parentId) : null;
   const ancestorPath = getAncestorPath(parentId, nodes);
   const parentEffectiveDate = parentNode?.planned_date || parentDate;
+
+  // Each ancestor with a date/range gets its own shaded band + legend entry on the
+  // date-picking calendars below, so the user can see every parent's timing at once
+  // while choosing this subtask's own date.
+  const ancestorHighlights: AncestorHighlight[] = ancestorPath.reduce<AncestorHighlight[]>((acc, step, idx) => {
+    const ancestorNode = nodes.find(n => n.id === step.id);
+    const start = ancestorNode?.start_date?.substring(0, 10) || ancestorNode?.planned_date?.substring(0, 10);
+    if (!start) return acc;
+    const end = ancestorNode?.planned_date?.substring(0, 10) || null;
+    acc.push({
+      id: step.id,
+      label: `${step.type.charAt(0).toUpperCase()}${step.type.slice(1)}: ${step.title}`,
+      color: step.color || ['#0EA5A0', '#6366F1', '#F59E0B', '#EC4899', '#22C55E'][idx % 5],
+      start,
+      end: end && end !== start ? end : null,
+    });
+    return acc;
+  }, []);
 
   const isRootOrProject = !parentId || getSuggestedType() === 'project' || getSuggestedType() === 'department';
 
@@ -693,6 +711,26 @@ export const NodeForm: React.FC<NodeFormProps> = ({
             ) : dateMode === 'range' ? (
               /* MODE 2: DATE RANGE INPUT (Start Date -> Target End Date) via visual calendar */
               <div className="bg-[var(--card-bg)] p-4 rounded-2xl border border-indigo-200 space-y-3.5 shadow-2xs animate-in fade-in">
+                {/* Header row: label + Reset (clears both start/end so the range can be picked fresh) */}
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-bold text-[var(--text-muted)]">Date Range</span>
+                  {(startDate || plannedDate) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStartDate('');
+                        setPlannedDate('');
+                        setShowRangeCalendar(true);
+                      }}
+                      title="Reset date range"
+                      className="text-[11px] font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Reset</span>
+                    </button>
+                  )}
+                </div>
+
                 {/* Start / End readout chips — click either to jump into the calendar */}
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <button
@@ -730,6 +768,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                     }}
                     accentColor={parentResolvedColor}
                     maxDate={parentEffectiveDate ? new Date(parentEffectiveDate) : null}
+                    highlightRanges={ancestorHighlights}
                   />
                 ) : (
                   <button
@@ -811,6 +850,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                       }}
                       accentColor={parentResolvedColor}
                       maxDate={parentEffectiveDate ? new Date(parentEffectiveDate) : null}
+                      highlightRanges={ancestorHighlights}
                     />
                   ) : (
                     <button

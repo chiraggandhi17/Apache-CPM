@@ -6,6 +6,14 @@ import {
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { getReadableTextColor } from '../../lib/color-resolver';
 
+export interface AncestorHighlight {
+  id: string;
+  label: string;    // e.g. "Project: Spring Line"
+  color: string;
+  start: string;     // 'yyyy-MM-dd'
+  end?: string | null; // 'yyyy-MM-dd' — omit/null for a single-date ancestor
+}
+
 export interface InlineCalendarProps {
   mode?: 'single' | 'range';
   selectedDate?: string | null; // 'yyyy-MM-dd' — single mode
@@ -17,6 +25,8 @@ export interface InlineCalendarProps {
   maxDate?: Date | null;
   accentColor?: string;
   className?: string;
+  /** Shows a shaded band per ancestor across the dates it spans, plus a small legend. */
+  highlightRanges?: AncestorHighlight[];
 }
 
 const toStr = (d: Date) => format(d, 'yyyy-MM-dd');
@@ -42,6 +52,7 @@ export const InlineCalendar: React.FC<InlineCalendarProps> = ({
   maxDate = null,
   accentColor = '#0EA5A0',
   className = '',
+  highlightRanges = [],
 }) => {
   const anchorDate = safeParse(selectedDate) || safeParse(rangeStart) || safeParse(rangeEnd) || new Date();
   const [viewMonth, setViewMonth] = useState<Date>(startOfMonth(anchorDate));
@@ -139,6 +150,11 @@ export const InlineCalendar: React.FC<InlineCalendarProps> = ({
 
           const isRangeEndpoint = mode === 'range' && (dateStr === rangeStart || dateStr === rangeEnd);
 
+          const dayHighlights = highlightRanges.filter(h => {
+            const hEnd = h.end || h.start;
+            return dateStr >= h.start && dateStr <= hEnd;
+          });
+
           return (
             <button
               key={dateStr}
@@ -147,12 +163,20 @@ export const InlineCalendar: React.FC<InlineCalendarProps> = ({
               onClick={() => handleClick(d)}
               onMouseEnter={() => setHoverDate(dateStr)}
               onMouseLeave={() => setHoverDate(null)}
-              title={disabled ? 'Outside allowed date range' : format(d, 'EEEE, MMM d, yyyy')}
+              title={
+                disabled
+                  ? 'Outside allowed date range'
+                  : dayHighlights.length > 0
+                  ? `${format(d, 'EEEE, MMM d, yyyy')}\n${dayHighlights.map(h => h.label).join('\n')}`
+                  : format(d, 'EEEE, MMM d, yyyy')
+              }
               style={
                 isSelected || isRangeEndpoint
                   ? { backgroundColor: accentColor, color: textOnAccent }
                   : isInRange
                   ? { backgroundColor: `${accentColor}22`, color: 'var(--text-primary)' }
+                  : dayHighlights.length > 0
+                  ? { backgroundColor: `${dayHighlights[0].color}20`, color: 'var(--text-primary)' }
                   : undefined
               }
               className={`relative h-7 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center
@@ -163,10 +187,32 @@ export const InlineCalendar: React.FC<InlineCalendarProps> = ({
               `}
             >
               {format(d, 'd')}
+              {dayHighlights.length > 0 && !isSelected && !isRangeEndpoint && (
+                <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 flex items-center gap-0.5">
+                  {dayHighlights.slice(0, 3).map(h => (
+                    <span
+                      key={h.id}
+                      className="block w-1 h-1 rounded-full"
+                      style={{ backgroundColor: h.color }}
+                    />
+                  ))}
+                </span>
+              )}
             </button>
           );
         })}
       </div>
+
+      {highlightRanges.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2.5 pt-2 border-t border-[var(--border)]">
+          {Array.from(new Map(highlightRanges.map(h => [h.id, h])).values()).map(h => (
+            <span key={h.id} className="flex items-center gap-1 text-[10px] font-semibold text-[var(--text-secondary)]">
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: h.color }} />
+              {h.label}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

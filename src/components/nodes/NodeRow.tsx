@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { TreeNode, NodeType, NodeItem } from '../../types/domain';
+import { getNodeLevel } from '../../utils/hierarchy';
 import { useNodes } from '../../context/NodeContext';
 import { StatusBadge } from '../shared/StatusBadge';
 import { CriticalFlag } from '../shared/CriticalFlag';
@@ -9,7 +10,7 @@ import { useToast } from '../../context/ToastContext';
 import { SubtreeCompletionModal } from './SubtreeCompletionModal';
 import { 
   ChevronRight, ChevronDown, Plus, Folder, Calendar, CheckSquare, 
-  Layers, Clock, Check, Lock, Edit3, Trash2, Bell, Building2, FolderKanban, Box, Zap, CornerDownRight
+  Layers, Clock, Check, Lock, Edit3, Trash2, Bell, Building2, FolderKanban, Box, Zap, CornerDownRight, Maximize2
 } from 'lucide-react';
 
 interface NodeRowProps {
@@ -18,6 +19,9 @@ interface NodeRowProps {
   selectMode?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (nodeId: string) => void;
+  expandedIds?: Set<string>;
+  onToggleExpand?: (nodeId: string) => void;
+  onExpandSubtree?: (nodeId: string) => void;
 }
 
 const getNodeIcon = (type: NodeType): React.ReactNode => {
@@ -32,16 +36,17 @@ const getNodeIcon = (type: NodeType): React.ReactNode => {
   }
 };
 
-export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode, selectMode = false, selectedIds, onToggleSelect }) => {
+export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode, selectMode = false, selectedIds, onToggleSelect, expandedIds, onToggleExpand, onExpandSubtree }) => {
   const { 
-    reminders, toggleCritical, updateStatus, toggleDone, deleteNode, 
+    nodes, reminders, toggleCritical, updateStatus, toggleDone, deleteNode, 
     getNodeAccessInfo, getDescendantNodes, completeNodeAndSubtree,
     hideNodeLocally, restoreNodesLocally, cleanupGoogleEventsFor,
   } = useNodes();
   const toast = useToast();
   
-  // Collapse tree hierarchy by default
-  const [isExpanded, setIsExpanded] = useState(false);
+  // Collapsed by default; expansion is lifted to NodeTree so it can be driven
+  // by "Expand All" / per-row "Expand Subtree" actions across the whole hierarchy.
+  const isExpanded = expandedIds?.has(node.id) ?? false;
   const [showAddChild, setShowAddChild] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
@@ -127,7 +132,7 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode, selectMode
               type="button"
               onClick={e => {
                 e.stopPropagation();
-                setIsExpanded(!isExpanded);
+                onToggleExpand?.(node.id);
               }}
               className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border-subtle)] transition-colors"
             >
@@ -135,6 +140,21 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode, selectMode
             </button>
           ) : (
             <span className="w-6" />
+          )}
+
+          {/* Expand entire subtree of this task in one click */}
+          {hasChildren && !isExpanded && (
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                onExpandSubtree?.(node.id);
+              }}
+              title="Expand this task's full subtree"
+              className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--border-subtle)] transition-colors"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
           )}
 
           {/* Quick 1-click Completion Checkbox (With Subtree Cascade) */}
@@ -170,7 +190,7 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode, selectMode
               }}
               className="text-[9px] font-mono font-extrabold px-1 rounded border shadow-2xs"
             >
-              L{node.depth + 1}
+              L{getNodeLevel(node, nodes)}
             </span>
           </div>
 
@@ -306,6 +326,9 @@ export const NodeRow: React.FC<NodeRowProps> = ({ node, onSelectNode, selectMode
               selectMode={selectMode}
               selectedIds={selectedIds}
               onToggleSelect={onToggleSelect}
+              expandedIds={expandedIds}
+              onToggleExpand={onToggleExpand}
+              onExpandSubtree={onExpandSubtree}
             />
           ))}
         </div>

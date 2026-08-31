@@ -49,3 +49,26 @@ export function getSiblingNodes(nodeId: string, allNodes: NodeItem[]): { prevNod
 
   return { prevNode, nextNode };
 }
+
+/**
+ * Resolves a node's hierarchy level (1-5) based on its type, falling back to
+ * structural parent-chain depth for any unmatched/legacy type. This is the
+ * single source of truth for "level" so that level badges (NodeRow) and the
+ * calendar's level filters/badges (CalendarView) never diverge when a node's
+ * type is edited independently of its parent_id.
+ */
+export function getNodeLevel(node: NodeItem, allNodes: NodeItem[]): number {
+  if (node.type === 'department') return 1;
+  if (node.type === 'season') return 2;
+  if (node.type === 'project') return 3;
+  if (node.type === 'task') return 4;
+  if (node.type === 'subtask') return 5;
+
+  let depth = 1;
+  let curr: NodeItem | undefined = node;
+  while (curr && curr.parent_id) {
+    depth++;
+    curr = allNodes.find(n => n.id === curr!.parent_id);
+  }
+  return Math.min(5, depth);
+}

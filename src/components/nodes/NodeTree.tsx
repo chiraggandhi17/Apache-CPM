@@ -7,14 +7,14 @@ import { TreeNode } from '../../types/domain';
 import { NodeRow } from './NodeRow';
 import { NodeForm } from './NodeForm';
 import { matchesSearchQuery } from '../../utils/search';
-import { Plus, FolderPlus, Layers, Search, Filter, AlertCircle, Sparkles, CheckSquare, Square, X, Trash2, CheckCircle2, Circle } from 'lucide-react';
+import { Plus, FolderPlus, Layers, Search, Filter, AlertCircle, Sparkles, CheckSquare, Square, X, Trash2, CheckCircle2, Circle, Maximize2, Minimize2 } from 'lucide-react';
 
 interface NodeTreeProps {
   onSelectNode: (node: TreeNode) => void;
 }
 
 export const NodeTree: React.FC<NodeTreeProps> = ({ onSelectNode }) => {
-  const { getTree, nodes, updateStatus, deleteNode, hideNodeLocally, restoreNodesLocally, cleanupGoogleEventsFor } = useNodes();
+  const { getTree, nodes, updateStatus, deleteNode, hideNodeLocally, restoreNodesLocally, cleanupGoogleEventsFor, getDescendantNodes } = useNodes();
   const { isIndividual } = useAuth();
   const toast = useToast();
   const { confirm } = useDialog();
@@ -28,6 +28,49 @@ export const NodeTree: React.FC<NodeTreeProps> = ({ onSelectNode }) => {
   // Bulk selection / bulk actions
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Hierarchy expand/collapse state (shared across the whole tree, threaded down through NodeRow)
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const handleToggleExpand = (nodeId: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      return next;
+    });
+  };
+
+  const handleExpandAll = () => {
+    const idsWithChildren = new Set<string>();
+    const collect = (list: TreeNode[]) => {
+      for (const n of list) {
+        if (n.children && n.children.length > 0) {
+          idsWithChildren.add(n.id);
+          collect(n.children);
+        }
+      }
+    };
+    collect(rawTree);
+    setExpandedIds(idsWithChildren);
+  };
+
+  const handleCollapseAll = () => {
+    setExpandedIds(new Set());
+  };
+
+  const handleExpandSubtree = (nodeId: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      next.add(nodeId);
+      for (const descendant of getDescendantNodes(nodeId)) {
+        if (nodes.some(n => n.parent_id === descendant.id)) {
+          next.add(descendant.id);
+        }
+      }
+      return next;
+    });
+  };
 
   const toggleSelectMode = () => {
     setSelectMode(prev => !prev);
@@ -127,6 +170,26 @@ export const NodeTree: React.FC<NodeTreeProps> = ({ onSelectNode }) => {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={handleExpandAll}
+            title="Expand entire hierarchy"
+            className="px-3 py-2 text-xs font-bold rounded-xl border shadow-xs transition-colors flex items-center gap-1.5 bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--canvas-bg)]"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Expand All</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleCollapseAll}
+            title="Collapse entire hierarchy"
+            className="px-3 py-2 text-xs font-bold rounded-xl border shadow-xs transition-colors flex items-center gap-1.5 bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--canvas-bg)]"
+          >
+            <Minimize2 className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Collapse All</span>
+          </button>
+
           <button
             type="button"
             onClick={toggleSelectMode}
@@ -234,6 +297,9 @@ export const NodeTree: React.FC<NodeTreeProps> = ({ onSelectNode }) => {
               selectMode={selectMode}
               selectedIds={selectedIds}
               onToggleSelect={handleToggleSelect}
+              expandedIds={expandedIds}
+              onToggleExpand={handleToggleExpand}
+              onExpandSubtree={handleExpandSubtree}
             />
           ))}
         </div>
