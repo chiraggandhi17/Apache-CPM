@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { TreeNode, NodeType, NodeItem } from '../../types/domain';
-import { getNodeLevel } from '../../utils/hierarchy';
+import { getNodeLevel, getChildType } from '../../utils/hierarchy';
 import { useNodes } from '../../context/NodeContext';
 import { StatusBadge } from '../shared/StatusBadge';
 import { CriticalFlag } from '../shared/CriticalFlag';
@@ -10,7 +10,7 @@ import { useToast } from '../../context/ToastContext';
 import { SubtreeCompletionModal } from './SubtreeCompletionModal';
 import { 
   ChevronRight, ChevronDown, Plus, Folder, Calendar, CheckSquare, 
-  Layers, Clock, Check, Lock, Edit3, Trash2, Bell, Building2, FolderKanban, Box, Zap, CornerDownRight, Maximize2, GripVertical
+  Layers, Clock, Check, Lock, Edit3, Trash2, Bell, Building2, FolderKanban, Box, Zap, CornerDownRight, Maximize2, GripVertical, AlertTriangle, Wrench
 } from 'lucide-react';
 
 interface NodeRowProps {
@@ -49,7 +49,7 @@ export const NodeRow: React.FC<NodeRowProps> = ({
   const { 
     nodes, reminders, toggleCritical, updateStatus, toggleDone, deleteNode, 
     getNodeAccessInfo, getDescendantNodes, completeNodeAndSubtree,
-    hideNodeLocally, restoreNodesLocally, cleanupGoogleEventsFor,
+    hideNodeLocally, restoreNodesLocally, cleanupGoogleEventsFor, resyncNodeType,
   } = useNodes();
   const toast = useToast();
   
@@ -108,6 +108,14 @@ export const NodeRow: React.FC<NodeRowProps> = ({
   const isDraggable = isEditable && !selectMode && node.type !== 'department';
   const isBeingDragged = draggingId === node.id;
   const isDropTarget = Boolean(draggingId) && draggingId !== node.id && dragOverId === node.id;
+
+  // Detects data left over from before the Type dropdown was locked on edit -
+  // a node whose type (and therefore level badge) no longer matches its
+  // actual parent. Surfaces a one-click fix instead of a silently wrong tree.
+  const parentNode = node.parent_id ? nodes.find(n => n.id === node.parent_id) : null;
+  const expectedType = parentNode ? getChildType(parentNode.type) : 'department';
+  const isLevelMismatched = node.type !== expectedType;
+  const [isFixingLevel, setIsFixingLevel] = useState(false);
 
   return (
     <div className="space-y-1">
@@ -245,6 +253,27 @@ export const NodeRow: React.FC<NodeRowProps> = ({
             >
               L{getNodeLevel(node, nodes)}
             </span>
+            {isLevelMismatched && (
+              <button
+                type="button"
+                disabled={isFixingLevel}
+                onClick={async e => {
+                  e.stopPropagation();
+                  setIsFixingLevel(true);
+                  try {
+                    await resyncNodeType(node.id);
+                    toast.success(`Level corrected for "${node.title}".`);
+                  } finally {
+                    setIsFixingLevel(false);
+                  }
+                }}
+                title={`Level badge doesn't match this task's position in the hierarchy. Click to correct it to L${['department','season','project','task','subtask'].indexOf(expectedType) + 1}.`}
+                className="flex items-center gap-0.5 text-[9px] font-bold px-1 rounded border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 shadow-2xs disabled:opacity-50"
+              >
+                <AlertTriangle className="w-2.5 h-2.5" />
+                <Wrench className="w-2.5 h-2.5" />
+              </button>
+            )}
           </div>
 
           {/* Title */}

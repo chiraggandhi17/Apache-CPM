@@ -9,6 +9,7 @@ import { NodeForm } from './NodeForm';
 import { MoveConflictModal } from './MoveConflictModal';
 import { MovePreview } from '../../context/NodeContext';
 import { matchesSearchQuery } from '../../utils/search';
+import { getAncestorPath } from '../../utils/hierarchy';
 import { Plus, FolderPlus, Layers, Search, Filter, AlertCircle, Sparkles, CheckSquare, Square, X, Trash2, CheckCircle2, Circle, Maximize2, Minimize2 } from 'lucide-react';
 
 interface NodeTreeProps {
@@ -104,7 +105,23 @@ export const NodeTree: React.FC<NodeTreeProps> = ({ onSelectNode }) => {
 
   const handleConfirmMove = async (dateOverrides: Record<string, string>) => {
     if (!movePreview) return;
+
+    // The destination's own ancestor chain is unaffected by this move (only the
+    // moved node's parent changes), so it's safe to read it from the pre-move
+    // `nodes` snapshot here. Auto-expand that whole path (+ the destination
+    // itself, + the moved node) so the result is visible immediately instead
+    // of landing inside a still-collapsed row.
+    const pathToReveal = getAncestorPath(movePreview.newParentId, nodes).map(step => step.id);
+
     await commitMove(movePreview.nodeId, movePreview.newParentId, dateOverrides);
+
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      pathToReveal.forEach(id => next.add(id));
+      next.add(movePreview.nodeId);
+      return next;
+    });
+
     toast.success(`Moved "${movePreview.nodeTitle}" under "${movePreview.newParentTitle}".`);
     setMovePreview(null);
   };

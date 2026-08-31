@@ -12,7 +12,7 @@ import { formatLocalDate } from '../../utils/date-format';
 import { addDays, isValid, formatISO } from 'date-fns';
 import { 
   X, Calendar, User, Tag, FileText, Bell, Layers, Check, 
-  ChevronRight, ArrowLeft, ArrowRight, Trash2, Plus, Sparkles, AlertCircle, RotateCcw 
+  ChevronRight, ArrowLeft, ArrowRight, Trash2, Plus, Sparkles, AlertCircle, RotateCcw, Move, Lock 
 } from 'lucide-react';
 
 interface NodeFormProps {
@@ -473,17 +473,36 @@ export const NodeForm: React.FC<NodeFormProps> = ({
           <div className="space-y-3">
             <div>
               <label className="block font-bold text-[var(--text-secondary)] mb-1.5">Node Type / Category</label>
-              <select
-                value={type}
-                onChange={e => setType(e.target.value as NodeType)}
-                className="w-full text-xs px-3 py-2 bg-[var(--input-bg)] border border-[var(--border)] rounded-xl font-semibold outline-none focus:border-[var(--accent)] focus:bg-[var(--card-bg)]"
-              >
-                <option value="department">Department / Stream (Level 1)</option>
-                <option value="season">Season / Group (Level 2)</option>
-                <option value="project">Project / Model (Level 3)</option>
-                <option value="task">Major Task (Level 4)</option>
-                <option value="subtask">Sub-Task Milestone (Level 5)</option>
-              </select>
+              {isEditing ? (
+                <div className="space-y-1.5">
+                  <div className="w-full text-xs px-3 py-2 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl font-semibold text-[var(--text-secondary)] flex items-center gap-1.5">
+                    <Lock className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                    <span>
+                      {type === 'department' && 'Department / Stream (Level 1)'}
+                      {type === 'season' && 'Season / Group (Level 2)'}
+                      {type === 'project' && 'Project / Model (Level 3)'}
+                      {type === 'task' && 'Major Task (Level 4)'}
+                      {type === 'subtask' && 'Sub-Task Milestone (Level 5)'}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-[var(--text-muted)] flex items-center gap-1">
+                    <Move className="w-3 h-3 shrink-0" />
+                    <span>Level is set by position in the hierarchy — close this and drag the task to a new parent to change it.</span>
+                  </p>
+                </div>
+              ) : (
+                <select
+                  value={type}
+                  onChange={e => setType(e.target.value as NodeType)}
+                  className="w-full text-xs px-3 py-2 bg-[var(--input-bg)] border border-[var(--border)] rounded-xl font-semibold outline-none focus:border-[var(--accent)] focus:bg-[var(--card-bg)]"
+                >
+                  <option value="department">Department / Stream (Level 1)</option>
+                  <option value="season">Season / Group (Level 2)</option>
+                  <option value="project">Project / Model (Level 3)</option>
+                  <option value="task">Major Task (Level 4)</option>
+                  <option value="subtask">Sub-Task Milestone (Level 5)</option>
+                </select>
+              )}
             </div>
 
             {/* De-cluttered Optional Color Swatch Override Checkbox */}

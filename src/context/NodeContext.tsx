@@ -73,6 +73,7 @@ interface NodeContextType {
   getTree: () => TreeNode[];
   previewMove: (nodeId: string, newParentId: string) => MovePreview | MoveInvalidReason;
   commitMove: (nodeId: string, newParentId: string, dateOverrides?: Record<string, string>) => Promise<void>;
+  resyncNodeType: (nodeId: string) => Promise<void>;
   getTodayUpcomingFeed: () => {
     overdue: TodayItem[];
     today: TodayItem[];
@@ -616,18 +617,15 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * with their new tree position (capped at 'subtask', there is no Level 6), and
    * applies any user-supplied date fixes for conflicts surfaced by previewMove.
    */
-  const commitMove = async (nodeId: string, newParentId: string, dateOverrides: Record<string, string> = {}) => {
-    const movedNode = nodes.find(n => n.id === nodeId);
-    const newParent = nodes.find(n => n.id === newParentId);
-    if (!movedNode || !newParent) return;
-
-    const oldParentTitle = nodes.find(n => n.id === movedNode.parent_id)?.title || 'Root';
+  /**
+   * Computes the correct `type` for `nodeId` and every one of its descendants
+   * given `newBaseType` (the type the node itself should become), preserving
+   * each descendant's relative depth below it and capping at 'subtask' (there
+   * is no Level 6). Shared by commitMove (position + level both change) and
+   * resyncNodeType (level corrected in place, position unchanged).
+   */
+  const computeTypeCascade = (nodeId: string, newBaseType: NodeItem['type']): Map<string, NodeItem['type']> => {
     const descendants = getDescendantNodes(nodeId);
-    const movedNewType = getChildType(newParent.type);
-
-    // Recompute each descendant's new type at the same relative depth below
-    // the moved node, so a Level 5 subtask that gets dragged to become a
-    // Level 4 task (say) correctly shifts everything beneath it too.
     const depthOf = new Map<string, number>();
     depthOf.set(nodeId, 0);
     for (const d of descendants) {
@@ -635,7 +633,25 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       depthOf.set(d.id, (parentDepth ?? 0) + 1);
     }
     const typeOrder: NodeItem['type'][] = ['department', 'season', 'project', 'task', 'subtask'];
-    const baseIndex = typeOrder.indexOf(movedNewType);
+    const baseIndex = typeOrder.indexOf(newBaseType);
+
+    const result = new Map<string, NodeItem['type']>();
+    result.set(nodeId, newBaseType);
+    for (const d of descendants) {
+      const depth = depthOf.get(d.id) ?? 1;
+      result.set(d.id, typeOrder[Math.min(typeOrder.length - 1, baseIndex + depth)]);
+    }
+    return result;
+  };
+
+  const commitMove = async (nodeId: string, newParentId: string, dateOverrides: Record<string, string> = {}) => {
+    const movedNode = nodes.find(n => n.id === nodeId);
+    const newParent = nodes.find(n => n.id === newParentId);
+    if (!movedNode || !newParent) return;
+
+    const oldParentTitle = nodes.find(n => n.id === movedNode.parent_id)?.title || 'Root';
+    const movedNewType = getChildType(newParent.type);
+    const newTypes = computeTypeCascade(nodeId, movedNewType);
 
     const newSiblings = nodes.filter(n => n.parent_id === newParentId);
     const nextSortOrder = newSiblings.length > 0 ? Math.max(...newSiblings.map(n => n.sort_order || 0)) + 1 : 1;
@@ -649,14 +665,15 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (dateOverrides[nodeId]) movedUpdate.planned_date = dateOverrides[nodeId];
     await supabase.from('nodes').update(movedUpdate).eq('id', nodeId);
 
-    for (const d of descendants) {
-      const depth = depthOf.get(d.id) ?? 1;
-      const newType = typeOrder[Math.min(typeOrder.length - 1, baseIndex + depth)];
+    for (const [id, newType] of newTypes) {
+      if (id === nodeId) continue;
+      const d = nodes.find(n => n.id === id);
+      if (!d) continue;
       const update: Record<string, any> = { updated_at: new Date().toISOString() };
       if (newType !== d.type) update.type = newType;
-      if (dateOverrides[d.id]) update.planned_date = dateOverrides[d.id];
+      if (dateOverrides[id]) update.planned_date = dateOverrides[id];
       if (Object.keys(update).length > 1) {
-        await supabase.from('nodes').update(update).eq('id', d.id);
+        await supabase.from('nodes').update(update).eq('id', id);
       }
     }
 
@@ -666,6 +683,39 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       `Moved "${movedNode.title}" from "${oldParentTitle}" to "${newParent.title}"`,
       { parent_id: movedNode.parent_id, type: movedNode.type },
       { parent_id: newParentId, type: movedNewType }
+    );
+
+    await fetchNodesAndReminders();
+  };
+
+  /**
+   * Corrects `nodeId`'s (and its descendants') `type` to match where it
+   * actually sits in the tree right now, without moving anything. Fixes
+   * nodes left mismatched from before the Type dropdown was locked down on
+   * edit (or any other data drift) — the badge and the indentation stop
+   * disagreeing once this runs.
+   */
+  const resyncNodeType = async (nodeId: string) => {
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) return;
+
+    const parent = node.parent_id ? nodes.find(n => n.id === node.parent_id) : null;
+    const correctType = parent ? getChildType(parent.type) : 'department';
+    const newTypes = computeTypeCascade(nodeId, correctType);
+
+    const prevType = node.type;
+    for (const [id, newType] of newTypes) {
+      const n = nodes.find(item => item.id === id);
+      if (!n || n.type === newType) continue;
+      await supabase.from('nodes').update({ type: newType, updated_at: new Date().toISOString() }).eq('id', id);
+    }
+
+    await logNodeActivity(
+      nodeId,
+      'moved',
+      `Corrected hierarchy level for "${node.title}" (was showing as ${prevType}, position says ${correctType})`,
+      { type: prevType },
+      { type: correctType }
     );
 
     await fetchNodesAndReminders();
@@ -1185,6 +1235,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
         getTree,
         previewMove,
         commitMove,
+        resyncNodeType,
         getTodayUpcomingFeed,
         fetchNodeAuditLogs,
         logNodeActivity,
