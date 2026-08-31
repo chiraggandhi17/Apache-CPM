@@ -1,18 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { NodeItem, NodeType, NodeStatus } from '../../types/domain';
 import { useNodes } from '../../context/NodeContext';
 import { useAuth, UserProfile } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { supabase } from '../../lib/supabase';
 import { ColorPicker } from '../shared/ColorPicker';
 import { InlineCalendar, AncestorHighlight } from '../shared/InlineCalendar';
 import { CriticalFlag } from '../shared/CriticalFlag';
+import { MoveConflictModal } from './MoveConflictModal';
+import { MovePreview } from '../../context/NodeContext';
 import { getUnusedProjectColor } from '../../lib/color-resolver';
-import { getAncestorPath } from '../../utils/hierarchy';
+import { getAncestorPath, getRootAncestorId } from '../../utils/hierarchy';
 import { formatLocalDate } from '../../utils/date-format';
 import { addDays, isValid, formatISO } from 'date-fns';
 import { 
   X, Calendar, User, Tag, FileText, Bell, Layers, Check, 
-  ChevronRight, ArrowLeft, ArrowRight, Trash2, Plus, Sparkles, AlertCircle, RotateCcw, Move, Lock 
+  ChevronRight, ArrowLeft, ArrowRight, Trash2, Plus, Sparkles, AlertCircle, RotateCcw, Move, ArrowRightLeft 
 } from 'lucide-react';
 
 interface NodeFormProps {
@@ -44,8 +47,9 @@ export const NodeForm: React.FC<NodeFormProps> = ({
   onClose,
   onSaved,
 }) => {
-  const { addNode, updateNode, nodes, reminders, addReminder, dismissReminder } = useNodes();
+  const { addNode, updateNode, nodes, reminders, addReminder, dismissReminder, getDescendantNodes, previewMove, commitMove } = useNodes();
   const { isIndividual, profile } = useAuth();
+  const toast = useToast();
   const isEditing = Boolean(initialNode);
 
   const getSuggestedType = (): NodeType => {
@@ -89,6 +93,31 @@ export const NodeForm: React.FC<NodeFormProps> = ({
 
   const [title, setTitle] = useState(initialNode?.title || initialTitle || '');
   const [type, setType] = useState<NodeType>(getSuggestedType());
+
+  // Reverse of getChildType(): which parent type(s) would produce a child of
+  // this type. 'department' has none — it's root-only, so it's excluded from
+  // the editable dropdown entirely for nodes that aren't already one.
+  const VALID_PARENT_TYPES_FOR: Record<NodeType, NodeType[]> = {
+    department: [],
+    season: ['department'],
+    project: ['season'],
+    task: ['project'],
+    subtask: ['task', 'subtask'],
+    reminder: [],
+  };
+
+  const typeChanged = isEditing && Boolean(initialNode) && type !== initialNode!.type;
+
+  const validParentCandidates = useMemo(() => {
+    if (!typeChanged || !initialNode) return [];
+    const allowedParentTypes = VALID_PARENT_TYPES_FOR[type] || [];
+    const excludedIds = new Set([initialNode.id, ...getDescendantNodes(initialNode.id).map(n => n.id)]);
+    const rootId = getRootAncestorId(initialNode.id, nodes);
+    return nodes
+      .filter(n => allowedParentTypes.includes(n.type) && !excludedIds.has(n.id) && getRootAncestorId(n.id, nodes) === rootId)
+      .sort((a, b) => a.title.localeCompare(b.title));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeChanged, type, initialNode, nodes]);
   const [startDate, setStartDate] = useState(
     initialNode?.start_date ? initialNode.start_date.substring(0, 10) : ''
   );
@@ -190,6 +219,13 @@ export const NodeForm: React.FC<NodeFormProps> = ({
   const [reminderMessage, setReminderMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Changing Level/Type in edit mode requires picking a new, valid parent —
+  // this drives the same conflict-checked move used by drag-and-drop, just
+  // triggered from the form instead of a drag gesture.
+  const [pendingNewParentId, setPendingNewParentId] = useState<string | null>(null);
+  const [pendingMovePreview, setPendingMovePreview] = useState<MovePreview | null>(null);
+  const [pendingFormPayload, setPendingFormPayload] = useState<Record<string, any> | null>(null);
+
   // Calculate final offset
   const computedOffsetDays: number | null = (() => {
     if (dateMode !== 'offset' || !parentId) return null;
@@ -232,8 +268,10 @@ export const NodeForm: React.FC<NodeFormProps> = ({
       return '⚠️ Invalid Target Date: Milestone target date cannot be set before year 2020.';
     }
 
-    // Rule B: Target date CANNOT be later than parent node target date
-    if (parentNode && parentEffectiveDate) {
+    // Rule B: Target date CANNOT be later than parent node target date.
+    // Skipped when the level is being changed — the relevant check there is
+    // against the *new* parent, handled by previewMove/the move-conflict modal.
+    if (!typeChanged && parentNode && parentEffectiveDate) {
       const parentDateObj = new Date(parentEffectiveDate);
       if (isValid(parentDateObj) && targetDateObj > parentDateObj) {
         const childFormatted = formatLocalDate(calculatedTargetDate, 'MMM d, yyyy');
@@ -307,9 +345,9 @@ export const NodeForm: React.FC<NodeFormProps> = ({
 
       if (isEditing && initialNode) {
         targetNodeId = initialNode.id;
-        await updateNode(initialNode.id, {
+
+        const fieldsPayload = {
           title,
-          type,
           color: finalColor,
           start_date: finalStartDate,
           planned_date: finalPlannedDate,
@@ -321,7 +359,37 @@ export const NodeForm: React.FC<NodeFormProps> = ({
           calendar_sync_enabled: calendarSyncEnabled,
           vendor_contact: vendorContact || null,
           description: description || null,
-        });
+        };
+
+        if (typeChanged) {
+          // Level changed: this is really a reparent. Run it through the same
+          // previewMove/commitMove path drag-and-drop uses, so it gets the same
+          // validation and date-conflict review instead of silently drifting
+          // out of sync with the tree (as the old free-editable dropdown did).
+          if (!pendingNewParentId) {
+            toast.error('Choose a new parent for this level change before saving.');
+            setIsSubmitting(false);
+            return;
+          }
+          const preview = previewMove(initialNode.id, pendingNewParentId);
+          if (!('conflicts' in preview)) {
+            toast.error(preview.message);
+            setIsSubmitting(false);
+            return;
+          }
+          if (preview.conflicts.length > 0) {
+            // Hold off on saving anything until the conflicts are resolved in
+            // the modal — keeps a cancelled move from leaving a half-applied edit.
+            setPendingFormPayload(fieldsPayload);
+            setPendingMovePreview(preview);
+            setIsSubmitting(false);
+            return;
+          }
+          await updateNode(initialNode.id, fieldsPayload);
+          await commitMove(initialNode.id, pendingNewParentId);
+        } else {
+          await updateNode(initialNode.id, { ...fieldsPayload, type });
+        }
       } else {
         const newId = crypto.randomUUID();
         targetNodeId = await addNode({
@@ -374,6 +442,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
   };
 
   return (
+    <>
     <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
       <div className="bg-[var(--card-bg)] rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden border border-[var(--border)] max-h-[90vh] flex flex-col">
         
@@ -473,35 +542,49 @@ export const NodeForm: React.FC<NodeFormProps> = ({
           <div className="space-y-3">
             <div>
               <label className="block font-bold text-[var(--text-secondary)] mb-1.5">Node Type / Category</label>
-              {isEditing ? (
-                <div className="space-y-1.5">
-                  <div className="w-full text-xs px-3 py-2 bg-[var(--badge-bg)] border border-[var(--border)] rounded-xl font-semibold text-[var(--text-secondary)] flex items-center gap-1.5">
-                    <Lock className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                    <span>
-                      {type === 'department' && 'Department / Stream (Level 1)'}
-                      {type === 'season' && 'Season / Group (Level 2)'}
-                      {type === 'project' && 'Project / Model (Level 3)'}
-                      {type === 'task' && 'Major Task (Level 4)'}
-                      {type === 'subtask' && 'Sub-Task Milestone (Level 5)'}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-[var(--text-muted)] flex items-center gap-1">
-                    <Move className="w-3 h-3 shrink-0" />
-                    <span>Level is set by position in the hierarchy — close this and drag the task to a new parent to change it.</span>
+              <select
+                value={type}
+                onChange={e => {
+                  setType(e.target.value as NodeType);
+                  setPendingNewParentId(null);
+                }}
+                className="w-full text-xs px-3 py-2 bg-[var(--input-bg)] border border-[var(--border)] rounded-xl font-semibold outline-none focus:border-[var(--accent)] focus:bg-[var(--card-bg)]"
+              >
+                {(!isEditing || initialNode?.type === 'department') && (
+                  <option value="department">Department / Stream (Level 1)</option>
+                )}
+                <option value="season">Season / Group (Level 2)</option>
+                <option value="project">Project / Model (Level 3)</option>
+                <option value="task">Major Task (Level 4)</option>
+                <option value="subtask">Sub-Task Milestone (Level 5)</option>
+              </select>
+
+              {typeChanged && (
+                <div className="mt-2 p-3 bg-indigo-50/70 rounded-xl border border-indigo-200 space-y-2">
+                  <p className="text-[11px] font-semibold text-indigo-900 flex items-center gap-1.5">
+                    <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
+                    <span>Changing the level moves this task — pick its new parent:</span>
+                  </p>
+                  <select
+                    value={pendingNewParentId || ''}
+                    onChange={e => setPendingNewParentId(e.target.value || null)}
+                    className="w-full text-xs px-3 py-2 bg-[var(--input-bg)] border border-indigo-300 rounded-xl font-semibold outline-none focus:border-indigo-500"
+                  >
+                    <option value="">Select new parent...</option>
+                    {validParentCandidates.map(p => (
+                      <option key={p.id} value={p.id}>{p.title}</option>
+                    ))}
+                  </select>
+                  {validParentCandidates.length === 0 && (
+                    <p className="text-[10px] text-indigo-700 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3 shrink-0" />
+                      <span>No valid parent of the right type exists yet in this task's tree for that level.</span>
+                    </p>
+                  )}
+                  <p className="text-[10px] text-indigo-700">
+                    Any date conflicts this creates will be shown for review before it's applied — same as dragging it in the hierarchy.
                   </p>
                 </div>
-              ) : (
-                <select
-                  value={type}
-                  onChange={e => setType(e.target.value as NodeType)}
-                  className="w-full text-xs px-3 py-2 bg-[var(--input-bg)] border border-[var(--border)] rounded-xl font-semibold outline-none focus:border-[var(--accent)] focus:bg-[var(--card-bg)]"
-                >
-                  <option value="department">Department / Stream (Level 1)</option>
-                  <option value="season">Season / Group (Level 2)</option>
-                  <option value="project">Project / Model (Level 3)</option>
-                  <option value="task">Major Task (Level 4)</option>
-                  <option value="subtask">Sub-Task Milestone (Level 5)</option>
-                </select>
               )}
             </div>
 
@@ -1138,9 +1221,9 @@ export const NodeForm: React.FC<NodeFormProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || Boolean(dateValidationError)}
+              disabled={isSubmitting || Boolean(dateValidationError) || (typeChanged && !pendingNewParentId)}
               className={`h-9 px-5 font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 ${
-                dateValidationError
+                dateValidationError || (typeChanged && !pendingNewParentId)
                   ? 'bg-[var(--badge-bg)] text-[var(--text-muted)] border border-[var(--border)] cursor-not-allowed'
                   : 'bg-teal-600 hover:bg-teal-700 text-white'
               }`}
@@ -1152,5 +1235,26 @@ export const NodeForm: React.FC<NodeFormProps> = ({
         </form>
       </div>
     </div>
+
+    {pendingMovePreview && (
+      <MoveConflictModal
+        preview={pendingMovePreview}
+        onConfirm={async dateOverrides => {
+          if (pendingFormPayload) {
+            await updateNode(pendingMovePreview.nodeId, pendingFormPayload);
+          }
+          await commitMove(pendingMovePreview.nodeId, pendingMovePreview.newParentId, dateOverrides);
+          setPendingMovePreview(null);
+          setPendingFormPayload(null);
+          onSaved?.();
+          onClose();
+        }}
+        onCancel={() => {
+          setPendingMovePreview(null);
+          setPendingFormPayload(null);
+        }}
+      />
+    )}
+    </>
   );
 };
