@@ -2,6 +2,8 @@ export type NodeType = 'department' | 'season' | 'project' | 'task' | 'subtask' 
 
 export type NodeStatus = 'not_started' | 'in_progress' | 'done' | 'blocked';
 
+export type NodeLocationMode = 'online' | 'onsite_visit' | 'internal_only' | 'async';
+
 export interface NodeItem {
   id: string;
   org_id?: string | null;
@@ -23,6 +25,7 @@ export interface NodeItem {
   calendar_sync_enabled?: boolean;
   google_event_id?: string | null;
   vendor_contact: string | null;
+  location_mode: NodeLocationMode | null;
   department: string | null;
   season: string | null;
   sort_order: number;

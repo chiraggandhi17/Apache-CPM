@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { NodeItem, NodeType, NodeStatus } from '../../types/domain';
+import { NodeItem, NodeType, NodeStatus, NodeLocationMode } from '../../types/domain';
 import { useNodes } from '../../context/NodeContext';
 import { useAuth, UserProfile } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -13,6 +13,7 @@ import { MovePreview } from '../../context/NodeContext';
 import { getUnusedProjectColor } from '../../lib/color-resolver';
 import { getAncestorPath, getRootAncestorId } from '../../utils/hierarchy';
 import { formatLocalDate } from '../../utils/date-format';
+import { LOCATION_MODE_OPTIONS } from '../../utils/location-mode';
 import { addDays, isValid, formatISO } from 'date-fns';
 import { 
   X, Calendar, User, Tag, FileText, Bell, Layers, Check, 
@@ -207,6 +208,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
   };
 
   const [vendorContact, setVendorContact] = useState(initialNode?.vendor_contact || '');
+  const [locationMode, setLocationMode] = useState<NodeLocationMode | ''>(initialNode?.location_mode || '');
   const [description, setDescription] = useState(initialNode?.description || initialDescription || '');
   const [calendarSyncEnabled, setCalendarSyncEnabled] = useState(
     initialNode
@@ -368,6 +370,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
           assignee_user_id: isIndividual ? null : assigneeUserId,
           calendar_sync_enabled: calendarSyncEnabled,
           vendor_contact: vendorContact || null,
+          location_mode: locationMode || null,
           description: description || null,
         };
 
@@ -417,6 +420,7 @@ export const NodeForm: React.FC<NodeFormProps> = ({
           assignee_user_id: isIndividual ? null : assigneeUserId,
           calendar_sync_enabled: calendarSyncEnabled,
           vendor_contact: vendorContact || null,
+          location_mode: locationMode || null,
           description: description || null,
           google_event_id: linkedGoogleEventId || null,
         });
@@ -1174,6 +1178,22 @@ export const NodeForm: React.FC<NodeFormProps> = ({
                 placeholder="e.g. Apache Footwear Tier 1"
                 className="w-full text-xs px-3 py-2 bg-[var(--input-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-[var(--accent)]"
               />
+            </div>
+
+            <div>
+              <label className="block font-bold text-[var(--text-secondary)] mb-1.5 flex items-center gap-1">
+                <Tag className="w-3.5 h-3.5 text-[var(--text-muted)]" /> Location / Mode
+              </label>
+              <select
+                value={locationMode}
+                onChange={e => setLocationMode(e.target.value as NodeLocationMode | '')}
+                className="w-full text-xs px-3 py-2 bg-[var(--input-bg)] border border-[var(--border)] rounded-xl outline-none focus:border-[var(--accent)]"
+              >
+                <option value="">Not set</option>
+                {LOCATION_MODE_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
             </div>
           </div>
 

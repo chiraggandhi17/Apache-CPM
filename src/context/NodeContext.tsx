@@ -962,6 +962,7 @@ export const NodeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       calendar_sync_enabled: data.calendar_sync_enabled !== undefined ? data.calendar_sync_enabled : true,
       google_event_id: data.google_event_id || null,
       vendor_contact: data.vendor_contact || null,
+      location_mode: data.location_mode || null,
       department: data.department || profile?.department || (isIndividual ? 'Personal' : 'Production'),
       season: data.season || 'SS26',
       sort_order: data.sort_order || 1,

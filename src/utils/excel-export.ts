@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import { NodeItem, ReminderItem, TreeNode } from '../types/domain';
 import { formatLocalDate } from './date-format';
 import { getAncestorPath } from './hierarchy';
+import { locationModeLabel } from './location-mode';
 
 export interface ExportOptions {
   fileName?: string;
@@ -67,6 +68,7 @@ export const exportToExcel = (
       'Critical Path?': node.is_critical ? 'YES (Critical)' : 'NO',
       'Assignee': node.assignee || 'Unassigned',
       'Vendor Contact': node.vendor_contact || 'N/A',
+      'Location / Mode': locationModeLabel(node.location_mode) || 'N/A',
       'Offset Days': node.trigger_offset_days !== null ? node.trigger_offset_days : 'Absolute',
       'Notes & Specifications': node.description || '',
     };
@@ -88,6 +90,7 @@ export const exportToExcel = (
     { wch: 16 }, // Critical Path
     { wch: 22 }, // Assignee
     { wch: 22 }, // Vendor Contact
+    { wch: 20 }, // Location / Mode
     { wch: 14 }, // Offset Days
     { wch: 45 }, // Notes
   ];

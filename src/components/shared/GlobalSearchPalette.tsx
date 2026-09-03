@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNodes } from '../../context/NodeContext';
 import { NodeItem, NodeType } from '../../types/domain';
 import { formatLocalDate } from '../../utils/date-format';
+import { locationModeLabel } from '../../utils/location-mode';
 import {
   Search, Building2, FolderKanban, Box, Zap, CornerDownRight, Bell,
   CornerDownLeft, ArrowUp, ArrowDown, X,
@@ -40,6 +41,10 @@ function scoreNode(node: NodeItem, q: string): ScoredResult | null {
   }
   if (node.vendor_contact && node.vendor_contact.toLowerCase().includes(query)) {
     return { node, score: 35, matchField: `vendor: ${node.vendor_contact}` };
+  }
+  const locLabel = locationModeLabel(node.location_mode);
+  if (locLabel && locLabel.toLowerCase().includes(query)) {
+    return { node, score: 30, matchField: `location: ${locLabel}` };
   }
   if (node.department && node.department.toLowerCase().includes(query)) {
     return { node, score: 30, matchField: `department: ${node.department}` };

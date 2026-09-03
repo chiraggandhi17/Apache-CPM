@@ -509,3 +509,9 @@ CREATE INDEX IF NOT EXISTS idx_gcal_pending_node_id ON public.google_calendar_pe
 -- pushes update the same event instead of creating duplicates.
 ALTER TABLE public.nodes ADD COLUMN IF NOT EXISTS google_event_id TEXT;
 CREATE INDEX IF NOT EXISTS idx_nodes_google_event_id ON public.nodes(google_event_id) WHERE google_event_id IS NOT NULL;
+
+-- Migration 00015: where/how a milestone happens (online, an in-person site
+-- visit, internal-only, or async email/Teams) — mirrors what real client
+-- production calendars track alongside date/status.
+ALTER TABLE public.nodes ADD COLUMN IF NOT EXISTS location_mode TEXT
+  CHECK (location_mode IS NULL OR location_mode IN ('online', 'onsite_visit', 'internal_only', 'async'));

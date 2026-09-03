@@ -15,10 +15,11 @@ import { useToast } from '../../context/ToastContext';
 import { 
   X, Calendar, Edit3, Trash2, Plus, Bell, User, Tag, ChevronRight, 
   ChevronLeft, ArrowLeft, ArrowRight, FileText, Sparkles, History, 
-  Lock, RefreshCw, Clock, Building2
+  Lock, RefreshCw, Clock, Building2, MapPin
 } from 'lucide-react';
 import { formatISO, addDays, isValid } from 'date-fns';
 import { RECURRENCE_OPTIONS, RecurrenceRule, recurrenceLabel } from '../../utils/recurrence';
+import { locationModeLabel } from '../../utils/location-mode';
 
 interface NodeInspectorModalProps {
   initialNode: NodeItem;
@@ -335,6 +336,14 @@ export const NodeInspectorModal: React.FC<NodeInspectorModalProps> = ({ initialN
               </span>
               <span className="font-bold text-[var(--text-primary)] block mt-0.5">{currentNode.vendor_contact || 'None'}</span>
             </div>
+            {currentNode.location_mode && (
+              <div className="bg-[var(--card-bg)] p-3 rounded-xl border border-[var(--border)]">
+                <span className="text-[var(--text-muted)] font-semibold block text-[10px] uppercase flex items-center gap-1">
+                  <MapPin className="w-3 h-3 text-[var(--text-muted)]" /> Location / Mode
+                </span>
+                <span className="font-bold text-[var(--text-primary)] block mt-0.5">{locationModeLabel(currentNode.location_mode)}</span>
+              </div>
+            )}
           </div>
 
           {/* Description & Follow-up Notes */}

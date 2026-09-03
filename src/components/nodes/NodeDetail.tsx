@@ -4,9 +4,10 @@ import { useNodes } from '../../context/NodeContext';
 import { StatusBadge } from '../shared/StatusBadge';
 import { CriticalFlag } from '../shared/CriticalFlag';
 import { formatLocalDate } from '../../utils/date-format';
+import { locationModeLabel } from '../../utils/location-mode';
 import { NodeForm } from './NodeForm';
 import { useToast } from '../../context/ToastContext';
-import { X, Calendar, Edit3, Trash2, Plus, Bell, User, Tag, ArrowRight } from 'lucide-react';
+import { X, Calendar, Edit3, Trash2, Plus, Bell, User, Tag, ArrowRight, MapPin } from 'lucide-react';
 import { formatISO, addDays } from 'date-fns';
 
 interface NodeDetailProps {
@@ -148,6 +149,14 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({ node, onClose }) => {
               </span>
               <span className="font-semibold text-[var(--text-primary)] block mt-0.5">{node.vendor_contact || 'None'}</span>
             </div>
+            {node.location_mode && (
+              <div className="bg-[var(--card-bg)] p-3 rounded-lg border border-[var(--border)]">
+                <span className="text-[var(--text-muted)] font-medium block text-[10px] uppercase flex items-center gap-1">
+                  <MapPin className="w-3 h-3 text-[var(--text-muted)]" /> Location / Mode
+                </span>
+                <span className="font-semibold text-[var(--text-primary)] block mt-0.5">{locationModeLabel(node.location_mode)}</span>
+              </div>
+            )}
           </div>
 
           {node.description && (
